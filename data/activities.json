@@ -1,5 +1,17 @@
 [
   {
+    "id": "2db6dffc-1612-4067-8a04-c385c1155a3a",
+    "timestamp": "2026-07-23T05:47:28.349Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "26a1e32e-67c3-4d9c-9cd1-4d27cafe5dcd",
+    "timestamp": "2026-07-23T05:34:50.602Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 0 contacts from Google Sheet."
+  },
+  {
     "id": "06221c61-ae47-4050-9a6f-0aae63edd3cf",
     "timestamp": "2026-07-23T05:34:10.956Z",
     "username": "admin",

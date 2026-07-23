@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import {
   initDb,
   getContacts,
@@ -598,8 +597,9 @@ export async function getApp() {
 
   // --- Serve Frontend Application ---
 
-  if (process.env.NODE_ENV !== 'production') {
-    // Integrate Vite development server middleware
+  if (process.env.NODE_ENV !== 'production' && process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
+    // Integrate Vite development server middleware dynamically
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
