@@ -146,11 +146,8 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
         }).addTo(mapInstanceRef.current);
       }
 
-      // Dynamic camera following
-      const bounds = L.latLngBounds([userLat, userLng], [target.latitude, target.longitude]);
-      if (bounds.isValid()) {
-        mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 17, animate: false });
-      }
+      // Centered user following: Fix the map view to follow the user closely so they can track where the route is going through
+      mapInstanceRef.current.setView([userLat, userLng], 17, { animate: true });
     } catch (e) {
       console.warn('Navigation map update skipped:', e);
     }

@@ -10,6 +10,19 @@ export interface Contact {
   latitude?: number;
   longitude?: number;
   geotagged?: boolean;
+  photo_url?: string;
+  pcu_file_url?: string;
+}
+
+export interface PCUUpdate {
+  id: string;
+  contactId: number;
+  fullName: string;
+  barangay?: string;
+  purok?: string;
+  fileName: string;
+  fileData: string; // Base64 content
+  uploadedAt: string;
 }
 
 export interface Activity {

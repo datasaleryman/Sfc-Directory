@@ -92,8 +92,8 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 export function sanitizeInput(req: Request, res: Response, next: NextFunction) {
   const sanitize = (val: any): any => {
     if (typeof val === 'string') {
-      // Do not sanitize base64 data URLs of images to avoid corrupting image quality/binary data
-      if (val.startsWith('data:image/') && val.includes(';base64,')) {
+      // Do not sanitize base64 data URLs of files/images to avoid corrupting binary data
+      if (val.startsWith('data:') && val.includes(';base64,')) {
         return val;
       }
       // Basic escaping of < > & " ' and / to prevent script injection (XSS protection)

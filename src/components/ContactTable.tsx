@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image } from 'lucide-react';
 import { Contact } from '../types.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -80,6 +80,95 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   // Syncing Base44 state
   const [syncing, setSyncing] = useState(false);
+
+  const [imageUploading, setImageUploading] = useState(false);
+  const [pcuUploading, setPcuUploading] = useState(false);
+
+  const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !viewContact) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Please select an image file (PNG, JPG, etc.)', 'error');
+      return;
+    }
+
+    setImageUploading(true);
+    try {
+      const base64Data = await convertFileToBase64(file);
+      const res = await fetch(`/api/contacts/${viewContact.id}/photo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ photoDataUrl: base64Data })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to upload photo.');
+      }
+
+      const updatedContact = await res.json();
+      setViewContact(updatedContact);
+      setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
+      showToast('Image photo uploaded successfully!', 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const handlePCUUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !viewContact) return;
+
+    setPcuUploading(true);
+    try {
+      const base64Data = await convertFileToBase64(file);
+      const res = await fetch(`/api/contacts/${viewContact.id}/pcu`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          fullName: viewContact.full_name,
+          fileName: file.name,
+          fileData: base64Data
+        })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to upload PCU file.');
+      }
+
+      const uploadResult = await res.json();
+      const updatedContact = {
+        ...viewContact,
+        pcu_file_url: uploadResult.fileData || `Uploaded: ${file.name}`
+      };
+      setViewContact(updatedContact);
+      setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
+      showToast(`PCU File "${file.name}" uploaded and saved to Base44 PCUUpdate database table!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setPcuUploading(false);
+    }
+  };
 
   const handleSyncBase44 = async () => {
     setSyncing(true);
@@ -619,7 +708,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       </div>
                     </th>
 
-                    <th className="py-4 px-5">Barangay Folder</th>
+                    <th className="py-4 px-5">Barangay</th>
                     <th className="py-4 px-5">Purok</th>
                     <th className="py-4 px-5">Contact Number</th>
                     <th className="py-4 px-5">Location Status</th>
@@ -667,16 +756,31 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     contacts.map((contact, index) => {
                       const itemIndex = (page - 1) * limit + index + 1;
                       return (
-                        <tr key={contact.id} className="hover:bg-slate-50/80 transition-colors">
+                        <tr 
+                          key={contact.id} 
+                          onClick={() => setViewContact(contact)}
+                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                        >
                           <td className="py-3.5 px-5 text-center text-xs font-bold text-slate-400">
                             {itemIndex}
                           </td>
                           <td className="py-3.5 px-5 font-bold text-slate-800">
                             <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0">
-                                {contact.full_name.charAt(0).toUpperCase()}
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0 overflow-hidden">
+                                {contact.photo_url ? (
+                                  <img src={contact.photo_url} alt={contact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  contact.full_name.charAt(0).toUpperCase()
+                                )}
                               </div>
-                              <span>{contact.full_name}</span>
+                              <div className="flex flex-col">
+                                <span>{contact.full_name}</span>
+                                {contact.pcu_file_url && (
+                                  <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded w-max mt-0.5 flex items-center gap-0.5">
+                                    <Check className="w-2.5 h-2.5" /> PCU Attached
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="py-3.5 px-5 font-semibold text-slate-700">
@@ -711,14 +815,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           <td className="py-3.5 px-5 text-center">
                             <div className="flex items-center justify-center gap-1">
                               <button
-                                onClick={() => setViewContact(contact)}
+                                onClick={(e) => { e.stopPropagation(); setViewContact(contact); }}
                                 className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                                 title="View details"
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => onEdit(contact)}
+                                onClick={(e) => { e.stopPropagation(); onEdit(contact); }}
                                 className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                                 title="Edit contact"
                               >
@@ -726,7 +830,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               </button>
                               {onNavigateToMap && (
                                 <button
-                                  onClick={() => onNavigateToMap(contact)}
+                                  onClick={(e) => { e.stopPropagation(); onNavigateToMap(contact); }}
                                   className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
                                   title="Locate on Map"
                                 >
@@ -734,7 +838,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                                 </button>
                               )}
                               <button
-                                onClick={() => setDeleteTarget(contact)}
+                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
                                 className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                                 title="Delete record"
                               >
@@ -774,14 +878,29 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 contacts.map((contact, index) => {
                   const itemIndex = (page - 1) * limit + index + 1;
                   return (
-                    <div key={contact.id} className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors">
+                    <div 
+                      key={contact.id} 
+                      onClick={() => setViewContact(contact)}
+                      className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0">
-                            {contact.full_name.charAt(0).toUpperCase()}
+                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0 overflow-hidden">
+                            {contact.photo_url ? (
+                              <img src={contact.photo_url} alt={contact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              contact.full_name.charAt(0).toUpperCase()
+                            )}
                           </div>
                           <div className="min-w-0">
-                            <span className="font-bold text-slate-800 text-sm block truncate">{contact.full_name}</span>
+                            <span className="font-bold text-slate-800 text-sm block truncate flex items-center gap-1.5">
+                              {contact.full_name}
+                              {contact.pcu_file_url && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-50 text-blue-600 text-[9px] font-bold shrink-0">
+                                  <Check className="w-2.5 h-2.5" /> PCU
+                                </span>
+                              )}
+                            </span>
                             <span className="text-[11px] text-slate-400 font-semibold block">{formatDate(contact.created_at)}</span>
                           </div>
                         </div>
@@ -819,14 +938,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => setViewContact(contact)}
+                            onClick={(e) => { e.stopPropagation(); setViewContact(contact); }}
                             className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                             title="View details"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => onEdit(contact)}
+                            onClick={(e) => { e.stopPropagation(); onEdit(contact); }}
                             className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                             title="Edit contact"
                           >
@@ -834,7 +953,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           </button>
                           {onNavigateToMap && (
                             <button
-                              onClick={() => onNavigateToMap(contact)}
+                              onClick={(e) => { e.stopPropagation(); onNavigateToMap(contact); }}
                               className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
                               title="Locate on Map"
                             >
@@ -842,7 +961,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                             </button>
                           )}
                           <button
-                            onClick={() => setDeleteTarget(contact)}
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                             title="Delete record"
                           >
@@ -896,8 +1015,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative"
             >
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-lg">
-                  {viewContact.full_name.charAt(0).toUpperCase()}
+                <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xl overflow-hidden border border-emerald-200/60 shadow-inner shrink-0">
+                  {viewContact.photo_url ? (
+                    <img src={viewContact.photo_url} alt={viewContact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    viewContact.full_name.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-800 font-display">{viewContact.full_name}</h3>
@@ -907,7 +1030,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
               <div className="space-y-3 text-sm">
                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Barangay Folder</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase">Barangay</span>
                   <span className="font-bold text-slate-800">{viewContact.barangay}</span>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
@@ -922,12 +1045,57 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   <span className="text-xs font-bold text-slate-400 uppercase">Geotagged</span>
                   <span className="font-bold text-emerald-600">{viewContact.geotagged ? 'Yes' : 'No'}</span>
                 </div>
+                {viewContact.pcu_file_url && (
+                  <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-600 uppercase flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5 text-blue-600 animate-pulse" /> PCU File Saved
+                    </span>
+                    {viewContact.pcu_file_url.startsWith('http') ? (
+                      <a 
+                        href={viewContact.pcu_file_url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="font-bold text-blue-700 hover:underline text-xs truncate max-w-[200px] flex items-center gap-1 cursor-pointer"
+                        title="Click to view file"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> View File
+                      </a>
+                    ) : (
+                      <span className="font-semibold text-blue-900 text-xs truncate max-w-[200px]" title={viewContact.pcu_file_url}>{viewContact.pcu_file_url}</span>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div className="pt-6">
+              {/* File Upload Zone */}
+              <div className="mt-5 pt-4 border-t border-slate-100 space-y-3">
+                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Upload Directory Files</h4>
+                
+                <div>
+                  {/* Upload PCU Section */}
+                  <label className="flex flex-col items-center justify-center p-5 border border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/10 rounded-2xl cursor-pointer transition-all text-center group w-full">
+                    <input 
+                      type="file" 
+                      onChange={handlePCUUpload} 
+                      disabled={pcuUploading} 
+                      className="hidden" 
+                    />
+                    {pcuUploading ? (
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin mb-1.5" />
+                    ) : (
+                      <Upload className="w-5 h-5 text-slate-400 mb-1.5 group-hover:text-blue-600 transition-colors" />
+                    )}
+                    <span className="text-xs font-bold text-slate-700">Upload PCU</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">Save to Base44 DB</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-5">
                 <button
                   onClick={() => setViewContact(null)}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                 >
                   Close
                 </button>

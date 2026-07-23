@@ -31,7 +31,10 @@ import {
   editUserAccount,
   fetchHouseholdSubmissionsFromBase44,
   addHouseholdToDirectory,
-  clearAllDirectoryContacts
+  clearAllDirectoryContacts,
+  uploadContactPhoto,
+  addPCUUpdate,
+  getPCUUpdates
 } from './server/db.js';
 import {
   createToken,
@@ -44,15 +47,19 @@ export async function getApp() {
   // Initialize the fast file-backed database cache
   await initDb();
 
-  // Run initial sync from Base44 on startup to ensure the latest database cache is populated
-  console.log('[Startup] Initiating startup synchronization with Base44 Database...');
-  syncBase44Contacts()
-    .then((success) => {
-      console.log('[Startup] Initial Base44 sync finished. Success:', success);
-    })
-    .catch((err) => {
-      console.error('[Startup] Initial Base44 sync error:', err);
-    });
+  // Run initial sync from Base44 on startup (skip in serverless environments like Netlify to prevent cold-start gateway 502 timeouts)
+  if (process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
+    console.log('[Startup] Initiating startup synchronization with Base44 Database...');
+    syncBase44Contacts()
+      .then((success) => {
+        console.log('[Startup] Initial Base44 sync finished. Success:', success);
+      })
+      .catch((err) => {
+        console.error('[Startup] Initial Base44 sync error:', err);
+      });
+  } else {
+    console.log('[Startup] Serverless environment detected. Skipping startup Base44 sync to ensure instantaneous boot and avoid Netlify 502 errors.');
+  }
 
   // Set up periodic background synchronization with Base44 Database every 10 minutes (only in non-serverless environments)
   if (process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
@@ -380,6 +387,52 @@ export async function getApp() {
       res.json({ success: true, message: 'Contact successfully soft-deleted.' });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Upload photo for contact
+  app.post('/api/contacts/:id/photo', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { photoDataUrl } = req.body;
+      const username = req.user?.username || 'Admin';
+
+      if (!photoDataUrl) {
+        return res.status(400).json({ error: 'photoDataUrl is required.' });
+      }
+
+      const contact = await uploadContactPhoto(id, photoDataUrl, username);
+      res.json(contact);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Upload PCU File for contact
+  app.post('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { fullName, fileName, fileData } = req.body;
+      const username = req.user?.username || 'Admin';
+
+      if (!fileName || !fileData) {
+        return res.status(400).json({ error: 'fileName and fileData are required.' });
+      }
+
+      const update = await addPCUUpdate(id, fullName || 'Unknown Contact', fileName, fileData, username);
+      res.json(update);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Get all PCU Updates
+  app.get('/api/contacts/pcu-updates', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const updates = getPCUUpdates();
+      res.json(updates);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
