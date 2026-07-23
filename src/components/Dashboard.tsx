@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Users, 
   MapPin, 
@@ -6,10 +6,24 @@ import {
   UserPlus, 
   FileSpreadsheet, 
   Printer, 
-  Activity,
-  Database
+  Database,
+  BarChart3,
+  PieChart as PieChartIcon,
+  TrendingUp
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell,
+  PieChart,
+  Pie
+} from 'recharts';
 import { DashboardStats } from '../types.js';
 
 interface DashboardProps {
@@ -30,6 +44,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   showToast
 }) => {
   const [syncing, setSyncing] = React.useState(false);
+  const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
 
   // Format Date in local friendly format
   const formatTime = (isoString: string) => {
@@ -64,6 +79,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
     } finally {
       setSyncing(false);
     }
+  };
+
+  // Chart dataset based on Total Contacts, Total Addresses, and Added Today
+  const chartData = [
+    {
+      name: 'Total Contacts',
+      shortName: 'Contacts',
+      value: stats?.totalContacts ?? 0,
+      fill: '#10b981', // Emerald-500
+      bgClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      description: 'Total active directory records'
+    },
+    {
+      name: 'Total Addresses',
+      shortName: 'Addresses',
+      value: stats?.totalAddresses ?? 0,
+      fill: '#14b8a6', // Teal-500
+      bgClass: 'bg-teal-50 text-teal-700 border-teal-200',
+      description: 'Unique barangay classifications'
+    },
+    {
+      name: 'Added Today',
+      shortName: 'Added Today',
+      value: stats?.contactsToday ?? 0,
+      fill: '#f59e0b', // Amber-500
+      bgClass: 'bg-amber-50 text-amber-700 border-amber-200',
+      description: 'New records created today'
+    }
+  ];
+
+  // Custom Recharts Tooltip Component
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-slate-900/95 backdrop-blur-sm text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-800 text-xs space-y-1">
+          <p className="font-extrabold text-slate-200">{data.name}</p>
+          <p className="text-lg font-black" style={{ color: data.fill }}>
+            {data.value.toLocaleString()} <span className="text-xs font-normal text-slate-400">records</span>
+          </p>
+          <p className="text-[11px] text-slate-400">{data.description}</p>
+        </div>
+      );
+    }
+    return null;
   };
 
   // Stagger Container Animations
@@ -247,7 +307,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </motion.div>
       </div>
 
-      {/* Main Grid: Shortcuts & Recent Activity */}
+      {/* Main Grid: Shortcuts & Directory Metrics Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Shortcuts / Quick Actions Panel */}
@@ -329,65 +389,103 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </motion.div>
 
-        {/* Recent Activities Section */}
+        {/* Directory Statistics Chart Section (Replaces Recent Admin Activities) */}
         <motion.div 
           variants={itemVariants}
-          className="lg:col-span-7 bg-white border border-slate-100 rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col h-[460px]"
+          className="lg:col-span-7 bg-white border border-slate-100 rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col min-h-[460px] justify-between"
         >
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4 shrink-0">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-rose-50 text-rose-500 rounded-xl">
-                <Activity className="w-4.5 h-4.5" />
+              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+                <TrendingUp className="w-5 h-5" />
               </div>
-              <h4 className="font-extrabold text-slate-800 font-display tracking-tight">
-                Recent Admin Activities
-              </h4>
+              <div>
+                <h4 className="font-extrabold text-slate-800 font-display tracking-tight text-base sm:text-lg">
+                  Directory Overview Chart
+                </h4>
+                <p className="text-xs text-slate-400 font-medium">
+                  Real-time visual comparison: Contacts, Addresses & Additions
+                </p>
+              </div>
             </div>
-            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold uppercase tracking-widest px-3 py-1 rounded-full">
-              Live Auditing
-            </span>
+
+            {/* Chart type toggle */}
+            <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl text-xs font-bold self-end sm:self-auto">
+              <button
+                onClick={() => setChartType('bar')}
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  chartType === 'bar'
+                    ? 'bg-white text-emerald-800 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                Bar
+              </button>
+              <button
+                onClick={() => setChartType('pie')}
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  chartType === 'pie'
+                    ? 'bg-white text-emerald-800 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <PieChartIcon className="w-3.5 h-3.5" />
+                Pie
+              </button>
+            </div>
           </div>
 
-          {/* Activity Logs List */}
-          <div className="flex-1 overflow-y-auto mt-5 pr-1 space-y-4">
+          {/* Chart Rendering Area */}
+          <div className="my-2 flex-1 min-h-[280px] w-full flex items-center justify-center">
             {loading ? (
-              <div className="flex flex-col gap-4 py-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="flex gap-4 animate-pulse">
-                    <div className="w-3 h-3 rounded-full bg-slate-100 mt-1" />
-                    <div className="flex-1 space-y-2.5">
-                      <div className="h-4 bg-slate-100 rounded-md w-2/3" />
-                      <div className="h-3 bg-slate-100 rounded-md w-1/4" />
-                    </div>
-                  </div>
-                ))}
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
               </div>
-            ) : !stats || !stats.recentActivities || stats.recentActivities.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
-                <Activity className="w-10 h-10 mb-2 opacity-30 stroke-[1.5]" />
-                <p className="text-sm font-semibold text-slate-500">No recent logs recorded.</p>
-                <p className="text-xs text-slate-400 mt-1">Changes you make will show up in this audit log.</p>
-              </div>
+            ) : chartType === 'bar' ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="shortName" 
+                    tickLine={false} 
+                    axisLine={{ stroke: '#e2e8f0' }}
+                    tick={{ fill: '#64748b', fontSize: 12, fontWeight: 700 }}
+                  />
+                  <YAxis 
+                    tickLine={false} 
+                    axisLine={{ stroke: '#e2e8f0' }}
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    allowDecimals={false}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
+                  <Bar dataKey="value" radius={[12, 12, 0, 0]} maxBarSize={60}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             ) : (
-              (stats.recentActivities || []).map((activity, idx) => (
-                <div key={activity.id} className="flex gap-4 items-start border-l-2 border-slate-100/80 pl-5 relative ml-3 group">
-                  {/* Glowing Pulse Node on Timeline */}
-                  <div className="absolute left-[-6px] top-1.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white ring-4 ring-emerald-100/40 group-hover:bg-emerald-600 group-hover:scale-110 transition-all" />
-                  
-                  <div className="flex-1 min-w-0 bg-slate-50/50 hover:bg-slate-50/80 border border-slate-100 hover:border-slate-200/70 rounded-2xl p-3.5 transition-all duration-200">
-                    <p className="text-sm text-slate-700 font-semibold break-words tracking-tight leading-relaxed">
-                      {activity.action}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2 text-xs">
-                      <span className="font-bold text-emerald-700">
-                        @{activity.username}
-                      </span>
-                      <span className="text-slate-300">•</span>
-                      <span className="text-slate-400 font-medium">{formatTime(activity.timestamp)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Pie
+                    data={chartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={65}
+                    outerRadius={100}
+                    paddingAngle={6}
+                    dataKey="value"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`pie-cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
             )}
           </div>
         </motion.div>
@@ -395,3 +493,4 @@ export const Dashboard: React.FC<DashboardProps> = ({
     </motion.div>
   );
 };
+
