@@ -1,0 +1,92 @@
+[
+  {
+    "id": "581892dd-e9ee-489d-857b-0eb0b3f90ac1",
+    "timestamp": "2026-07-21T15:26:04.327Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 2 contacts from Google Sheet."
+  },
+  {
+    "id": "9bbfdc2b-3487-4591-bb57-601b9e76c113",
+    "timestamp": "2026-07-21T15:26:04.311Z",
+    "username": "Diagnostics Run",
+    "action": "Synchronized 2 contacts from Google Sheet."
+  },
+  {
+    "id": "159687f4-54cb-40a5-939c-852d88ad52b1",
+    "timestamp": "2026-07-21T15:23:59.681Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 0 contacts from Google Sheet."
+  },
+  {
+    "id": "2ba8bd8b-1bc7-4a5f-abe5-b86b3d948c13",
+    "timestamp": "2026-07-21T15:23:47.130Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 0 contacts from Google Sheet."
+  },
+  {
+    "id": "d6f5b74d-d8d6-45da-82d7-147d300341fa",
+    "timestamp": "2026-07-21T15:23:46.388Z",
+    "username": "Diagnostics",
+    "action": "Synchronized 0 contacts from Google Sheet."
+  },
+  {
+    "id": "10f98d9c-65d9-457c-81cc-420120db2628",
+    "timestamp": "2026-07-21T15:20:47.923Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "9417df8e-1bff-4393-a142-1761b49848f4",
+    "timestamp": "2026-07-21T15:20:43.891Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 0 contacts from Google Sheet."
+  },
+  {
+    "id": "14067cfa-d813-4405-89b6-49b23887c1e1",
+    "timestamp": "2026-07-21T15:16:13.498Z",
+    "username": "admin",
+    "action": "Updated website customization and settings."
+  },
+  {
+    "id": "ba76b477-4754-4528-b6f1-48e032efabf5",
+    "timestamp": "2026-07-21T15:16:00.930Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "2453fc89-c3d7-490a-a7a9-8a49fac73620",
+    "timestamp": "2026-07-21T15:13:19.131Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 2 contacts from Google Sheet."
+  },
+  {
+    "id": "fe130bcc-5c08-45ee-87fa-94fe1f57dd55",
+    "timestamp": "2026-07-21T15:13:13.402Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 2 contacts from Google Sheet."
+  },
+  {
+    "id": "568e6e7e-84a1-4362-a19c-89595c7c184f",
+    "timestamp": "2026-07-21T15:10:18.002Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "930ccd8f-2e96-48f4-a93f-d234cd4c92b8",
+    "timestamp": "2026-07-21T15:09:59.898Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 2 contacts from Google Sheet."
+  },
+  {
+    "id": "b0471ddd-38e4-428e-b0f5-d3efff220433",
+    "timestamp": "2026-07-21T15:04:13.891Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "1",
+    "timestamp": "2026-07-21T15:02:52.887Z",
+    "username": "System",
+    "action": "Database initialized with seed records."
+  }
+]

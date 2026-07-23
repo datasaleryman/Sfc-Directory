@@ -1,0 +1,808 @@
+import { useState, useEffect } from 'react';
+import {
+  Users,
+  MapPin,
+  FileSpreadsheet,
+  Printer,
+  LogOut,
+  LayoutDashboard,
+  ShieldCheck,
+  UserPlus,
+  Loader2,
+  Lock,
+  Menu,
+  X,
+  Settings,
+  ChevronDown,
+  User
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Contact, DashboardStats } from './types.js';
+import { ToastContainer, ToastMessage, ToastType } from './components/Toast.js';
+import { Login } from './components/Login.js';
+import { Dashboard } from './components/Dashboard.js';
+import { ContactForm } from './components/ContactForm.js';
+import { ContactTable } from './components/ContactTable.js';
+import { BulkImport } from './components/BulkImport.js';
+import { PrintPreview } from './components/PrintPreview.js';
+import { AdminManagement } from './components/AdminManagement.js';
+import { AccountManagement } from './components/AccountManagement.js';
+import { SettingsPage } from './components/SettingsPage.js';
+import { ProfileModal } from './components/ProfileModal.js';
+import { ClinicMap } from './components/ClinicMap.js';
+
+export default function App() {
+  // Authentication & Session States
+  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('dir_auth_token'));
+  const [adminUser, setAdminUser] = useState<{ username: string; role: string; displayName?: string; avatarDataUrl?: string } | null>(() => {
+    const saved = localStorage.getItem('dir_admin_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // Navigation Panel Routing
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings'>('dashboard');
+  
+  // Mobile Navigation Drawer Open State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Profile Header Dropdown Menu State
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+
+  // Profile Modal State
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings') => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  };
+
+  // Branding Customization & Role Permissions States
+  const [siteSettings, setSiteSettings] = useState<{
+    title: string;
+    faviconTitle: string;
+    logoDataUrl: string;
+    faviconDataUrl: string;
+    navDashboard?: string;
+    navDirectory?: string;
+    navBulk?: string;
+    navPrint?: string;
+    navAdmins?: string;
+    navSettings?: string;
+    rolePermissions?: Record<string, string[]>;
+  }>({
+    title: 'Saint Francis Clinic Directory',
+    faviconTitle: 'Saint Francis Clinic',
+    logoDataUrl: '',
+    faviconDataUrl: '',
+    navDashboard: 'Dashboard',
+    navDirectory: 'Clinic Directory',
+    navBulk: 'Bulk Entry',
+    navPrint: 'Print List',
+    navAdmins: 'Admin Credentials',
+    navSettings: 'Website Settings'
+  });
+
+  const userRole = adminUser?.role || 'STAFF';
+  const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'Administrator', 'Master Admin'].includes(userRole);
+
+  const hasTabPermission = (tabId: string) => {
+    if (isSuperUser) return true;
+    const rolePerms = siteSettings?.rolePermissions?.[userRole];
+    if (rolePerms && Array.isArray(rolePerms)) {
+      return rolePerms.includes(tabId);
+    }
+    // Fallback default permissions
+    if (tabId === 'settings' || tabId === 'accounts') return false;
+    return true;
+  };
+
+  const fetchSettings = () => {
+    fetch('/api/site/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setSiteSettings(data);
+          if (data.title) {
+            document.title = data.title;
+          }
+          // Update favicon link
+          let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+          if (!link) {
+            link = document.createElement('link');
+            link.rel = 'icon';
+            document.getElementsByTagName('head')[0].appendChild(link);
+          }
+          if (data.faviconDataUrl) {
+            link.href = data.faviconDataUrl;
+          }
+        }
+      })
+      .catch(err => console.error('Error fetching site settings:', err));
+  };
+
+  // Fetch settings on load
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  // Redirect if current active tab is not permitted for user's role
+  useEffect(() => {
+    if (adminUser && !hasTabPermission(activeTab)) {
+      const allTabs = ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print'];
+      const allowed = allTabs.find(t => hasTabPermission(t));
+      if (allowed) {
+        setActiveTab(allowed as any);
+      }
+    }
+  }, [adminUser, siteSettings.rolePermissions, activeTab]);
+
+  // Directory Table Action Triggers
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Contact | null>(null);
+  const [mapNavigateContact, setMapNavigateContact] = useState<Contact | null>(null);
+
+  // Stats State
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  // Animated Toast notifications
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const showToast = (message: string, type: ToastType) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, type, message }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Fetch Dashboard Summary Stats
+  const fetchStats = async () => {
+    if (!authToken) return;
+    setLoadingStats(true);
+    try {
+      const res = await fetch('/api/dashboard/stats', {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 401) {
+          handleLogout();
+          throw new Error('Session expired. Please log in again.');
+        }
+        throw new Error(data.error || 'Failed to refresh statistics.');
+      }
+      setDashboardStats(data);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  const fetchCurrentUser = async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.user) {
+        setAdminUser(data.user);
+        localStorage.setItem('dir_admin_user', JSON.stringify(data.user));
+      } else if (res.status === 401) {
+        handleLogout();
+      }
+    } catch (err) {
+      console.error('Error fetching current user:', err);
+    }
+  };
+
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authToken) {
+      fetchStats();
+      fetchCurrentUser();
+    }
+  }, [authToken]);
+
+  // Initial automatic sync and background periodic polling
+  useEffect(() => {
+    if (!authToken) return;
+
+    let isMounted = true;
+
+    // Trigger initial automatic sync on load/login so the database is always updated immediately
+    const triggerInitialSync = async (retries = 2) => {
+      try {
+        console.log('[App Auto-Sync] Triggering initial automatic Base44 sync...');
+        const res = await fetch('/api/contacts/sync-base44', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`
+          }
+        });
+        if (!isMounted) return;
+        const data = await res.json();
+        if (res.ok) {
+          console.log('[App Auto-Sync] Initial Base44 sync completed successfully:', data);
+          setLastSyncTime(new Date().toISOString());
+          fetchStats();
+        } else {
+          console.warn('[App Auto-Sync] Initial sync completed with warning:', data?.error || 'Sync warning');
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        if (retries > 0) {
+          console.log(`[App Auto-Sync] Retrying initial sync in 2s... (${retries} retries left)`);
+          setTimeout(() => {
+            if (isMounted) triggerInitialSync(retries - 1);
+          }, 2000);
+        } else {
+          console.warn('[App Auto-Sync] Initial Base44 sync deferred (server connection pending):', err?.message || err);
+        }
+      }
+    };
+
+    triggerInitialSync();
+
+    // Set up a background poller that checks for updates and refreshes client stats every 15 seconds
+    const intervalId = setInterval(() => {
+      if (isMounted) {
+        console.log('[App Poller] Auto-refreshing statistics...');
+        fetchStats();
+        setLastSyncTime(new Date().toISOString());
+      }
+    }, 15000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [authToken]);
+
+  const handleLoginSuccess = (token: string, user: { username: string; role: string }) => {
+    localStorage.setItem('dir_auth_token', token);
+    localStorage.setItem('dir_admin_user', JSON.stringify(user));
+    setAuthToken(token);
+    setAdminUser(user);
+    setActiveTab('dashboard');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('dir_auth_token');
+    localStorage.removeItem('dir_admin_user');
+    setAuthToken(null);
+    setAdminUser(null);
+    setIsMobileMenuOpen(false);
+    showToast('Admin session logged out successfully.', 'success');
+  };
+
+  // Handles Quick Shortcut Actions from Dashboard Card Links
+  const handleQuickAction = (action: 'add' | 'bulk' | 'print') => {
+    setIsMobileMenuOpen(false);
+    if (action === 'add') {
+      setActiveTab('directory');
+      setEditTarget(null);
+      setIsFormOpen(true);
+    } else if (action === 'bulk') {
+      setActiveTab('bulk');
+    } else if (action === 'print') {
+      setActiveTab('print');
+    }
+  };
+
+  // Triggers Single Contact Form Saves (Add or Edit update commits)
+  const handleSaveContact = async (contact: {
+    full_name: string;
+    address: string;
+    contact_number: string;
+  }): Promise<boolean> => {
+    if (!authToken) return false;
+
+    try {
+      const isEdit = editTarget !== null;
+      const url = isEdit ? `/api/contacts/${editTarget.id}` : '/api/contacts';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify(contact)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Action failed.');
+      }
+
+      showToast(
+        isEdit
+          ? `Successfully updated contact record details for "${data.full_name}".`
+          : `Contact record "${data.full_name}" registered successfully.`,
+        'success'
+      );
+
+      // Reset and trigger stats reload
+      setIsFormOpen(false);
+      setEditTarget(null);
+      fetchStats();
+      return true;
+    } catch (err: any) {
+      showToast(err.message, 'error');
+      return false;
+    }
+  };
+
+  const handleEditTrigger = (contact: Contact) => {
+    setEditTarget(contact);
+    setIsFormOpen(true);
+    // Smooth scroll to form view on small devices
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  if (!authToken || !adminUser) {
+    return (
+      <div className="font-sans antialiased bg-slate-50">
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
+        <Login onLoginSuccess={handleLoginSuccess} showToast={showToast} siteSettings={siteSettings} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-slate-50 flex flex-col md:flex-row font-sans antialiased print:h-auto print:overflow-visible">
+      {/* Toast Overlay notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        authToken={authToken}
+        adminUser={adminUser}
+        onAdminUserUpdated={(user, newToken) => {
+          setAdminUser(user);
+          localStorage.setItem('dir_admin_user', JSON.stringify(user));
+          if (newToken) {
+            setAuthToken(newToken);
+            localStorage.setItem('dir_auth_token', newToken);
+          }
+        }}
+        showToast={showToast}
+      />
+
+      {/* Mobile Top Header - Hidden when printing */}
+      <header className="md:hidden bg-emerald-950 border-b border-emerald-900/40 py-3.5 px-6 flex items-center justify-between no-print shrink-0 sticky top-0 z-40">
+        <div className="flex items-center gap-2.5">
+          {siteSettings.logoDataUrl ? (
+            <img 
+              src={siteSettings.logoDataUrl} 
+              alt="Logo" 
+              className="w-8 h-8 rounded-lg object-contain bg-white border border-emerald-800/30" 
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-900/20">
+              <ShieldCheck className="w-4.5 h-4.5" />
+            </div>
+          )}
+          <div>
+            <h1 className="font-bold text-white font-display text-xs tracking-wide leading-none">
+              {siteSettings.faviconTitle || 'Saint Francis Clinic'}
+            </h1>
+            <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider block mt-0.5">
+              Secure Directory
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 text-emerald-100/80 hover:text-white hover:bg-white/10 rounded-lg transition-all cursor-pointer"
+          aria-label="Toggle navigation menu"
+        >
+          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </header>
+
+      {/* Backdrop overlay for mobile menu */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 md:hidden no-print"
+        />
+      )}
+
+      {/* Primary Sidebar Control Panel - Hides when printing */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-emerald-950 text-slate-100 flex flex-col shrink-0 no-print border-r border-emerald-900/40 transition-transform duration-300 ease-in-out
+        md:static md:translate-x-0
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-6 border-b border-emerald-900/40 bg-emerald-900/20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {siteSettings.logoDataUrl ? (
+              <img 
+                src={siteSettings.logoDataUrl} 
+                alt="Logo" 
+                className="w-9 h-9 rounded-xl object-contain bg-white border border-emerald-800/30" 
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-900/10">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+            )}
+            <div>
+              <h1 className="font-bold text-white font-display text-sm tracking-wide leading-tight">
+                {siteSettings.faviconTitle || 'Saint Francis Clinic'}
+              </h1>
+              <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider block mt-0.5">
+                Clinic Directory
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="md:hidden p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Close menu"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
+
+        {/* Navigation Sidebar List */}
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {([
+            { id: 'dashboard', label: siteSettings.navDashboard || 'Dashboard', icon: LayoutDashboard },
+            { id: 'map', label: 'Clinic Map', icon: MapPin },
+            { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
+            { id: 'accounts', label: 'Account Management', icon: ShieldCheck },
+            { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
+            { id: 'print', label: siteSettings.navPrint || 'Print List', icon: Printer },
+          ] as const)
+            .filter((item) => hasTabPermission(item.id))
+            .map((item) => {
+              const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <motion.button
+                key={item.id}
+                onClick={() => handleTabChange(item.id)}
+                whileHover={{ scale: 1.02, x: 4 }}
+                whileTap={{ scale: 0.98 }}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer relative overflow-hidden group focus:outline-none ${
+                  isActive
+                    ? 'text-white'
+                    : 'text-emerald-100/70 hover:text-white'
+                }`}
+              >
+                {/* Slidable active tab background capsule */}
+                {isActive && (
+                  <motion.div
+                    layoutId="activeTabGlow"
+                    className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-xl shadow-[0_4px_20px_rgba(16,185,129,0.25)] -z-10"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+
+                {/* Pulsing indicator/border on hover (Framer Motion) */}
+                <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+                  {isActive ? (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-200"></span>
+                    </>
+                  ) : (
+                    <span className="h-1 w-1 rounded-full bg-emerald-700/40 group-hover:bg-emerald-400 group-hover:scale-125 transition-all duration-300"></span>
+                  )}
+                </span>
+
+                <div className="relative flex items-center gap-2.5 min-w-0">
+                  <Icon className={`w-4 h-4 shrink-0 transition-all duration-300 ${
+                    isActive 
+                      ? 'text-white drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.2)]' 
+                      : 'text-emerald-300/60 group-hover:text-emerald-200 group-hover:rotate-6'
+                  }`} />
+                  <span className="truncate tracking-widest">{item.label}</span>
+                </div>
+
+                {/* Elegant subtle hover overlay ripple/pulse animation */}
+                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+              </motion.button>
+            );
+          })}
+        </nav>
+
+        {/* Sidebar Navigation Footer */}
+        <div className="p-4 border-t border-emerald-900/30 bg-emerald-950/20 text-center text-[10px] text-emerald-400/80 font-bold tracking-widest uppercase shrink-0">
+          © 2026 {siteSettings.faviconTitle || 'Saint Francis Clinic'}
+        </div>
+
+      </aside>
+
+      {/* Main Panel Content Window */}
+      <main className="flex-1 min-w-0 overflow-y-auto print:overflow-visible print:h-auto">
+        {/* Header - Hidden when printing */}
+        <header className="bg-emerald-950 border-b border-emerald-900/40 py-4 px-4 sm:px-6 md:px-8 flex items-center justify-between no-print sticky top-0 z-40 text-white shadow-md shadow-emerald-950/10">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 text-emerald-200 hover:text-white bg-emerald-900/50 hover:bg-emerald-900 rounded-xl transition-colors cursor-pointer border border-emerald-800/40 shrink-0"
+              title="Open navigation menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg md:text-xl font-bold text-white font-display capitalize truncate">
+                {activeTab === 'bulk' 
+                  ? (siteSettings.navBulk || 'Bulk Entry Import') 
+                  : activeTab === 'print' 
+                    ? (siteSettings.navPrint || 'Formatted Print Directory') 
+                    : activeTab === 'directory' 
+                      ? (siteSettings.title || 'Saint Francis Clinic Directory') 
+                      : activeTab === 'accounts'
+                        ? 'Account Management'
+                        : activeTab === 'admins' 
+                          ? (siteSettings.navAdmins || 'Admin Credentials') 
+                          : activeTab === 'settings'
+                            ? (siteSettings.navSettings || 'Website Settings')
+                            : activeTab === 'map'
+                              ? 'Clinic Map'
+                              : (siteSettings.navDashboard || 'Dashboard Overview')}
+              </h2>
+              <p className="text-[11px] sm:text-xs text-emerald-300/80 mt-0.5 truncate hidden sm:block">
+                Secure directory workspace • {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {/* Profile Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-all cursor-pointer focus:outline-none"
+                title="View administrator details & options"
+              >
+                {adminUser.avatarDataUrl ? (
+                  <img
+                    src={adminUser.avatarDataUrl}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full object-cover shadow-md shadow-emerald-900/30 border border-white/20"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-emerald-800 text-emerald-100 flex items-center justify-center font-bold shadow-md shadow-emerald-900/30">
+                    {adminUser.username.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-bold leading-tight">
+                    {adminUser.displayName || `@${adminUser.username}`}
+                  </p>
+                  <p className="text-[10px] text-emerald-300/80 leading-tight capitalize">{adminUser.role}</p>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-emerald-300/80 transition-transform duration-200 ${isProfileDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence>
+                {isProfileDropdownOpen && (
+                  <>
+                    {/* Invisible backdrop layer to dismiss dropdown when clicking away */}
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setIsProfileDropdownOpen(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15, ease: 'easeOut' }}
+                      className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50 text-slate-800"
+                    >
+                      <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-3">
+                        {adminUser.avatarDataUrl ? (
+                          <img
+                            src={adminUser.avatarDataUrl}
+                            alt="avatar"
+                            className="w-10 h-10 rounded-full object-cover border border-slate-100"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
+                            {adminUser.username.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-800 truncate">
+                            {adminUser.displayName || `@${adminUser.username}`}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-semibold truncate">
+                            {adminUser.displayName ? `@${adminUser.username}` : adminUser.role}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          setIsProfileModalOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-emerald-700 font-semibold text-xs text-left transition-colors cursor-pointer border-b border-slate-100"
+                      >
+                        <User className="w-4 h-4 text-slate-400" />
+                        Profile Settings
+                      </button>
+                      
+                      {hasTabPermission('settings') && (
+                        <button
+                          onClick={() => {
+                            setIsProfileDropdownOpen(false);
+                            handleTabChange('settings');
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-emerald-700 font-semibold text-xs text-left transition-colors cursor-pointer border-b border-slate-100"
+                        >
+                          <Settings className="w-4 h-4 text-slate-400" />
+                          {siteSettings.navSettings || 'Website Settings'}
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-rose-600 hover:bg-rose-50 font-semibold text-xs text-left transition-colors cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4 text-rose-500" />
+                        Log Out Session
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </header>
+
+        {/* Tab Router Panels */}
+        <div className="p-4 sm:p-6 md:p-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.15 }}
+            >
+              {activeTab === 'dashboard' && (
+                <Dashboard
+                  stats={dashboardStats}
+                  onQuickAction={handleQuickAction}
+                  loading={loadingStats}
+                  authToken={authToken}
+                  onSyncComplete={fetchStats}
+                  showToast={showToast}
+                />
+              )}
+
+              {activeTab === 'map' && (
+                <ClinicMap
+                  authToken={authToken}
+                  showToast={showToast}
+                  initialNavigateContact={mapNavigateContact}
+                  onClearInitialNavigateContact={() => setMapNavigateContact(null)}
+                  lastSyncTime={lastSyncTime}
+                />
+              )}
+
+              {activeTab === 'directory' && (
+                <div className="space-y-6">
+                  {/* Single Contact Registration / Edit Slide Drawer Form */}
+                  {isFormOpen && (
+                    <ContactForm
+                      editTarget={editTarget}
+                      onSave={handleSaveContact}
+                      onCancel={() => {
+                        setIsFormOpen(false);
+                        setEditTarget(null);
+                      }}
+                      showToast={showToast}
+                    />
+                  )}
+
+                  {/* Main Database Grid View */}
+                  <ContactTable
+                    authToken={authToken}
+                    lastSyncTime={lastSyncTime}
+                    onEdit={handleEditTrigger}
+                    onDeleted={fetchStats}
+                    showToast={showToast}
+                    siteSettings={siteSettings}
+                    currentUser={adminUser}
+                    onNavigateToMap={(contact) => {
+                      setMapNavigateContact(contact);
+                      setActiveTab('map');
+                    }}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'accounts' && (
+                <AccountManagement
+                  authToken={authToken}
+                  currentUsername={adminUser.username}
+                  showToast={showToast}
+                />
+              )}
+
+              {activeTab === 'bulk' && (
+                <BulkImport
+                  authToken={authToken}
+                  onImportComplete={fetchStats}
+                  onCancel={() => setActiveTab('dashboard')}
+                  showToast={showToast}
+                />
+              )}
+
+              {activeTab === 'print' && (
+                <PrintPreview
+                  authToken={authToken}
+                  adminUser={adminUser.username}
+                  onClose={() => setActiveTab('dashboard')}
+                  showToast={showToast}
+                  siteSettings={siteSettings}
+                />
+              )}
+
+              {activeTab === 'settings' && (
+                <SettingsPage
+                  authToken={authToken}
+                  sheetsStatus={dashboardStats?.sheetsStatus}
+                  loadingSheets={loadingStats}
+                  onSyncComplete={fetchStats}
+                  showToast={showToast}
+                  siteSettings={siteSettings}
+                  onSettingsSaved={(updated) => {
+                    setSiteSettings(updated);
+                    if (updated.title) {
+                      document.title = updated.title;
+                    }
+                    let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+                    if (!link) {
+                      link = document.createElement('link');
+                      link.rel = 'icon';
+                      document.getElementsByTagName('head')[0].appendChild(link);
+                    }
+                    if (updated.faviconDataUrl) {
+                      link.href = updated.faviconDataUrl;
+                    } else {
+                      link.href = '/favicon.ico';
+                    }
+                  }}
+                  adminUser={adminUser}
+                  onAdminUserUpdated={(user, newToken) => {
+                    setAdminUser(user);
+                    localStorage.setItem('dir_admin_user', JSON.stringify(user));
+                    if (newToken) {
+                      setAuthToken(newToken);
+                      localStorage.setItem('dir_auth_token', newToken);
+                    }
+                  }}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </main>
+    </div>
+  );
+}

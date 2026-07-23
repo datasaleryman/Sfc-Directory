@@ -1,0 +1,980 @@
+import React, { useState, useEffect } from 'react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation } from 'lucide-react';
+import { Contact } from '../types.js';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { motion, AnimatePresence } from 'motion/react';
+
+export interface BarangayFolderInfo {
+  barangay: string;
+  count: number;
+  purokCount: number;
+  geotaggedCount: number;
+}
+
+interface ContactTableProps {
+  authToken: string;
+  onEdit: (contact: Contact) => void;
+  onDeleted: () => void;
+  showToast: (message: string, type: 'success' | 'warning' | 'error') => void;
+  siteSettings?: {
+    title: string;
+    faviconTitle: string;
+    logoDataUrl: string;
+    faviconDataUrl: string;
+  };
+  onNavigateToMap?: (contact: Contact) => void;
+  lastSyncTime?: string | null;
+  currentUser?: {
+    username: string;
+    role: string;
+    barangay?: string;
+  } | null;
+}
+
+export const ContactTable: React.FC<ContactTableProps> = ({
+  authToken,
+  onEdit,
+  onDeleted,
+  showToast,
+  siteSettings,
+  onNavigateToMap,
+  lastSyncTime,
+  currentUser
+}) => {
+  // Role permissions check for LEADER and CO-LEADER
+  const userRoleNormalized = (currentUser?.role || '').toUpperCase();
+  const isLeaderOrCoLeader = userRoleNormalized === 'LEADER' || userRoleNormalized === 'CO-LEADER' || userRoleNormalized.includes('LEADER');
+  const userBarangay = currentUser?.barangay || '';
+
+  // Folder View state vs Table View
+  const [activeFolder, setActiveFolder] = useState<string | null>(null); // null = Folder Overview, string = specific Barangay folder
+  const [folderSearch, setFolderSearch] = useState('');
+
+  // Query Filter States
+  const [search, setSearch] = useState('');
+  const [addressFilter, setAddressFilter] = useState('All Barangays');
+  const [purokFilter, setPurokFilter] = useState('All Puroks');
+  const [sortBy, setSortBy] = useState<'name' | 'address' | 'date'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+
+  // Loaded DB data
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [allAddresses, setAllAddresses] = useState<string[]>([]);
+  const [allPuroks, setAllPuroks] = useState<string[]>([]);
+  const [barangayFolders, setBarangayFolders] = useState<BarangayFolderInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Export state
+  const [exporting, setExporting] = useState<string | null>(null);
+
+  // Active Modals state
+  const [viewContact, setViewContact] = useState<Contact | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Syncing Base44 state
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncBase44 = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/contacts/sync-base44', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to sync with Base44 Database.');
+      }
+      showToast(data.message || 'Successfully synchronized with Base44 Database!', 'success');
+      fetchContacts();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Fetch paginated database contacts list
+  const fetchContacts = async () => {
+    setLoading(true);
+    try {
+      let currentBarangay = activeFolder ? activeFolder : (addressFilter === 'All Barangays' ? 'All Addresses' : addressFilter);
+      if (isLeaderOrCoLeader && userBarangay) {
+        currentBarangay = userBarangay;
+      }
+
+      const queryParams = new URLSearchParams({
+        search,
+        address: currentBarangay,
+        purok: purokFilter === 'All Puroks' ? 'All Puroks' : purokFilter,
+        sortBy,
+        sortOrder,
+        page: page.toString(),
+        limit: limit.toString()
+      });
+
+      const res = await fetch(`/api/contacts?${queryParams}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch contacts list.');
+      }
+
+      setContacts(data.contacts || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 1);
+      setAllPuroks(data.allPuroks || []);
+
+      if (isLeaderOrCoLeader && userBarangay) {
+        setAllAddresses([userBarangay]);
+        if (Array.isArray(data.barangayFolders)) {
+          const filtered = data.barangayFolders.filter(
+            (f: BarangayFolderInfo) => f.barangay.trim().toLowerCase() === userBarangay.trim().toLowerCase()
+          );
+          setBarangayFolders(filtered);
+        }
+      } else {
+        setAllAddresses(data.allAddresses || []);
+        if (Array.isArray(data.barangayFolders)) {
+          setBarangayFolders(data.barangayFolders);
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Trigger loading on filter changes
+  useEffect(() => {
+    fetchContacts();
+  }, [search, addressFilter, purokFilter, sortBy, sortOrder, page, activeFolder, lastSyncTime]);
+
+  // Reset page index on filter updates
+  useEffect(() => {
+    setPage(1);
+  }, [search, addressFilter, purokFilter, activeFolder]);
+
+  // Sync on initial mount
+  useEffect(() => {
+    if (authToken) {
+      handleSyncBase44();
+    }
+  }, [authToken]);
+
+  const handleSort = (field: 'name' | 'address' | 'date') => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+    setPage(1);
+  };
+
+  const formatDate = (isoString: string) => {
+    try {
+      return new Date(isoString).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return isoString;
+    }
+  };
+
+  // Perform soft delete operations
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    try {
+      const res = await fetch(`/api/contacts/${deleteTarget.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete record.');
+      }
+
+      showToast(`Contact "${deleteTarget.full_name}" has been soft-deleted successfully.`, 'success');
+      setDeleteTarget(null);
+      onDeleted();
+      fetchContacts();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Get full list of filtered records for export
+  const fetchAllMatchingForExport = async (overrideBarangay?: string): Promise<Contact[]> => {
+    const targetBarangay = overrideBarangay || (activeFolder ? activeFolder : (addressFilter === 'All Barangays' ? 'All Addresses' : addressFilter));
+
+    const queryParams = new URLSearchParams({
+      search,
+      address: targetBarangay,
+      purok: purokFilter === 'All Puroks' ? 'All Puroks' : purokFilter,
+      sortBy,
+      sortOrder
+    });
+
+    const res = await fetch(`/api/contacts/export?${queryParams}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to fetch items for export.');
+    }
+
+    return await res.json();
+  };
+
+  // XLSX Export Handler
+  const handleExportExcel = async (overrideBarangay?: string) => {
+    const folderName = overrideBarangay || activeFolder || 'All_Barangays';
+    setExporting(`Excel-${folderName}`);
+    try {
+      const data = await fetchAllMatchingForExport(overrideBarangay);
+      if (data.length === 0) {
+        showToast('No directory records match current criteria to export.', 'warning');
+        return;
+      }
+
+      const formattedData = data.map((item, index) => ({
+        '#': index + 1,
+        'Full Name': item.full_name,
+        'Barangay': item.barangay || '',
+        'Purok': item.purok || '',
+        'Contact Number': item.contact_number,
+        'Geotagged': item.geotagged ? 'Yes' : 'No',
+        'Date Recorded': formatDate(item.created_at)
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(formattedData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Household Directory');
+
+      const fileName = `Saint_Francis_Directory_${folderName.replace(/\s+/g, '_')}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      showToast(`Excel spreadsheet generated with ${data.length} records!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // PDF Export Handler
+  const handleExportPDF = async (overrideBarangay?: string) => {
+    const folderName = overrideBarangay || activeFolder || 'All_Barangays';
+    setExporting(`PDF-${folderName}`);
+    try {
+      const data = await fetchAllMatchingForExport(overrideBarangay);
+      if (data.length === 0) {
+        showToast('No directory records match current criteria to export.', 'warning');
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+      doc.setFillColor(16, 185, 129); // Emerald header banner
+      doc.rect(0, 0, 297, 24, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text(siteSettings?.faviconTitle || 'Saint Francis Clinic Directory', 14, 12);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Official Household Directory - Folder: ${folderName}`, 14, 18);
+
+      const tableData = data.map((item, index) => [
+        (index + 1).toString(),
+        item.full_name,
+        item.barangay || '',
+        item.purok || '',
+        item.contact_number,
+        item.geotagged ? 'Geotagged' : 'Standard',
+        formatDate(item.created_at)
+      ]);
+
+      autoTable(doc, {
+        startY: 30,
+        head: [['#', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Location Status', 'Date Added']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [15, 23, 42],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8.5
+        },
+        bodyStyles: {
+          fontSize: 8,
+          textColor: [51, 65, 85]
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252]
+        },
+        margin: { top: 30, left: 14, right: 14, bottom: 20 }
+      });
+
+      doc.save(`Saint_Francis_Directory_${folderName.replace(/\s+/g, '_')}.pdf`);
+      showToast(`PDF report generated successfully for ${folderName}!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Open a Barangay Folder
+  const openFolder = (barangayName: string) => {
+    if (isLeaderOrCoLeader && userBarangay && barangayName.trim().toLowerCase() !== userBarangay.trim().toLowerCase()) {
+      showToast(`Access restricted: Your account is assigned to Barangay ${userBarangay}`, 'warning');
+      return;
+    }
+    setActiveFolder(barangayName);
+    setAddressFilter(barangayName);
+    setSearch('');
+    setPurokFilter('All Puroks');
+    setPage(1);
+  };
+
+  // Filter Barangay Folders grid
+  const rawFiltered = barangayFolders.filter(f => {
+    if (isLeaderOrCoLeader && userBarangay) {
+      if (f.barangay.trim().toLowerCase() !== userBarangay.trim().toLowerCase()) {
+        return false;
+      }
+    }
+    return f.barangay.toLowerCase().includes(folderSearch.toLowerCase().trim());
+  });
+
+  const filteredFolders = (isLeaderOrCoLeader && userBarangay && rawFiltered.length === 0)
+    ? [{ barangay: userBarangay, count: total, purokCount: allPuroks.length, geotaggedCount: contacts.filter(c => c.geotagged).length }]
+    : rawFiltered;
+
+  return (
+    <div className="space-y-6">
+      {/* View Switcher Breadcrumb Header */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {activeFolder ? (
+            <button
+              onClick={() => {
+                setActiveFolder(null);
+                setAddressFilter(isLeaderOrCoLeader && userBarangay ? userBarangay : 'All Barangays');
+              }}
+              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to Barangay Folders
+            </button>
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+              <Folder className="w-5 h-5 text-emerald-700" />
+            </div>
+          )}
+
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-800 font-display flex items-center gap-2">
+              {activeFolder ? (
+                <>
+                  <FolderOpen className="w-5 h-5 text-emerald-600" />
+                  {activeFolder} Folder
+                </>
+              ) : (
+                'Saint Francis Clinic Directory Folders'
+              )}
+            </h2>
+            <p className="text-xs text-slate-400 font-medium">
+              {activeFolder
+                ? `Showing household records stored inside ${activeFolder}`
+                : isLeaderOrCoLeader && userBarangay
+                  ? `Assigned Barangay Folder for ${currentUser?.role || 'Leader'}: ${userBarangay}`
+                  : `Organized into ${barangayFolders.length} Barangay Folders from Base44 Database`}
+            </p>
+          </div>
+        </div>
+
+        {/* Global Auto Sync Badge & Controls */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <button
+            onClick={handleSyncBase44}
+            disabled={syncing || loading}
+            className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
+            title="Force synchronization with Base44 Database"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+            </span>
+            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5 text-emerald-300" />}
+            {syncing ? 'Syncing...' : 'Base44 Auto-Synced ✓'}
+          </button>
+        </div>
+      </div>
+
+      {/* VIEW MODE 1: BARANGAY FOLDERS OVERVIEW GRID */}
+      {!activeFolder && (
+        <div className="space-y-6">
+          {/* Folders Search & Toolbar */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
+            <div className="relative w-full sm:max-w-md">
+              <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
+              <input
+                type="text"
+                value={folderSearch}
+                onChange={(e) => setFolderSearch(e.target.value)}
+                placeholder="Search Barangay Folder name..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
+              />
+            </div>
+
+            <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-emerald-600" />
+              <span>{filteredFolders.length} Folders Available</span>
+            </div>
+          </div>
+
+          {/* Barangay Folders Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredFolders.map((folder) => (
+              <motion.div
+                key={folder.barangay}
+                whileHover={{ y: -3, transition: { duration: 0.15 } }}
+                className="bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-300 transition-all overflow-hidden flex flex-col justify-between group"
+              >
+                {/* Folder Top Tab Design */}
+                <div className="p-6 pb-4">
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200/70 border border-amber-300/60 text-amber-800 flex items-center justify-center shadow-xs group-hover:from-emerald-100 group-hover:to-emerald-200 group-hover:border-emerald-300 group-hover:text-emerald-800 transition-colors">
+                      <Folder className="w-6 h-6 fill-amber-300/50 group-hover:fill-emerald-300/50 transition-colors" />
+                    </div>
+
+                    <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-extrabold text-xs">
+                      {folder.count} Households
+                    </span>
+                  </div>
+
+                  <h3 className="text-lg font-extrabold text-slate-800 font-display group-hover:text-emerald-700 transition-colors">
+                    {folder.barangay}
+                  </h3>
+                  <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                    Official Barangay Records Folder
+                  </p>
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                    <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{folder.purokCount} Puroks</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
+                      <Navigation className="w-3.5 h-3.5 text-teal-600" />
+                      <span>{folder.geotaggedCount} Geotagged</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Folder Bottom Action Bar */}
+                <div className="p-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleExportExcel(folder.barangay);
+                      }}
+                      className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
+                      title={`Export ${folder.barangay} to Excel`}
+                    >
+                      <ArrowDownToLine className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleExportPDF(folder.barangay);
+                      }}
+                      className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
+                      title={`Export ${folder.barangay} to PDF`}
+                    >
+                      <FileText className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => openFolder(folder.barangay)}
+                    className="px-4 py-2 bg-slate-900 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    Open Folder <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW MODE 2: INDIVIDUAL BARANGAY FOLDER HOUSEHOLD RECORDS TABLE */}
+      {activeFolder && (
+        <div className="space-y-6">
+          {/* Search & Purok Filters Bar */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between">
+            {/* Search Input */}
+            <div className="relative w-full md:max-w-md">
+              <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-800 text-sm font-medium outline-none placeholder:text-slate-400"
+                placeholder={`Search inside ${activeFolder}...`}
+              />
+            </div>
+
+            {/* Filter Dropdown + Export buttons */}
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              {/* Purok Dropdown */}
+              <div className="relative w-full sm:w-auto min-w-[150px]">
+                <select
+                  value={purokFilter}
+                  onChange={(e) => setPurokFilter(e.target.value)}
+                  className="w-full appearance-none pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-sm outline-none cursor-pointer"
+                >
+                  <option value="All Puroks">All Puroks</option>
+                  {(allPuroks || []).map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-500">
+                  <ChevronDown className="w-4 h-4" />
+                </div>
+              </div>
+
+              {/* Export Controls for this specific folder */}
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => handleExportExcel(activeFolder)}
+                  disabled={exporting !== null || loading}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
+                  title="Export this folder to Excel"
+                >
+                  <ArrowDownToLine className="w-3.5 h-3.5 text-emerald-600" /> Excel
+                </button>
+                <button
+                  onClick={() => handleExportPDF(activeFolder)}
+                  disabled={exporting !== null || loading}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                  title="Export formatted report to PDF document"
+                >
+                  {exporting?.startsWith('PDF') ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                  Export PDF
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Directory Table Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs relative">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 select-none">
+                  <tr>
+                    <th className="py-4 px-5 w-14 text-center">#</th>
+                    
+                    <th
+                      onClick={() => handleSort('name')}
+                      className="py-4 px-5 cursor-pointer hover:bg-slate-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Full Name
+                        {sortBy === 'name' ? (
+                          sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-600" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-300 opacity-60" />
+                        )}
+                      </div>
+                    </th>
+
+                    <th className="py-4 px-5">Barangay Folder</th>
+                    <th className="py-4 px-5">Purok</th>
+                    <th className="py-4 px-5">Contact Number</th>
+                    <th className="py-4 px-5">Location Status</th>
+
+                    <th
+                      onClick={() => handleSort('date')}
+                      className="py-4 px-5 cursor-pointer hover:bg-slate-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Date Added
+                        {sortBy === 'date' ? (
+                          sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-600" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-300 opacity-60" />
+                        )}
+                      </div>
+                    </th>
+
+                    <th className="py-4 px-5 text-center w-36">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm relative">
+                  {loading && contacts.length === 0 ? (
+                    [1, 2, 3, 4].map((i) => (
+                      <tr key={i} className="animate-pulse">
+                        <td className="py-4 px-5 text-center"><div className="h-4 bg-slate-100 rounded w-6 mx-auto" /></td>
+                        <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-44" /></td>
+                        <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-32" /></td>
+                        <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-28" /></td>
+                        <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-36" /></td>
+                        <td className="py-4 px-5"><div className="h-6 bg-slate-100 rounded-lg w-24" /></td>
+                        <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-28" /></td>
+                        <td className="py-4 px-5"><div className="h-8 bg-slate-100 rounded-lg w-28 mx-auto" /></td>
+                      </tr>
+                    ))
+                  ) : contacts.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 px-5 text-center text-slate-400">
+                        <Folder className="w-10 h-10 mb-3 mx-auto text-slate-300" />
+                        <p className="font-semibold text-slate-600">No household records stored in this Barangay folder.</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Try clearing search filters or add a new record.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    contacts.map((contact, index) => {
+                      const itemIndex = (page - 1) * limit + index + 1;
+                      return (
+                        <tr key={contact.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3.5 px-5 text-center text-xs font-bold text-slate-400">
+                            {itemIndex}
+                          </td>
+                          <td className="py-3.5 px-5 font-bold text-slate-800">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0">
+                                {contact.full_name.charAt(0).toUpperCase()}
+                              </div>
+                              <span>{contact.full_name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-5 font-semibold text-slate-700">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200/60 text-amber-900 text-xs font-bold">
+                              <Folder className="w-3 h-3 text-amber-600 fill-amber-300" />
+                              {contact.barangay || 'Unassigned'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5 text-slate-600 font-medium">
+                            {contact.purok || '-'}
+                          </td>
+                          <td className="py-3.5 px-5 font-mono text-xs text-slate-600">
+                            <div className="flex items-center gap-1.5">
+                              <Phone className="w-3 h-3 text-slate-400" />
+                              {contact.contact_number}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-5">
+                            {contact.geotagged ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-xs font-extrabold">
+                                <MapPin className="w-3 h-3 text-teal-600" /> Geotagged
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
+                                Standard
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-5 text-xs text-slate-400 font-medium">
+                            {formatDate(contact.created_at)}
+                          </td>
+                          <td className="py-3.5 px-5 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => setViewContact(contact)}
+                                className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                                title="View details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => onEdit(contact)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                title="Edit contact"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              {onNavigateToMap && (
+                                <button
+                                  onClick={() => onNavigateToMap(contact)}
+                                  className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Locate on Map"
+                                >
+                                  <MapPin className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setDeleteTarget(contact)}
+                                className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete record"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card List View for Mobile Responsiveness */}
+            <div className="block md:hidden divide-y divide-slate-100">
+              {loading && contacts.length === 0 ? (
+                [1, 2, 3].map((i) => (
+                  <div key={i} className="p-4 space-y-3 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-slate-100" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-slate-100 rounded w-1/2" />
+                        <div className="h-3 bg-slate-100 rounded w-1/3" />
+                      </div>
+                    </div>
+                    <div className="h-3 bg-slate-100 rounded w-1/4" />
+                  </div>
+                ))
+              ) : contacts.length === 0 ? (
+                <div className="py-10 px-4 text-center text-slate-400">
+                  <Folder className="w-10 h-10 mb-3 mx-auto text-slate-300" />
+                  <p className="font-semibold text-slate-600 text-sm">No household records found.</p>
+                </div>
+              ) : (
+                contacts.map((contact, index) => {
+                  const itemIndex = (page - 1) * limit + index + 1;
+                  return (
+                    <div key={contact.id} className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0">
+                            {contact.full_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-800 text-sm block truncate">{contact.full_name}</span>
+                            <span className="text-[11px] text-slate-400 font-semibold block">{formatDate(contact.created_at)}</span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
+                          #{itemIndex}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200/40 text-amber-900 font-bold">
+                          <Folder className="w-3 h-3 text-amber-600 fill-amber-300" />
+                          {contact.barangay || 'Unassigned'}
+                        </span>
+                        {contact.purok && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-600 font-semibold">
+                            Purok {contact.purok}
+                          </span>
+                        )}
+                        {contact.geotagged ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 font-bold">
+                            <MapPin className="w-3 h-3 text-teal-600" /> Geotagged
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-500 font-medium">
+                            Standard
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
+                        <span className="font-mono text-xs text-slate-500 flex items-center gap-1.5">
+                          <Phone className="w-3 h-3 text-slate-400" />
+                          {contact.contact_number || 'N/A'}
+                        </span>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setViewContact(contact)}
+                            className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                            title="View details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onEdit(contact)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit contact"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          {onNavigateToMap && (
+                            <button
+                              onClick={() => onNavigateToMap(contact)}
+                              className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
+                              title="Locate on Map"
+                            >
+                              <MapPin className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setDeleteTarget(contact)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Delete record"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
+                <span className="text-xs font-semibold text-slate-500">
+                  Showing Page <strong className="text-slate-800">{page}</strong> of <strong className="text-slate-800">{totalPages}</strong> ({total} total records)
+                </span>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="p-2 border border-slate-200 rounded-xl disabled:opacity-40 hover:bg-white text-slate-700 transition-all cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="p-2 border border-slate-200 rounded-xl disabled:opacity-40 hover:bg-white text-slate-700 transition-all cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: View Contact Details */}
+      <AnimatePresence>
+        {viewContact && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-lg">
+                  {viewContact.full_name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 font-display">{viewContact.full_name}</h3>
+                  <p className="text-xs text-slate-400">Directory Household Record Details</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase">Barangay Folder</span>
+                  <span className="font-bold text-slate-800">{viewContact.barangay}</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase">Purok</span>
+                  <span className="font-bold text-slate-800">{viewContact.purok || 'Not specified'}</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase">Contact Number</span>
+                  <span className="font-mono font-bold text-slate-800">{viewContact.contact_number}</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase">Geotagged</span>
+                  <span className="font-bold text-emerald-600">{viewContact.geotagged ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+
+              <div className="pt-6">
+                <button
+                  onClick={() => setViewContact(null)}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Delete Confirmation */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border border-slate-100"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-6 h-6" />
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-800 font-display">Delete Household Record?</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Are you sure you want to soft-delete <strong className="text-slate-700">{deleteTarget.full_name}</strong> from directory?
+              </p>
+
+              <div className="pt-6 flex gap-3">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Record'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
