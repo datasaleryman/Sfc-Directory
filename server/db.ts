@@ -310,7 +310,7 @@ export async function initDb() {
       } catch (e) {
         contactsCache = [];
       }
-      // Migrate legacy cache entries from address -> barangay & purok
+      // Migrate legacy cache entries from address -> barangay & purok, and normalize barangay name casing
       let migrated = false;
       contactsCache = contactsCache.map(c => {
         let updated = false;
@@ -323,6 +323,20 @@ export async function initDb() {
         if (anyC.purok === undefined) {
           anyC.purok = '';
           updated = true;
+        }
+        if (anyC.barangay) {
+          const normBarangay = normalizeBarangayName(anyC.barangay);
+          if (anyC.barangay !== normBarangay) {
+            anyC.barangay = normBarangay;
+            updated = true;
+          }
+        }
+        if (anyC.purok) {
+          const normPurok = capitalizeWords(anyC.purok);
+          if (anyC.purok !== normPurok) {
+            anyC.purok = normPurok;
+            updated = true;
+          }
         }
         if (updated) migrated = true;
         return anyC as Contact;
@@ -452,16 +466,35 @@ export async function initDb() {
 
     // Run background sheets sync if enabled
     if (sheetsConfig.syncEnabled) {
-      setTimeout(() => {
-        syncWithGoogleSheets('System Background Sync').catch(err => {
+      setTimeout(async () => {
+        try {
+          // 1. Try to pull site settings first from Google Sheets
+          const settingsPulled = await pullSiteSettingsFromGoogleSheets();
+          if (!settingsPulled) {
+            // No settings in sheet yet, so push current local settings
+            await syncSiteSettingsToGoogleSheets();
+          }
+        } catch (err: any) {
+          console.error('Failed to pull/sync site settings on startup:', err.message);
+        }
+
+        try {
+          // 2. Try to pull administrators first from Google Sheets
+          const adminsPulled = await pullAdminsFromGoogleSheets();
+          if (!adminsPulled) {
+            // No admins in sheet yet, so push current local admins
+            await syncAdminsToGoogleSheets();
+          }
+        } catch (err: any) {
+          console.error('Failed to pull/sync administrators on startup:', err.message);
+        }
+
+        try {
+          // 3. Run background contacts sync
+          await syncWithGoogleSheets('System Background Sync');
+        } catch (err: any) {
           console.error('Background Google Sheets Sync failed on startup:', err.message);
-        });
-        syncAdminsToGoogleSheets().catch(err => {
-          console.error('Background Administrators Sync failed on startup:', err.message);
-        });
-        syncSiteSettingsToGoogleSheets().catch(err => {
-          console.error('Background Site Settings Sync failed on startup:', err.message);
-        });
+        }
       }, 1000);
     }
   } catch (err) {
@@ -507,28 +540,28 @@ function getExactBarangay(sub: any): string {
 }
 
 function normalizeBarangayName(bName: string): string {
-  if (!bName) return 'BARANGAY CENTRAL';
+  if (!bName) return 'Barangay Central';
   const bUpper = bName.toUpperCase().trim();
-  if (bUpper.includes('KWT') || bUpper.includes('KAWIT')) return 'KAWIT';
-  if (bUpper.includes('BLNGSN') || bUpper.includes('BALANGASAN')) return 'BALANGASAN';
-  if (bUpper.includes('NPLN') || bUpper.includes('NAPOLAN')) return 'NAPOLAN';
-  if (bUpper.includes('BNL') || bUpper.includes('BANALE')) return 'BANALE';
-  if (bUpper.includes('SFC') || bUpper.includes('SAN FRANCISCO')) return 'SAN FRANCISCO';
-  if (bUpper.includes('POB') || bUpper.includes('POBLACION')) return 'POBLACION';
-  if (bUpper.includes('CENTRAL')) return 'BARANGAY CENTRAL';
-  if (bUpper.includes('LUMBIA')) return 'LUMBIA';
-  if (bUpper.includes('SAN JOSE')) return 'SAN JOSE';
-  if (bUpper.includes('STA. LUCIA') || bUpper.includes('STA LUCIA')) return 'STA. LUCIA';
-  if (bUpper.includes('SAN PEDRO')) return 'SAN PEDRO';
-  if (bUpper.includes('MURICAY')) return 'MURICAY';
-  if (bUpper.includes('SANTO NIÑO') || bUpper.includes('SANTO NINO')) return 'SANTO NIÑO';
+  if (bUpper.includes('KWT') || bUpper.includes('KAWIT')) return 'Kawit';
+  if (bUpper.includes('BLNGSN') || bUpper.includes('BALANGASAN')) return 'Balangasan';
+  if (bUpper.includes('NPLN') || bUpper.includes('NAPOLAN')) return 'Napolan';
+  if (bUpper.includes('BNL') || bUpper.includes('BANALE')) return 'Banale';
+  if (bUpper.includes('SFC') || bUpper.includes('SAN FRANCISCO')) return 'San Francisco';
+  if (bUpper.includes('POB') || bUpper.includes('POBLACION')) return 'Poblacion';
+  if (bUpper.includes('CENTRAL')) return 'Barangay Central';
+  if (bUpper.includes('LUMBIA')) return 'Lumbia';
+  if (bUpper.includes('SAN JOSE')) return 'San Jose';
+  if (bUpper.includes('STA. LUCIA') || bUpper.includes('STA LUCIA')) return 'Sta. Lucia';
+  if (bUpper.includes('SAN PEDRO')) return 'San Pedro';
+  if (bUpper.includes('MURICAY')) return 'Muricay';
+  if (bUpper.includes('SANTO NIÑO') || bUpper.includes('SANTO NINO')) return 'Santo Niño';
 
   // Clean up "TEAM X" strings
   const cleaned = bUpper.replace(/\bTEAM\s+[A-Z0-9]+\b/gi, '').trim();
   if (cleaned && cleaned !== 'UNKNOWN' && cleaned !== 'N/A' && cleaned !== 'NONE') {
-    return cleaned;
+    return capitalizeWords(cleaned);
   }
-  return 'BARANGAY CENTRAL';
+  return 'Barangay Central';
 }
 
 // Sync from Base44 HouseholdSubmission entity
@@ -628,18 +661,18 @@ export async function addHouseholdToDirectory(household: {
   longitude?: number;
   geotagged?: boolean;
 }, actorUsername: string) {
-  const trimmedName = household.full_name ? household.full_name.trim() : '';
-  const trimmedBarangay = household.barangay ? household.barangay.trim().toUpperCase() : 'BARANGAY CENTRAL';
-  const trimmedPurok = household.purok ? household.purok.trim() : '';
+  const formattedName = household.full_name ? capitalizeWords(household.full_name) : '';
+  const trimmedBarangay = household.barangay ? normalizeBarangayName(household.barangay) : 'Barangay Central';
+  const trimmedPurok = household.purok ? capitalizeWords(household.purok) : '';
   const trimmedContact = household.contact_number ? household.contact_number.trim() : '';
 
-  if (!trimmedName) {
+  if (!formattedName) {
     throw new Error('Household full name is required.');
   }
 
   // Check if contact already exists in directory
   const existing = contactsCache.find(
-    c => !c.deleted_at && c.full_name.toLowerCase() === trimmedName.toLowerCase() && c.barangay.toLowerCase() === trimmedBarangay.toLowerCase()
+    c => !c.deleted_at && c.full_name.toLowerCase() === formattedName.toLowerCase() && c.barangay.toLowerCase() === trimmedBarangay.toLowerCase()
   );
 
   if (existing) {
@@ -649,7 +682,7 @@ export async function addHouseholdToDirectory(household: {
   const newId = Date.now() + Math.floor(Math.random() * 1000);
   const newContact: Contact = {
     id: newId,
-    full_name: trimmedName,
+    full_name: formattedName,
     barangay: trimmedBarangay,
     purok: trimmedPurok,
     contact_number: trimmedContact,
@@ -664,7 +697,7 @@ export async function addHouseholdToDirectory(household: {
 
   contactsCache.unshift(newContact);
   await saveContacts();
-  await addActivity(actorUsername, `Added household "${trimmedName}" to Clinic Directory under Barangay ${trimmedBarangay}`);
+  await addActivity(actorUsername, `Added household "${formattedName}" to Clinic Directory under Barangay ${trimmedBarangay}`);
 
   // Async sync to Google Sheets if configured
   forwardToWebApp('add', newContact).catch(err => console.error('Failed to sync contact to Sheets:', err));
@@ -1264,7 +1297,7 @@ export async function addContact(
   }
 
   const formattedName = capitalizeWords(rawName);
-  const formattedBarangay = capitalizeWords(rawBarangay);
+  const formattedBarangay = normalizeBarangayName(rawBarangay);
   const formattedPurok = rawPurok ? capitalizeWords(rawPurok) : '';
 
   // Check for duplicate among active records
@@ -1323,7 +1356,7 @@ export async function editContact(
   }
 
   const formattedName = capitalizeWords(rawName);
-  const formattedBarangay = capitalizeWords(rawBarangay);
+  const formattedBarangay = normalizeBarangayName(rawBarangay);
   const formattedPurok = rawPurok ? capitalizeWords(rawPurok) : '';
 
   // Check for duplicate in other active records
@@ -1437,29 +1470,52 @@ export function previewBulkImport(text: string): {
 
     if (parts.length >= 4) {
       name = capitalizeWords(parts[0]);
-      barangay = capitalizeWords(parts[1]);
+      barangay = parts[1] ? normalizeBarangayName(parts[1]) : 'Barangay Central';
       purok = capitalizeWords(parts[2]);
       number = parts[3];
     } else if (parts.length === 3) {
       name = capitalizeWords(parts[0]);
-      barangay = capitalizeWords(parts[1]);
+      barangay = parts[1] ? normalizeBarangayName(parts[1]) : 'Barangay Central';
+      // Detect if the third part looks like a phone/contact number or a Purok.
+      const lastPart = parts[2];
+      const digitCount = (lastPart.match(/\d/g) || []).length;
+      const isProbablyPhoneNumber = digitCount >= 5 || /^[0\+]\d+/.test(lastPart);
+      if (isProbablyPhoneNumber) {
+        purok = '';
+        number = lastPart;
+      } else {
+        purok = capitalizeWords(lastPart);
+        number = '';
+      }
+    } else if (parts.length === 2) {
+      name = capitalizeWords(parts[0]);
+      barangay = parts[1] ? normalizeBarangayName(parts[1]) : 'Barangay Central';
       purok = '';
-      number = parts[2];
+      number = '';
+    } else if (parts.length === 1 && parts[0]) {
+      name = capitalizeWords(parts[0]);
+      barangay = 'Barangay Central';
+      purok = '';
+      number = '';
     } else {
       results.push({
         raw: line,
         full_name: parts[0] || '',
-        barangay: parts[1] || '',
+        barangay: 'Barangay Central',
         purok: '',
-        contact_number: parts[2] || '',
+        contact_number: '',
         status: 'invalid',
-        reason: 'Invalid format. Use format: Full Name | Barangay | Purok | Contact Number'
+        reason: 'Line is empty or invalid.'
       });
       invalidCount++;
       continue;
     }
 
-    if (!name || !barangay || !number) {
+    if (!barangay) {
+      barangay = 'Barangay Central';
+    }
+
+    if (!name) {
       results.push({
         raw: line,
         full_name: name,
@@ -1467,7 +1523,7 @@ export function previewBulkImport(text: string): {
         purok: purok,
         contact_number: number,
         status: 'invalid',
-        reason: 'Full Name, Barangay, and Contact Number are all required and cannot be blank.'
+        reason: 'Full Name is required and cannot be blank.'
       });
       invalidCount++;
       continue;
@@ -1478,10 +1534,12 @@ export function previewBulkImport(text: string): {
       c =>
         c.deleted_at === null &&
         c.full_name.toLowerCase() === name.toLowerCase() &&
-        c.contact_number === number
+        (number ? c.contact_number === number : (!c.contact_number && c.barangay === barangay))
     );
 
-    const batchKey = `${name.toLowerCase()}|||${number}`;
+    const batchKey = number 
+      ? `${name.toLowerCase()}|||num:${number}` 
+      : `${name.toLowerCase()}|||bg:${barangay.toLowerCase()}`;
     const batchDuplicate = batchSeen.has(batchKey);
 
     if (dbDuplicate || batchDuplicate) {
@@ -1537,11 +1595,11 @@ export async function saveBulkImport(
 
   for (const item of items) {
     const formattedName = capitalizeWords(item.full_name);
-    const formattedBarangay = capitalizeWords(item.barangay || item.address || '');
+    const formattedBarangay = normalizeBarangayName(item.barangay || item.address || '');
     const formattedPurok = item.purok ? capitalizeWords(item.purok) : '';
     const number = item.contact_number.trim();
 
-    if (!formattedName || !formattedBarangay || !number) {
+    if (!formattedName || !formattedBarangay) {
       skippedCount++;
       continue;
     }
@@ -1551,7 +1609,7 @@ export async function saveBulkImport(
       c =>
         c.deleted_at === null &&
         c.full_name.toLowerCase() === formattedName.toLowerCase() &&
-        c.contact_number === number
+        (number ? c.contact_number === number : (!c.contact_number && c.barangay === formattedBarangay))
     );
 
     if (duplicateIndex !== -1) {
@@ -2189,9 +2247,25 @@ export async function saveSheetsConfig(config: SheetsConfig, username: string) {
   await addActivity(username, `Updated Google Sheets Database settings (Auth: ${sheetsConfig.authType}, Sync: ${sheetsConfig.syncEnabled ? 'ENABLED' : 'DISABLED'})`);
 
   if (sheetsConfig.syncEnabled) {
+    try {
+      const settingsPulled = await pullSiteSettingsFromGoogleSheets();
+      if (!settingsPulled) {
+        await syncSiteSettingsToGoogleSheets();
+      }
+    } catch (err: any) {
+      console.error('Failed to pull/sync site settings on configuration save:', err.message);
+    }
+
+    try {
+      const adminsPulled = await pullAdminsFromGoogleSheets();
+      if (!adminsPulled) {
+        await syncAdminsToGoogleSheets();
+      }
+    } catch (err: any) {
+      console.error('Failed to pull/sync administrators on configuration save:', err.message);
+    }
+
     await syncWithGoogleSheets(username);
-    syncAdminsToGoogleSheets().catch(err => console.error('Error background syncing admins:', err));
-    syncSiteSettingsToGoogleSheets().catch(err => console.error('Error background syncing site settings:', err));
   }
 }
 
@@ -2369,7 +2443,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     newContacts.push({
       id,
       full_name: capitalizeWords(rawName),
-      barangay: capitalizeWords(rawBarangay),
+      barangay: normalizeBarangayName(rawBarangay),
       purok: rawPurok ? capitalizeWords(rawPurok) : '',
       contact_number: rawNumber.trim(),
       created_at: createdAt,
@@ -2521,6 +2595,173 @@ export async function syncSiteSettingsToGoogleSheets() {
   } catch (err: any) {
     console.error('Failed to sync site settings to Google Sheets:', err.message || err);
   }
+}
+
+export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
+  const sheets = getSheetsClient();
+  if (!sheets) return false;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const settingsSheetName = 'SiteSettings';
+
+    // Verify sheet exists
+    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetsList = spreadsheetInfo.data.sheets || [];
+    const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${settingsSheetName}" not found. No remote settings to pull.`);
+      return false;
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${settingsSheetName}!A:B`
+    });
+
+    const rows = res.data.values || [];
+    if (rows.length <= 1) {
+      console.log('SiteSettings sheet is empty or only contains headers.');
+      return false;
+    }
+
+    const loadedSettings: Partial<SiteSettings> = {};
+    for (const row of rows.slice(1)) {
+      if (!row || row.length < 2) continue;
+      const key = row[0];
+      const val = row[1];
+      if (!key) continue;
+
+      switch (key) {
+        case 'Title':
+          loadedSettings.title = unescapeHtml(val);
+          break;
+        case 'Favicon Title':
+          loadedSettings.faviconTitle = unescapeHtml(val);
+          break;
+        case 'Logo Data URL':
+          loadedSettings.logoDataUrl = unescapeHtml(val);
+          break;
+        case 'Favicon Data URL':
+          loadedSettings.faviconDataUrl = unescapeHtml(val);
+          break;
+        case 'Nav Dashboard':
+          loadedSettings.navDashboard = unescapeHtml(val);
+          break;
+        case 'Nav Directory':
+          loadedSettings.navDirectory = unescapeHtml(val);
+          break;
+        case 'Nav Bulk':
+          loadedSettings.navBulk = unescapeHtml(val);
+          break;
+        case 'Nav Print':
+          loadedSettings.navPrint = unescapeHtml(val);
+          break;
+        case 'Nav Admins':
+          loadedSettings.navAdmins = unescapeHtml(val);
+          break;
+        case 'Nav Settings':
+          loadedSettings.navSettings = unescapeHtml(val);
+          break;
+      }
+    }
+
+    if (Object.keys(loadedSettings).length > 0) {
+      siteSettings = { ...siteSettings, ...loadedSettings };
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
+      console.log('[Google Sheets] Successfully pulled site settings from Google Sheets:', Object.keys(loadedSettings));
+      return true;
+    }
+  } catch (err: any) {
+    console.error('Failed to pull site settings from Google Sheets:', err.message || err);
+  }
+  return false;
+}
+
+export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
+  const sheets = getSheetsClient();
+  if (!sheets) return false;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const adminSheetName = 'Administrators';
+
+    // Verify sheet exists
+    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetsList = spreadsheetInfo.data.sheets || [];
+    const exists = sheetsList.some((s: any) => s.properties?.title === adminSheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${adminSheetName}" not found. No remote administrators to pull.`);
+      return false;
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${adminSheetName}!A:E`
+    });
+
+    const rows = res.data.values || [];
+    if (rows.length <= 1) {
+      console.log('Administrators sheet is empty or only contains headers.');
+      return false;
+    }
+
+    const remoteUsers: User[] = [];
+    for (const row of rows.slice(1)) {
+      if (!row || row.length < 3) continue;
+      const username = row[0]?.trim();
+      const passwordHash = row[1]?.trim();
+      const role = row[2]?.trim();
+      const displayName = row[3]?.trim() || '';
+      const avatarDataUrl = row[4]?.trim() || '';
+
+      if (!username || !passwordHash || !role) continue;
+
+      remoteUsers.push({
+        username,
+        passwordHash,
+        role,
+        displayName,
+        avatarDataUrl,
+        email: username.includes('@') ? username : '',
+        barangay: 'Central',
+        status: 'Active',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (remoteUsers.length > 0) {
+      const hasMasterAdmin = remoteUsers.some(u => u.username.toLowerCase() === 'admin');
+      if (!hasMasterAdmin) {
+        const localMaster = usersCache.find(u => u.username.toLowerCase() === 'admin');
+        if (localMaster) {
+          remoteUsers.unshift(localMaster);
+        }
+      }
+
+      usersCache = remoteUsers;
+      fs.writeFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+      console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total count:', remoteUsers.length);
+      return true;
+    }
+  } catch (err: any) {
+    console.error('Failed to pull administrators from Google Sheets:', err.message || err);
+  }
+  return false;
 }
 
 export async function appendActivityToGoogleSheets(activity: Activity) {

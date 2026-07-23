@@ -25,6 +25,8 @@ import {
   syncWithGoogleSheets,
   getSiteSettings,
   saveSiteSettings,
+  pullSiteSettingsFromGoogleSheets,
+  pullAdminsFromGoogleSheets,
   updateUserProfile,
   syncBase44Contacts,
   getBase44Roles,
@@ -509,6 +511,20 @@ export async function getApp() {
   app.post('/api/sheets/sync', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const username = req.user?.username || 'admin';
+      
+      // Pull latest site settings and administrators from Google Sheets if integration is connected
+      try {
+        await pullSiteSettingsFromGoogleSheets();
+      } catch (err: any) {
+        console.error('Failed to pull site settings on manual force sync:', err.message);
+      }
+
+      try {
+        await pullAdminsFromGoogleSheets();
+      } catch (err: any) {
+        console.error('Failed to pull administrators on manual force sync:', err.message);
+      }
+
       const result = await syncWithGoogleSheets(username);
       res.json(result);
     } catch (err: any) {

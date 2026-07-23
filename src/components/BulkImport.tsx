@@ -138,26 +138,27 @@ export const BulkImport: React.FC<BulkImportProps> = ({
           <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl space-y-2">
             <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <HelpCircle className="w-4 h-4 text-slate-400" />
-              Supported Text Formats
+              Supported Text Formats & Required Fields
             </h5>
             <p className="text-xs text-slate-500 leading-relaxed">
-              We automatically detect <strong>Pipe-separated</strong>, <strong>Comma-separated (CSV)</strong>, and <strong>Tab-separated (Excel copies)</strong> formats. One contact per line.
+              We automatically detect <strong>Pipe-separated</strong>, <strong>Comma-separated (CSV)</strong>, and <strong>Tab-separated (Excel copies)</strong> formats. One contact per line. 
+              Only the <strong>Full Name</strong> is required; Barangay, Purok, and Contact Number are fully optional. If Barangay is omitted, it defaults to <strong>Barangay Central</strong>.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-[11px] font-mono text-slate-600 bg-white p-3 rounded-lg border border-slate-150">
               <div>
                 <p className="font-semibold text-indigo-600 mb-0.5">Pipe-Separated:</p>
-                <code>Name | Barangay | Purok | Number</code>
-                <code className="block text-[10px] text-slate-400 mt-1">e.g. Juan Dela Cruz | Brgy 1 | Purok 4 | 0917123</code>
+                <code>Name | [Barangay] [| Purok] [| Number]</code>
+                <code className="block text-[10px] text-slate-400 mt-1">e.g. Juan Dela Cruz | Brgy 1 | |<br/>e.g. Clara Smith (Simple Name only)</code>
               </div>
               <div>
                 <p className="font-semibold text-emerald-600 mb-0.5">Comma-Separated (CSV):</p>
-                <code>Name,Barangay,Purok,Number</code>
-                <code className="block text-[10px] text-slate-400 mt-1">e.g. Maria Santos,Brgy 2,,0998123456</code>
+                <code>Name,[Barangay],[Purok],[Number]</code>
+                <code className="block text-[10px] text-slate-400 mt-1">e.g. Maria Santos,Brgy 2,,<br/>e.g. Johnny Doe (Single cell value)</code>
               </div>
               <div>
                 <p className="font-semibold text-amber-600 mb-0.5">Excel Tabs (Tabbed):</p>
-                <code>Name[Tab]Barangay[Tab]Purok[Tab]Number</code>
-                <code className="block text-[10px] text-slate-400 mt-1">e.g. Pedro Reyes[Tab]Brgy 3[Tab]Purok 1[Tab]091812</code>
+                <code>Name[Tab][Barangay][Tab][Purok][Tab][Number]</code>
+                <code className="block text-[10px] text-slate-400 mt-1">e.g. Pedro Reyes[Tab]Brgy 3[Tab][Tab]<br/>e.g. Copy-pasted Excel columns</code>
               </div>
             </div>
           </div>
@@ -171,7 +172,7 @@ export const BulkImport: React.FC<BulkImportProps> = ({
               onChange={(e) => setInputText(e.target.value)}
               rows={8}
               className="w-full p-4 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-2xl transition-all text-slate-800 text-sm font-mono outline-none placeholder:text-slate-400 leading-relaxed"
-              placeholder="Example:&#10;Juan Dela Cruz | Barangay San Jose | Purok 4 | 09171234567&#10;Maria Santos | Barangay Pag-asa | | 09981234567&#10;Pedro Reyes | Barangay Bagong Silang | Purok 1 | 09181234567"
+              placeholder="Example:&#10;Juan Dela Cruz | Barangay San Jose | Purok 4 | 09171234567&#10;Maria Santos | Barangay Pag-asa&#10;Pedro Reyes (Omitted Barangay will default to Barangay Central)&#10;Lina Gomez | | Purok 2"
               disabled={loadingPreview}
             />
           </div>
