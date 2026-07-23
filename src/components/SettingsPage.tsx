@@ -31,6 +31,7 @@ interface SettingsPageProps {
     faviconDataUrl: string;
     navDashboard?: string;
     navDirectory?: string;
+    navRecentUpload?: string;
     navBulk?: string;
     navPrint?: string;
     navAdmins?: string;
@@ -54,6 +55,7 @@ const APP_PAGES = [
   { id: 'dashboard', name: 'Dashboard', desc: 'Main overview & statistics' },
   { id: 'map', name: 'Clinic Map', desc: 'Geotagged patient map' },
   { id: 'directory', name: 'Clinic Directory', desc: 'Patient records & search' },
+  { id: 'recent-upload', name: 'Recent Upload', desc: 'Private PCU upload archives' },
   { id: 'accounts', name: 'Account Management', desc: 'User accounts & roles' },
   { id: 'bulk', name: 'Bulk Entry', desc: 'CSV & batch patient imports' },
   { id: 'print', name: 'Print List', desc: 'Formatted printable directory' },
@@ -80,6 +82,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [faviconDataUrl, setFaviconDataUrl] = useState(siteSettings.faviconDataUrl);
   const [navDashboard, setNavDashboard] = useState(siteSettings.navDashboard || 'Dashboard');
   const [navDirectory, setNavDirectory] = useState(siteSettings.navDirectory || 'Clinic Directory');
+  const [navRecentUpload, setNavRecentUpload] = useState(siteSettings.navRecentUpload || 'Recent Upload');
   const [navBulk, setNavBulk] = useState(siteSettings.navBulk || 'Bulk Entry');
   const [navPrint, setNavPrint] = useState(siteSettings.navPrint || 'Print List');
   const [navAdmins, setNavAdmins] = useState(siteSettings.navAdmins || 'Admin Credentials');
@@ -89,14 +92,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [rolesList, setRolesList] = useState<string[]>(DEFAULT_ROLES);
   const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>(() => {
     return siteSettings.rolePermissions || {
-      'MASTER ADMIN': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-      'IT': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-      'ADMIN': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-      'Administrator': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-      'LEADER': ['dashboard', 'map', 'directory', 'bulk', 'print'],
-      'CO-LEADER': ['dashboard', 'map', 'directory', 'bulk', 'print'],
-      'ENCODER': ['dashboard', 'map', 'directory', 'bulk', 'print'],
-      'STAFF': ['dashboard', 'map', 'directory', 'bulk', 'print']
+      'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+      'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+      'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+      'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+      'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
+      'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
+      'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
+      'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print']
     };
   });
 
@@ -150,10 +153,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   useEffect(() => {
     setTitle(siteSettings.title);
     setFaviconTitle(siteSettings.faviconTitle);
-    setLogoDataUrl(siteSettings.logoDataUrl);
-    setFaviconDataUrl(siteSettings.faviconDataUrl);
+    if (siteSettings.logoDataUrl !== undefined) {
+      setLogoDataUrl(siteSettings.logoDataUrl);
+    }
+    if (siteSettings.faviconDataUrl !== undefined) {
+      setFaviconDataUrl(siteSettings.faviconDataUrl);
+    }
     setNavDashboard(siteSettings.navDashboard || 'Dashboard');
     setNavDirectory(siteSettings.navDirectory || 'Clinic Directory');
+    setNavRecentUpload(siteSettings.navRecentUpload || 'Recent Upload');
     setNavBulk(siteSettings.navBulk || 'Bulk Entry');
     setNavPrint(siteSettings.navPrint || 'Print List');
     setNavAdmins(siteSettings.navAdmins || 'Admin Credentials');
@@ -262,6 +270,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           faviconDataUrl,
           navDashboard: navDashboard.trim() || 'Dashboard',
           navDirectory: navDirectory.trim() || 'Clinic Directory',
+          navRecentUpload: navRecentUpload.trim() || 'Recent Upload',
           navBulk: navBulk.trim() || 'Bulk Entry',
           navPrint: navPrint.trim() || 'Print List',
           navAdmins: navAdmins.trim() || 'Admin Credentials',
@@ -293,6 +302,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setFaviconDataUrl('');
       setNavDashboard('Dashboard');
       setNavDirectory('Clinic Directory');
+      setNavRecentUpload('Recent Upload');
       setNavBulk('Bulk Entry');
       setNavPrint('Print List');
       setNavAdmins('Admin Credentials');
@@ -696,6 +706,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   value={navDirectory}
                   onChange={(e) => setNavDirectory(e.target.value)}
                   placeholder="e.g. Clinic Directory"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Recent Upload Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navRecentUpload}
+                  onChange={(e) => setNavRecentUpload(e.target.value)}
+                  placeholder="e.g. Recent Upload"
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
                 />
               </div>

@@ -14,7 +14,8 @@ import {
   X,
   Settings,
   ChevronDown,
-  User
+  User,
+  UploadCloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, DashboardStats } from './types.js';
@@ -30,6 +31,7 @@ import { AccountManagement } from './components/AccountManagement.js';
 import { SettingsPage } from './components/SettingsPage.js';
 import { ProfileModal } from './components/ProfileModal.js';
 import { ClinicMap } from './components/ClinicMap.js';
+import { RecentUpload } from './components/RecentUpload.js';
 
 export default function App() {
   // Authentication & Session States
@@ -40,7 +42,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -51,7 +53,7 @@ export default function App() {
   // Profile Modal State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -64,6 +66,7 @@ export default function App() {
     faviconDataUrl: string;
     navDashboard?: string;
     navDirectory?: string;
+    navRecentUpload?: string;
     navBulk?: string;
     navPrint?: string;
     navAdmins?: string;
@@ -76,6 +79,7 @@ export default function App() {
     faviconDataUrl: '',
     navDashboard: 'Dashboard',
     navDirectory: 'Clinic Directory',
+    navRecentUpload: 'Recent Upload',
     navBulk: 'Bulk Entry',
     navPrint: 'Print List',
     navAdmins: 'Admin Credentials',
@@ -128,7 +132,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print'];
+      const allTabs = ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -430,6 +434,7 @@ export default function App() {
             { id: 'dashboard', label: siteSettings.navDashboard || 'Dashboard', icon: LayoutDashboard },
             { id: 'map', label: 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
+            { id: 'recent-upload', label: siteSettings.navRecentUpload || 'Recent Upload', icon: UploadCloud },
             { id: 'accounts', label: 'Account Management', icon: ShieldCheck },
             { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
             { id: 'print', label: siteSettings.navPrint || 'Print List', icon: Printer },
@@ -523,15 +528,17 @@ export default function App() {
                     ? (siteSettings.navPrint || 'Formatted Print Directory') 
                     : activeTab === 'directory' 
                       ? (siteSettings.title || 'Saint Francis Clinic Directory') 
-                      : activeTab === 'accounts'
-                        ? 'Account Management'
-                        : activeTab === 'admins' 
-                          ? (siteSettings.navAdmins || 'Admin Credentials') 
-                          : activeTab === 'settings'
-                            ? (siteSettings.navSettings || 'Website Settings')
-                            : activeTab === 'map'
-                              ? 'Clinic Map'
-                              : (siteSettings.navDashboard || 'Dashboard Overview')}
+                      : activeTab === 'recent-upload'
+                        ? (siteSettings.navRecentUpload || 'Recent Upload')
+                        : activeTab === 'accounts'
+                          ? 'Account Management'
+                          : activeTab === 'admins' 
+                            ? (siteSettings.navAdmins || 'Admin Credentials') 
+                            : activeTab === 'settings'
+                              ? (siteSettings.navSettings || 'Website Settings')
+                              : activeTab === 'map'
+                                ? 'Clinic Map'
+                                : (siteSettings.navDashboard || 'Dashboard Overview')}
               </h2>
               <p className="text-[11px] sm:text-xs text-emerald-300/80 mt-0.5 truncate hidden sm:block">
                 Secure directory workspace • {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -718,6 +725,15 @@ export default function App() {
                     }}
                   />
                 </div>
+              )}
+
+              {activeTab === 'recent-upload' && (
+                <RecentUpload
+                  authToken={authToken}
+                  currentUsername={adminUser.username}
+                  isAdmin={isSuperUser || userRole.toUpperCase().includes('ADMIN')}
+                  showToast={showToast}
+                />
               )}
 
               {activeTab === 'accounts' && (

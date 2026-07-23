@@ -36,7 +36,9 @@ import {
   clearAllDirectoryContacts,
   uploadContactPhoto,
   addPCUUpdate,
-  getPCUUpdates
+  getPCUUpdates,
+  getRecentUploads,
+  removePCUFileFromContact
 } from './server/db.js';
 import {
   createToken,
@@ -435,6 +437,47 @@ export async function getApp() {
       res.json(updates);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get Recent Uploads for current uploader
+  app.get('/api/contacts/recent-uploads', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const { search, barangay, purok, sortBy, sortOrder, page, limit } = req.query;
+      const data = getRecentUploads({
+        username,
+        search: search as string,
+        barangay: barangay as string,
+        purok: purok as string,
+        sortBy: sortBy as any,
+        sortOrder: sortOrder as any,
+        page: page ? parseInt(page as string, 10) : 1,
+        limit: limit ? parseInt(limit as string, 10) : 10
+      });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete/Remove PCU File from contact (restores household to Saint Francis Clinic Directory)
+  app.delete('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userObj = req.user ? findUser(req.user.username) : null;
+      const userRole = (userObj?.role || req.user?.role || '').toUpperCase();
+      const isAdmin = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR', 'MASTER_ADMIN'].includes(userRole) || userRole.includes('ADMIN');
+
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Only administrators can return household records to the directory.' });
+      }
+
+      const id = parseInt(req.params.id, 10);
+      const username = req.user?.username || 'Admin';
+      const updatedContact = await removePCUFileFromContact(id, username);
+      res.json(updatedContact);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   });
 

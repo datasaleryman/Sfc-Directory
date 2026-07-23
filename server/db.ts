@@ -81,6 +81,8 @@ export interface Contact {
   added_from_print_list?: boolean;
   photo_url?: string;
   pcu_file_url?: string;
+  pcu_uploaded_by?: string;
+  pcu_uploaded_at?: string;
 }
 
 export interface PCUUpdate {
@@ -92,6 +94,7 @@ export interface PCUUpdate {
   fileName: string;
   fileData: string; // Base64 content
   uploadedAt: string;
+  uploadedBy?: string;
 }
 
 export interface Activity {
@@ -120,6 +123,8 @@ const ACTIVITIES_FILE = path.join(DATA_DIR, 'activities.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SHEETS_CONFIG_FILE = path.join(DATA_DIR, 'sheets_config.json');
 const PCU_UPDATES_FILE = path.join(DATA_DIR, 'pcu_updates.json');
+const LOGO_DATA_FILE = path.join(DATA_DIR, 'logo_data.txt');
+const FAVICON_DATA_FILE = path.join(DATA_DIR, 'favicon_data.txt');
 
 export interface SheetsConfig {
   authType: 'apiKey' | 'serviceAccount';
@@ -246,9 +251,30 @@ export function getSiteSettings() {
 }
 
 export function saveSiteSettings(settings: Partial<SiteSettings>) {
-  siteSettings = { ...siteSettings, ...settings };
+  const newLogo = settings.logoDataUrl !== undefined ? settings.logoDataUrl : siteSettings.logoDataUrl;
+  const newFavicon = settings.faviconDataUrl !== undefined ? settings.faviconDataUrl : siteSettings.faviconDataUrl;
+
+  siteSettings = {
+    ...siteSettings,
+    ...settings,
+    logoDataUrl: newLogo,
+    faviconDataUrl: newFavicon
+  };
+
   try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
+    if (siteSettings.logoDataUrl) {
+      safeWriteFileSync(LOGO_DATA_FILE, siteSettings.logoDataUrl, 'utf-8');
+    } else if (settings.logoDataUrl === '') {
+      try { if (fs.existsSync(LOGO_DATA_FILE)) fs.unlinkSync(LOGO_DATA_FILE); } catch (e) {}
+    }
+
+    if (siteSettings.faviconDataUrl) {
+      safeWriteFileSync(FAVICON_DATA_FILE, siteSettings.faviconDataUrl, 'utf-8');
+    } else if (settings.faviconDataUrl === '') {
+      try { if (fs.existsSync(FAVICON_DATA_FILE)) fs.unlinkSync(FAVICON_DATA_FILE); } catch (e) {}
+    }
+
+    safeWriteFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
     syncSiteSettingsToGoogleSheets().catch(err => console.error('Failed to sync site settings to Sheets:', err));
   } catch (err) {
     console.error('Failed to write settings file:', err);
@@ -436,11 +462,21 @@ export async function initDb() {
       try {
         const content = fs.readFileSync(SETTINGS_FILE, 'utf-8');
         const parsed = JSON.parse(content);
+        let logoDataUrl = unescapeHtml(parsed.logoDataUrl || '');
+        let faviconDataUrl = unescapeHtml(parsed.faviconDataUrl || '');
+
+        if (!logoDataUrl && fs.existsSync(LOGO_DATA_FILE)) {
+          try { logoDataUrl = fs.readFileSync(LOGO_DATA_FILE, 'utf-8'); } catch (e) {}
+        }
+        if (!faviconDataUrl && fs.existsSync(FAVICON_DATA_FILE)) {
+          try { faviconDataUrl = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'); } catch (e) {}
+        }
+
         siteSettings = {
           title: unescapeHtml(parsed.title || 'Saint Francis Clinic Directory'),
           faviconTitle: unescapeHtml(parsed.faviconTitle || 'Saint Francis Clinic'),
-          logoDataUrl: unescapeHtml(parsed.logoDataUrl || ''),
-          faviconDataUrl: unescapeHtml(parsed.faviconDataUrl || ''),
+          logoDataUrl,
+          faviconDataUrl,
           navDashboard: unescapeHtml(parsed.navDashboard || 'Dashboard'),
           navDirectory: unescapeHtml(parsed.navDirectory || 'Clinic Directory'),
           navBulk: unescapeHtml(parsed.navBulk || 'Bulk Entry'),
@@ -453,6 +489,16 @@ export async function initDb() {
         console.error('Error parsing site settings:', e);
       }
     } else {
+      let logoDataUrl = '';
+      let faviconDataUrl = '';
+      if (fs.existsSync(LOGO_DATA_FILE)) {
+        try { logoDataUrl = fs.readFileSync(LOGO_DATA_FILE, 'utf-8'); } catch (e) {}
+      }
+      if (fs.existsSync(FAVICON_DATA_FILE)) {
+        try { faviconDataUrl = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'); } catch (e) {}
+      }
+      siteSettings.logoDataUrl = logoDataUrl;
+      siteSettings.faviconDataUrl = faviconDataUrl;
       safeWriteFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2));
     }
 
@@ -1183,13 +1229,13 @@ export function getContacts(params: {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
   const filterBarangay = barangay || address;
 
-  // Only query active (non-soft-deleted) contacts that have been added via + Add List
-  let filtered = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true);
+  // Only query active (non-soft-deleted) contacts that have been added via + Add List AND have NOT yet uploaded a PCU file
+  let filtered = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url);
 
   // Get ALL unique barangays for filtering sidebar/dropdown before search filters are applied
   const allBarangaysSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && c.added_from_print_list === true && c.barangay && c.barangay.trim()) {
+    if (c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
       const bUpper = c.barangay.trim().toUpperCase();
       if (bUpper !== 'UNKNOWN' && bUpper !== 'N/A' && bUpper !== 'NONE') {
         allBarangaysSet.add(c.barangay.trim());
@@ -1201,7 +1247,7 @@ export function getContacts(params: {
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && c.added_from_print_list === true && c.purok) {
+    if (c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url && c.purok) {
       allPuroksSet.add(c.purok.trim());
     }
   });
@@ -1253,7 +1299,7 @@ export function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true && c.barangay.toLowerCase() === bg.toLowerCase());
+    const bgContacts = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url && c.barangay.toLowerCase() === bg.toLowerCase());
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -2635,12 +2681,19 @@ export async function syncSiteSettingsToGoogleSheets() {
     });
 
     const headers = ['Setting Key', 'Setting Value'];
+    const logoValForSheet = (siteSettings.logoDataUrl && siteSettings.logoDataUrl.length > 30000) 
+      ? '[PERMANENTLY_STORED_LOCALLY]' 
+      : (siteSettings.logoDataUrl || '');
+    const faviconValForSheet = (siteSettings.faviconDataUrl && siteSettings.faviconDataUrl.length > 30000) 
+      ? '[PERMANENTLY_STORED_LOCALLY]' 
+      : (siteSettings.faviconDataUrl || '');
+
     const rowsToPut = [
       headers,
       ['Title', siteSettings.title || ''],
       ['Favicon Title', siteSettings.faviconTitle || ''],
-      ['Logo Data URL', siteSettings.logoDataUrl || ''],
-      ['Favicon Data URL', siteSettings.faviconDataUrl || ''],
+      ['Logo Data URL', logoValForSheet],
+      ['Favicon Data URL', faviconValForSheet],
       ['Nav Dashboard', siteSettings.navDashboard || ''],
       ['Nav Directory', siteSettings.navDirectory || ''],
       ['Nav Bulk', siteSettings.navBulk || ''],
@@ -2712,16 +2765,20 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
         case 'Favicon Title':
           loadedSettings.faviconTitle = unescapeHtml(val);
           break;
-        case 'Logo Data URL':
-          if (val && val.length < 48900) {
-            loadedSettings.logoDataUrl = unescapeHtml(val);
+        case 'Logo Data URL': {
+          const unescapedLogo = unescapeHtml(val);
+          if (unescapedLogo && unescapedLogo.startsWith('data:image/') && !unescapedLogo.includes('[') && unescapedLogo.length > 50) {
+            loadedSettings.logoDataUrl = unescapedLogo;
           }
           break;
-        case 'Favicon Data URL':
-          if (val && val.length < 48900) {
-            loadedSettings.faviconDataUrl = unescapeHtml(val);
+        }
+        case 'Favicon Data URL': {
+          const unescapedFavicon = unescapeHtml(val);
+          if (unescapedFavicon && unescapedFavicon.startsWith('data:image/') && !unescapedFavicon.includes('[') && unescapedFavicon.length > 50) {
+            loadedSettings.faviconDataUrl = unescapedFavicon;
           }
           break;
+        }
         case 'Nav Dashboard':
           loadedSettings.navDashboard = unescapeHtml(val);
           break;
@@ -2988,7 +3045,8 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
     purok,
     fileName,
     fileData: finalFileUrlOrData, // Save the full URL (if success) or full base64 (if local fallback) in local cache
-    uploadedAt: new Date().toISOString()
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: username
   };
 
   pcuUpdatesCache.unshift(newUpdate);
@@ -3043,6 +3101,8 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
   if (contact) {
     // If upload was successful, store the CDN link, otherwise store a friendly "Uploaded" string indicating local availability
     contact.pcu_file_url = uploadSuccess ? finalFileUrlOrData : `Uploaded: ${fileName} (Local Cache)`;
+    contact.pcu_uploaded_by = username;
+    contact.pcu_uploaded_at = newUpdate.uploadedAt;
     contact.updated_at = new Date().toISOString();
     await saveContacts();
     await addActivity(username, `Uploaded PCU File "${fileName}" for: "${fullName}"`);
@@ -3057,4 +3117,114 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
 // Get all PCU Updates
 export function getPCUUpdates() {
   return pcuUpdatesCache;
+}
+
+// Get Recent Uploads filtered specifically for the current user/uploader
+export function getRecentUploads(params: {
+  username: string;
+  search?: string;
+  barangay?: string;
+  purok?: string;
+  sortBy?: 'name' | 'barangay' | 'purok' | 'date';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}) {
+  const { username, search, barangay, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
+
+  let filtered = contactsCache.filter(c => {
+    if (c.deleted_at !== null) return false;
+    if (!c.pcu_file_url) return false;
+
+    const uploader = (c.pcu_uploaded_by || '').toLowerCase().trim();
+    const current = (username || '').toLowerCase().trim();
+
+    if (!uploader) {
+      // Fallback check in pcuUpdatesCache if pcu_uploaded_by was missing
+      const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === c.id && (p.uploadedBy || '').toLowerCase().trim() === current);
+      if (matchedUpdate) return true;
+      return false;
+    }
+
+    return uploader === current;
+  });
+
+  const allBarangaysSet = new Set<string>();
+  filtered.forEach(c => {
+    if (c.barangay && c.barangay.trim()) {
+      allBarangaysSet.add(c.barangay.trim());
+    }
+  });
+  const allBarangays = Array.from(allBarangaysSet).sort((a, b) => a.localeCompare(b));
+
+  const allPuroksSet = new Set<string>();
+  filtered.forEach(c => {
+    if (c.purok) allPuroksSet.add(c.purok.trim());
+  });
+  const allPuroks = Array.from(allPuroksSet).sort((a, b) => a.localeCompare(b));
+
+  if (barangay && barangay !== 'All Addresses' && barangay !== 'All Barangays') {
+    filtered = filtered.filter(c => c.barangay.toLowerCase() === barangay.toLowerCase());
+  }
+
+  if (purok && purok !== 'All Puroks') {
+    filtered = filtered.filter(c => c.purok && c.purok.toLowerCase() === purok.toLowerCase());
+  }
+
+  if (search) {
+    const term = search.toLowerCase().trim();
+    filtered = filtered.filter(c =>
+      c.full_name.toLowerCase().includes(term) ||
+      c.barangay.toLowerCase().includes(term) ||
+      (c.purok && c.purok.toLowerCase().includes(term)) ||
+      c.contact_number.includes(term)
+    );
+  }
+
+  filtered.sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === 'name') {
+      comparison = a.full_name.localeCompare(b.full_name);
+    } else if (sortBy === 'barangay') {
+      comparison = a.barangay.localeCompare(b.barangay);
+    } else if (sortBy === 'purok') {
+      comparison = (a.purok || '').localeCompare(b.purok || '');
+    } else {
+      const timeA = new Date(a.pcu_uploaded_at || a.updated_at || a.created_at).getTime();
+      const timeB = new Date(b.pcu_uploaded_at || b.updated_at || b.created_at).getTime();
+      comparison = timeB - timeA;
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+
+  const total = filtered.length;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const safePage = Math.max(1, Math.min(page, totalPages));
+  const startIndex = (safePage - 1) * limit;
+  const paginated = filtered.slice(startIndex, startIndex + limit);
+
+  return {
+    contacts: paginated,
+    total,
+    page: safePage,
+    totalPages,
+    limit,
+    allBarangays,
+    allPuroks
+  };
+}
+
+// Remove PCU file from a contact, returning it to Saint Francis Clinic Directory
+export async function removePCUFileFromContact(contactId: number, username: string) {
+  const contact = contactsCache.find(c => c.id === contactId);
+  if (!contact) throw new Error('Contact record not found.');
+
+  delete contact.pcu_file_url;
+  delete contact.pcu_uploaded_by;
+  delete contact.pcu_uploaded_at;
+  contact.updated_at = new Date().toISOString();
+
+  await saveContacts();
+  await addActivity(username, `Removed PCU File from contact: "${contact.full_name}"`);
+  return contact;
 }

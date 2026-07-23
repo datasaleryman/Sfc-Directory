@@ -12,6 +12,9 @@ export interface Contact {
   geotagged?: boolean;
   photo_url?: string;
   pcu_file_url?: string;
+  pcu_uploaded_by?: string;
+  pcu_uploaded_at?: string;
+  added_from_print_list?: boolean;
 }
 
 export interface PCUUpdate {
@@ -23,6 +26,7 @@ export interface PCUUpdate {
   fileName: string;
   fileData: string; // Base64 content
   uploadedAt: string;
+  uploadedBy?: string;
 }
 
 export interface Activity {

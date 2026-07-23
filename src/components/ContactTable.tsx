@@ -160,9 +160,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         ...viewContact,
         pcu_file_url: uploadResult.fileData || `Uploaded: ${file.name}`
       };
-      setViewContact(updatedContact);
-      setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
-      showToast(`PCU File "${file.name}" uploaded and saved to Base44 PCUUpdate database table!`, 'success');
+      setViewContact(null);
+      fetchContacts();
+      showToast(`PCU File "${file.name}" uploaded successfully! Household "${viewContact.full_name}" has been transferred to Recent Upload.`, 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
