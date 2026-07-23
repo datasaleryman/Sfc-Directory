@@ -111,42 +111,54 @@ export async function getApp() {
 
   // Login
   app.post('/api/auth/login', (req: Request, res: Response) => {
-    const { username, password } = req.body;
+    try {
+      const { username, password } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username/Email and password are required.' });
-    }
-
-    const user = findUser(username);
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid username/email or password.' });
-    }
-
-    if (user.status === 'Suspended') {
-      return res.status(403).json({ error: 'Your account has been suspended. Please contact the administrator.' });
-    }
-
-    const inputHash = hashPassword(password);
-    if (user.passwordHash !== inputHash) {
-      return res.status(401).json({ error: 'Invalid username/email or password.' });
-    }
-
-    // Success - create cryptographic session token
-    const token = createToken(user.username, user.role as any);
-
-    addActivity(user.username, 'Logged in to dashboard successfully.');
-
-    res.json({
-      token,
-      user: {
-        username: user.username,
-        email: user.email || user.username,
-        fullName: user.fullName || user.displayName || user.username,
-        barangay: user.barangay || 'Central',
-        role: user.role,
-        status: user.status || 'Active'
+      if (!username || !password) {
+        return res.status(400).json({ error: 'Username/Email and password are required.' });
       }
-    });
+
+      console.log(`[Login Attempt] Username: ${username}`);
+      const user = findUser(username);
+      if (!user) {
+        console.warn(`[Login Failed] User not found: ${username}`);
+        return res.status(401).json({ error: 'Invalid username/email or password.' });
+      }
+
+      if (user.status === 'Suspended') {
+        console.warn(`[Login Failed] User suspended: ${username}`);
+        return res.status(403).json({ error: 'Your account has been suspended. Please contact the administrator.' });
+      }
+
+      const inputHash = hashPassword(password);
+      if (user.passwordHash !== inputHash) {
+        console.warn(`[Login Failed] Password mismatch for: ${username}`);
+        return res.status(401).json({ error: 'Invalid username/email or password.' });
+      }
+
+      // Success - create cryptographic session token
+      const token = createToken(user.username, user.role as any);
+
+      addActivity(user.username, 'Logged in to dashboard successfully.').catch(err => {
+        console.error('Failed to log login activity:', err);
+      });
+
+      console.log(`[Login Success] User ${user.username} logged in successfully.`);
+      res.json({
+        token,
+        user: {
+          username: user.username,
+          email: user.email || user.username,
+          fullName: user.fullName || user.displayName || user.username,
+          barangay: user.barangay || 'Central',
+          role: user.role,
+          status: user.status || 'Active'
+        }
+      });
+    } catch (err: any) {
+      console.error('[Login Error]', err);
+      res.status(500).json({ error: err.message || 'Internal server error during login.' });
+    }
   });
 
   // Current session details

@@ -681,7 +681,7 @@ export function findUser(input: string): User | undefined {
   if (!input) return undefined;
   const target = input.trim().toLowerCase();
   return usersCache.find(
-    u => u.username.toLowerCase() === target || (u.email && u.email.toLowerCase() === target)
+    u => u && typeof u.username === 'string' && (u.username.toLowerCase() === target || (typeof u.email === 'string' && u.email.toLowerCase() === target))
   );
 }
 

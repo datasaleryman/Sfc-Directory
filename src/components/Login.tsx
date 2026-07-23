@@ -83,9 +83,15 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
         })
       });
 
-      const data = await response.json();
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        throw new Error(`Server returned HTTP ${response.status}: ${response.statusText || 'Unable to parse server response'}`);
+      }
+
       if (!response.ok) {
-        throw new Error(data.error || 'Authentication failed.');
+        throw new Error(data.error || `Authentication failed (HTTP ${response.status})`);
       }
 
       showToast('Login successful! Welcome back.', 'success');
