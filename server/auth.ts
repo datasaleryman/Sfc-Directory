@@ -2,8 +2,8 @@ import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { findUser, hashPassword } from './db.js';
 
-// Random secret generated on server startup to secure session tokens
-const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+// Random secret secured via environment variable, or falling back to a stable key for serverless persistence
+const SESSION_SECRET = process.env.SESSION_SECRET || 'saint_francis_clinic_secret_key_2026';
 
 export interface SessionPayload {
   username: string;

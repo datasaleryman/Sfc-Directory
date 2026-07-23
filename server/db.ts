@@ -5,23 +5,58 @@ import { google } from 'googleapis';
 import { createClient } from '@base44/sdk';
 
 // Safe filesystem wrappers for serverless platforms like Netlify
-const originalWriteFileSync = fs.writeFileSync;
-fs.writeFileSync = function(file: any, data: any, options: any) {
+export function safeWriteFileSync(file: string, data: string, options: any = 'utf-8') {
   try {
-    return originalWriteFileSync(file, data, options);
+    fs.writeFileSync(file, data, options);
   } catch (err: any) {
     console.warn(`[FileSystem Warning] Synchronous write to "${file}" skipped (likely read-only serverless environment):`, err.message);
   }
-};
+}
 
-const originalWriteFile = fs.promises.writeFile;
-fs.promises.writeFile = async function(file: any, data: any, options: any) {
+export async function safeWriteFile(file: string, data: string, options: any = 'utf-8') {
   try {
-    return await originalWriteFile(file, data, options);
+    await fs.promises.writeFile(file, data, options);
   } catch (err: any) {
     console.warn(`[FileSystem Warning] Asynchronous write to "${file}" skipped (likely read-only serverless environment):`, err.message);
   }
-} as any;
+}
+
+export function safeMkdirSync(dir: string, options: any = { recursive: true }) {
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, options);
+    }
+  } catch (err: any) {
+    console.warn(`[FileSystem Warning] Synchronous mkdir to "${dir}" skipped (likely read-only serverless environment):`, err.message);
+  }
+}
+
+// Global monkeypatches for external packages, wrapped in try-catch to prevent frozen object errors
+try {
+  const originalWriteFileSync = fs.writeFileSync;
+  fs.writeFileSync = function(file: any, data: any, options: any) {
+    try {
+      return originalWriteFileSync(file, data, options);
+    } catch (err: any) {
+      console.warn(`[FileSystem Warning] Synchronous write to "${file}" skipped (likely read-only serverless environment):`, err.message);
+    }
+  } as any;
+} catch (e: any) {
+  console.warn('[FileSystem Warning] Could not globally patch fs.writeFileSync:', e.message);
+}
+
+try {
+  const originalWriteFile = fs.promises.writeFile;
+  fs.promises.writeFile = async function(file: any, data: any, options: any) {
+    try {
+      return await originalWriteFile(file, data, options);
+    } catch (err: any) {
+      console.warn(`[FileSystem Warning] Asynchronous write to "${file}" skipped (likely read-only serverless environment):`, err.message);
+    }
+  } as any;
+} catch (e: any) {
+  console.warn('[FileSystem Warning] Could not globally patch fs.promises.writeFile:', e.message);
+}
 
 const base44 = createClient({
   appId: "6a430111a71a741248df97b1",
@@ -210,14 +245,16 @@ export function hashPassword(password: string): string {
 // Ensure database files exist
 export async function initDb() {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
+    safeMkdirSync(DATA_DIR);
 
     // Init Users
     let content = '[]';
     if (fs.existsSync(USERS_FILE)) {
-      content = fs.readFileSync(USERS_FILE, 'utf-8');
+      try {
+        content = fs.readFileSync(USERS_FILE, 'utf-8');
+      } catch (e: any) {
+        console.warn('Failed to read USERS_FILE:', e.message);
+      }
     }
     try {
       usersCache = JSON.parse(content);
@@ -238,16 +275,21 @@ export async function initDb() {
       masterAdmin.passwordHash = masterHash;
       masterAdmin.role = 'Administrator';
     }
-    fs.writeFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+    safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2));
 
     // Init Contacts
     if (!fs.existsSync(CONTACTS_FILE)) {
       // Start with empty contacts list as requested
       const initialContacts: Contact[] = [];
-      fs.writeFileSync(CONTACTS_FILE, JSON.stringify(initialContacts, null, 2), 'utf-8');
+      safeWriteFileSync(CONTACTS_FILE, JSON.stringify(initialContacts, null, 2));
       contactsCache = initialContacts;
     } else {
-      const content = fs.readFileSync(CONTACTS_FILE, 'utf-8');
+      let content = '[]';
+      try {
+        content = fs.readFileSync(CONTACTS_FILE, 'utf-8');
+      } catch (e: any) {
+        console.warn('Failed to read CONTACTS_FILE:', e.message);
+      }
       try {
         contactsCache = JSON.parse(content);
       } catch (e) {
@@ -272,7 +314,7 @@ export async function initDb() {
       });
       // Filter out auto-synced base44 items; only keep contacts added locally/manually or from Print List
       contactsCache = contactsCache.filter(c => c && (c.added_locally || c.id >= 100000));
-      fs.writeFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
+      safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
     }
 
     // Init Activities
@@ -285,11 +327,20 @@ export async function initDb() {
           action: 'Database initialized with seed records.'
         }
       ];
-      fs.writeFileSync(ACTIVITIES_FILE, JSON.stringify(initialActivities, null, 2), 'utf-8');
+      safeWriteFileSync(ACTIVITIES_FILE, JSON.stringify(initialActivities, null, 2));
       activitiesCache = initialActivities;
     } else {
-      const content = fs.readFileSync(ACTIVITIES_FILE, 'utf-8');
-      activitiesCache = JSON.parse(content);
+      let content = '[]';
+      try {
+        content = fs.readFileSync(ACTIVITIES_FILE, 'utf-8');
+      } catch (e: any) {
+        console.warn('Failed to read ACTIVITIES_FILE:', e.message);
+      }
+      try {
+        activitiesCache = JSON.parse(content);
+      } catch (e) {
+        activitiesCache = [];
+      }
     }
 
     // Init Sheets Config
@@ -334,11 +385,7 @@ export async function initDb() {
         console.error('Error parsing site settings:', e);
       }
     } else {
-      try {
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
-      } catch (e) {
-        console.error('Error writing default site settings:', e);
-      }
+      safeWriteFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2));
     }
 
     // Merge or override with environment variables if provided
@@ -468,7 +515,7 @@ export async function syncBase44Contacts() {
 
 // Save helpers
 async function saveContacts() {
-  await fs.promises.writeFile(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
+  await safeWriteFile(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
 }
 
 // Fetch raw Base44 Household Submissions for Print List page
@@ -593,7 +640,7 @@ export async function clearAllDirectoryContacts(actorUsername: string) {
 }
 
 async function saveActivities() {
-  await fs.promises.writeFile(ACTIVITIES_FILE, JSON.stringify(activitiesCache, null, 2), 'utf-8');
+  await safeWriteFile(ACTIVITIES_FILE, JSON.stringify(activitiesCache, null, 2), 'utf-8');
 }
 
 export async function addActivity(username: string, action: string) {
@@ -758,7 +805,7 @@ export async function registerUser(data: {
   };
 
   usersCache.push(newUser);
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(username, `Registered new account (${trimmedName} - ${trimmedBarangay}) with role ${trimmedRole}`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
 
@@ -779,7 +826,7 @@ export async function updateUserRole(username: string, newRole: string, actorUse
     throw new Error('User account not found.');
   }
   user.role = newRole;
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Updated user @${username} role to ${newRole}`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
   return user;
@@ -791,7 +838,7 @@ export async function updateUserStatus(username: string, newStatus: 'Active' | '
     throw new Error('User account not found.');
   }
   user.status = newStatus;
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Updated user @${username} status to ${newStatus}`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
   return user;
@@ -860,7 +907,7 @@ export async function editUserAccount(
     user.passwordHash = hashPassword(trimmedPass);
   }
 
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Edited user account details for "@${targetUsername}" (${user.fullName || targetUsername})`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
 
@@ -920,7 +967,7 @@ export async function updateUserProfile(
     user.passwordHash = hashPassword(trimmedPass);
   }
 
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(finalUsername, `Updated admin profile settings (Username: @${finalUsername}, Name: ${user.displayName || 'not set'}).`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
 
@@ -960,7 +1007,7 @@ export async function createAdminUser(username: string, password: string, creato
   };
 
   usersCache.push(newUser);
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(creatorUsername, `Created new Administrator credential: "@${trimmedUser}"`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
 
@@ -979,7 +1026,7 @@ export async function deleteAdminUser(username: string, creatorUsername: string)
   }
 
   usersCache.splice(index, 1);
-  await fs.promises.writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(creatorUsername, `Deleted Administrator credential: "@${targetUser}"`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
 }
@@ -2097,7 +2144,7 @@ export async function saveSheetsConfig(config: SheetsConfig, username: string) {
     syncEnabled: !!config.syncEnabled,
     webAppUrl: config.webAppUrl?.trim() || ''
   };
-  await fs.promises.writeFile(SHEETS_CONFIG_FILE, JSON.stringify(sheetsConfig, null, 2), 'utf-8');
+  await safeWriteFile(SHEETS_CONFIG_FILE, JSON.stringify(sheetsConfig, null, 2), 'utf-8');
   await addActivity(username, `Updated Google Sheets Database settings (Auth: ${sheetsConfig.authType}, Sync: ${sheetsConfig.syncEnabled ? 'ENABLED' : 'DISABLED'})`);
 
   if (sheetsConfig.syncEnabled) {
