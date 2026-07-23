@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, User, KeyRound, Loader2, Activity, Mail, MapPin, UserPlus, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, User, KeyRound, Loader2, Activity, Mail, MapPin, UserPlus, ArrowRight, ShieldCheck, Clock, X, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface LoginProps {
@@ -13,12 +13,44 @@ interface LoginProps {
   };
 }
 
+const NON_BARANGAY_VALUES = new Set([
+  'ALL',
+  'ALL BARANGAYS',
+  'ALL ADDRESSES',
+  'ALL BARANGAY',
+  'ALL ADDRESS',
+  'SELECT',
+  'SELECT BARANGAY',
+  'SELECT ADDRESS',
+  'UNKNOWN',
+  'N/A',
+  'NONE',
+  'NULL',
+  'UNDEFINED',
+  'OTHER',
+  'OTHERS',
+  'PAGADIAN',
+  'PAGADIAN CITY',
+  'ZAMBOANGA DEL SUR'
+]);
+
+function isRealBarangay(name: string): boolean {
+  if (!name || typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const upper = trimmed.toUpperCase();
+  if (NON_BARANGAY_VALUES.has(upper)) return false;
+  if (upper.startsWith('ALL ') || upper.startsWith('SELECT ') || upper.startsWith('FILTER ')) return false;
+  return true;
+}
+
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSettings }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   // Sign in state
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('2026');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   // Registration state
   const [regFullName, setRegFullName] = useState('');
@@ -27,29 +59,51 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
   const [regBarangay, setRegBarangay] = useState('BARANGAY CENTRAL');
 
   // Barangays database list
-  const [barangayList, setBarangayList] = useState<string[]>([
-    'BARANGAY CENTRAL',
-    'BALANGASAN',
-    'BANALE',
-    'NAPOLAN',
+  const DEFAULT_BARANGAYS = [
+    'Navalan',
+    'Kalingayan',
+    'Dampalan',
+    'SAN JOSE',
     'SAN FRANCISCO',
-    'POBLACION'
-  ]);
+    'SANTA MARIA',
+    'Dumalinao',
+    'NAPOLAN',
+    'Balangasan',
+    'Tuburan',
+    'Lumbia',
+    'Banale',
+    'Bulatok',
+    'Dumagoc',
+    'Kawit',
+    'Muricay',
+    'Santiago',
+    'Santo Niño',
+    'Sta. Lucia',
+    'Tawagan Sur',
+    'Tiguma',
+    'White Beach',
+    'Dao',
+    'SAN PEDRO',
+    'Buenavista',
+    'SFC'
+  ];
+
+  const [barangayList, setBarangayList] = useState<string[]>(DEFAULT_BARANGAYS);
   const [fetchingBarangays, setFetchingBarangays] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
-  // Fetch unique Barangays from Base44 / Database
+  // Fetch Barangays list from server/Google Sheets
   const fetchBarangays = async () => {
     setFetchingBarangays(true);
     try {
       const res = await fetch('/api/public/barangays');
       const data = await res.json();
       if (res.ok && Array.isArray(data.barangays) && data.barangays.length > 0) {
-        const filtered = data.barangays.filter((b: string) => b && b.trim().toUpperCase() !== 'UNKNOWN' && b.trim().toUpperCase() !== 'N/A');
+        const filtered = data.barangays.filter((b: string) => isRealBarangay(b));
         if (filtered.length > 0) {
           setBarangayList(filtered);
-          if (!regBarangay || regBarangay.toUpperCase() === 'UNKNOWN') {
+          if (!regBarangay || !isRealBarangay(regBarangay)) {
             setRegBarangay(filtered[0]);
           }
         }
@@ -73,6 +127,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
     }
 
     setLoading(true);
+    setPendingNotice(null);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -91,6 +146,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
       }
 
       if (!response.ok) {
+        if (data.error && (data.error.includes('pending administrator approval') || data.error.includes('pending'))) {
+          setPendingNotice(data.error);
+        }
         throw new Error(data.error || `Authentication failed (HTTP ${response.status})`);
       }
 
@@ -128,6 +186,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
     }
 
     setLoading(true);
+    setPendingNotice(null);
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
@@ -145,8 +204,15 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
         throw new Error(data.error || 'Registration failed.');
       }
 
-      showToast(`Account registered successfully for ${regFullName}! Logging in...`, 'success');
-      onLoginSuccess(data.token, data.user);
+      const noticeMsg = data.message || `Account registered successfully for ${regFullName}! Your account is pending administrator approval before you can log in.`;
+      setPendingNotice(noticeMsg);
+      showToast(`Registration submitted for "${regFullName}"! Account is pending administrator approval.`, 'info');
+      
+      // Switch to login tab & set username
+      setUsername(regEmail.trim());
+      setPassword('');
+      setRegPassword('');
+      setMode('login');
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -270,6 +336,26 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
               onSubmit={handleLoginSubmit}
               className="p-6 sm:p-8 space-y-5"
             >
+              {pendingNotice && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-start gap-3 shadow-xs"
+                >
+                  <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 leading-relaxed">
+                    <p className="font-extrabold text-amber-900">Pending Administrator Approval</p>
+                    <p className="text-[11px] text-amber-800/90 mt-0.5">{pendingNotice}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPendingNotice(null)}
+                    className="text-amber-500 hover:text-amber-800 p-0.5 cursor-pointer rounded-lg transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              )}
               <motion.div variants={formItemVariants}>
                 <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
                   Username or Email Address
@@ -352,6 +438,15 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
               onSubmit={handleRegisterSubmit}
               className="p-6 sm:p-8 space-y-4"
             >
+              {/* Approval Warning Banner */}
+              <motion.div variants={formItemVariants} className="p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 shadow-2xs">
+                <AlertCircle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-snug">
+                  <p className="font-extrabold text-amber-950">Notice on Account Approval</p>
+                  <p className="text-[11px] text-amber-800/90 mt-0.5">Newly registered accounts will require administrator approval before you can sign in to the portal.</p>
+                </div>
+              </motion.div>
+
               {/* Full Name */}
               <motion.div variants={formItemVariants}>
                 <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
@@ -432,11 +527,11 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                     disabled={loading || fetchingBarangays}
                   >
                     {fetchingBarangays ? (
-                      <option value="">Loading Barangays from Base44...</option>
+                      <option value="">Loading Barangays...</option>
                     ) : barangayList.length === 0 ? (
-                      <option value="Barangay Central">Barangay Central</option>
+                      <option value="Navalan">Navalan</option>
                     ) : (
-                      barangayList.map((bg) => (
+                      barangayList.filter(isRealBarangay).map((bg) => (
                         <option key={bg} value={bg}>
                           {bg}
                         </option>
@@ -447,12 +542,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                     {fetchingBarangays ? (
                       <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
                     ) : (
-                      <span className="text-xs font-bold text-emerald-600 uppercase">Base44</span>
+                      <span className="text-xs font-bold text-emerald-600 uppercase">Barangay</span>
                     )}
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1 font-medium">
-                  Address is automatically matched with the official Base44 barangay records.
+                  Address is automatically matched with official barangay records.
                 </p>
               </motion.div>
 

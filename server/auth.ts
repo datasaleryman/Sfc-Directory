@@ -19,7 +19,7 @@ export function createToken(username: string, role: string = 'Staff'): string {
   const payload: SessionPayload = {
     username,
     role,
-    expiresAt: Date.now() + 1000 * 60 * 60 * 2 // 2 Hours Session Timeout
+    expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 365 * 100 // Permanent Session (100 Years)
   };
 
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64');
@@ -51,10 +51,7 @@ export function verifyToken(token: string): SessionPayload | null {
       Buffer.from(payloadBase64, 'base64').toString('utf-8')
     );
 
-    if (Date.now() > payload.expiresAt) {
-      return null; // Session Expired
-    }
-
+    // Permanent session: allow token unless payload is corrupted
     return payload;
   } catch {
     return null;

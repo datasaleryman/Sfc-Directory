@@ -125,6 +125,42 @@ const SHEETS_CONFIG_FILE = path.join(DATA_DIR, 'sheets_config.json');
 const PCU_UPDATES_FILE = path.join(DATA_DIR, 'pcu_updates.json');
 const LOGO_DATA_FILE = path.join(DATA_DIR, 'logo_data.txt');
 const FAVICON_DATA_FILE = path.join(DATA_DIR, 'favicon_data.txt');
+const BARANGAYS_FILE = path.join(DATA_DIR, 'barangays.json');
+
+export const DEFAULT_BARANGAYS: string[] = [
+  'Navalan',
+  'Kalingayan',
+  'Dampalan',
+  'SAN JOSE',
+  'SAN FRANCISCO',
+  'SANTA MARIA',
+  'Dumalinao',
+  'NAPOLAN',
+  'Balangasan',
+  'Tuburan',
+  'Lumbia',
+  'Banale',
+  'Bulatok',
+  'Dumagoc',
+  'Kawit',
+  'Muricay',
+  'Santiago',
+  'Santo Niño',
+  'Sta. Lucia',
+  'Tawagan Sur',
+  'Tiguma',
+  'White Beach',
+  'Dao',
+  'SAN PEDRO',
+  'Buenavista',
+  'SFC'
+];
+
+let barangaysCache: string[] = [...DEFAULT_BARANGAYS];
+
+export async function saveBarangays() {
+  await safeWriteFile(BARANGAYS_FILE, JSON.stringify(barangaysCache, null, 2), 'utf-8');
+}
 
 export interface SheetsConfig {
   authType: 'apiKey' | 'serviceAccount';
@@ -326,11 +362,13 @@ export async function initDb() {
       usersCache.unshift({
         username: 'admin',
         passwordHash: masterHash,
-        role: 'Administrator'
+        role: 'Administrator',
+        status: 'Active'
       });
     } else {
       masterAdmin.passwordHash = masterHash;
       masterAdmin.role = 'Administrator';
+      masterAdmin.status = 'Active';
     }
     safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2));
 
@@ -435,6 +473,25 @@ export async function initDb() {
       } catch (e) {
         pcuUpdatesCache = [];
       }
+    }
+
+    // Init Barangays
+    if (fs.existsSync(BARANGAYS_FILE)) {
+      try {
+        const raw = fs.readFileSync(BARANGAYS_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          barangaysCache = parsed;
+        } else {
+          barangaysCache = [...DEFAULT_BARANGAYS];
+          safeWriteFileSync(BARANGAYS_FILE, JSON.stringify(barangaysCache, null, 2));
+        }
+      } catch (e) {
+        barangaysCache = [...DEFAULT_BARANGAYS];
+      }
+    } else {
+      barangaysCache = [...DEFAULT_BARANGAYS];
+      safeWriteFileSync(BARANGAYS_FILE, JSON.stringify(barangaysCache, null, 2));
     }
 
     // Init Sheets Config
@@ -556,6 +613,17 @@ export async function initDb() {
         }
 
         try {
+          // 3. Try to pull Barangays first from Google Sheets
+          const barangaysPulled = await pullBarangaysFromGoogleSheets();
+          if (!barangaysPulled) {
+            // No Barangays in sheet yet, so push current official list
+            await syncBarangaysToGoogleSheets();
+          }
+        } catch (err: any) {
+          console.error('Failed to pull/sync barangays on startup:', err.message);
+        }
+
+        try {
           // 3. Run background contacts sync
           await syncWithGoogleSheets('System Background Sync');
         } catch (err: any) {
@@ -630,6 +698,9 @@ function normalizeBarangayName(bName: string): string {
   return 'Barangay Central';
 }
 
+// Cache for Base44 barangays
+const base44BarangaysCache = new Set<string>();
+
 // Sync from Base44 HouseholdSubmission entity
 export async function syncBase44Contacts() {
   base44SyncStatus.lastAttempt = new Date().toISOString();
@@ -639,6 +710,15 @@ export async function syncBase44Contacts() {
     console.log(`[Base44 Sync] Successfully connected. Found ${submissions ? submissions.length : 0} submissions in Base44 database.`);
     
     if (submissions && Array.isArray(submissions)) {
+      submissions.forEach((sub: any) => {
+        const bg = getExactBarangay(sub);
+        if (bg && typeof bg === 'string') {
+          const bgUpper = bg.trim().toUpperCase();
+          if (isRealBarangay(bgUpper)) {
+            base44BarangaysCache.add(bgUpper);
+          }
+        }
+      });
       base44SyncStatus.lastSuccess = new Date().toISOString();
       base44SyncStatus.count = submissions.length;
       base44SyncStatus.error = null;
@@ -872,24 +952,45 @@ export function getUsers() {
   }));
 }
 
+const NON_BARANGAY_VALUES = new Set([
+  'ALL',
+  'ALL BARANGAYS',
+  'ALL ADDRESSES',
+  'ALL BARANGAY',
+  'ALL ADDRESS',
+  'SELECT',
+  'SELECT BARANGAY',
+  'SELECT ADDRESS',
+  'SELECT ADDRESS (BARANGAY)',
+  'UNKNOWN',
+  'N/A',
+  'NONE',
+  'NULL',
+  'UNDEFINED',
+  'OTHER',
+  'OTHERS',
+  'PAGADIAN',
+  'PAGADIAN CITY',
+  'ZAMBOANGA DEL SUR',
+  'CITY',
+  'PROVINCE'
+]);
+
+export function isRealBarangay(name: string): boolean {
+  if (!name || typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const upper = trimmed.toUpperCase();
+  if (NON_BARANGAY_VALUES.has(upper)) return false;
+  if (upper.startsWith('ALL ') || upper.startsWith('SELECT ') || upper.startsWith('FILTER ')) return false;
+  return true;
+}
+
 export function getBarangayList(): string[] {
-  const set = new Set<string>();
-  const defaultBarangays = ['BARANGAY CENTRAL', 'BALANGASAN', 'BANALE', 'NAPOLAN', 'SAN FRANCISCO', 'POBLACION'];
-  
-  defaultBarangays.forEach(b => set.add(b));
-
-  if (Array.isArray(contactsCache)) {
-    contactsCache.forEach(c => {
-      if (!c.deleted_at && c.barangay && c.barangay.trim()) {
-        const bUpper = c.barangay.trim().toUpperCase();
-        if (bUpper !== 'UNKNOWN' && bUpper !== 'N/A' && bUpper !== 'NONE') {
-          set.add(bUpper);
-        }
-      }
-    });
+  if (Array.isArray(barangaysCache) && barangaysCache.length > 0) {
+    return barangaysCache;
   }
-
-  return Array.from(set).filter(b => b !== 'UNKNOWN' && b !== 'N/A').sort();
+  return [...DEFAULT_BARANGAYS];
 }
 
 export async function getBase44Roles(): Promise<string[]> {
@@ -973,7 +1074,7 @@ export async function registerUser(data: {
     barangay: trimmedBarangay,
     passwordHash: hashPassword(trimmedPass),
     role: trimmedRole,
-    status: 'Active',
+    status: 'Pending',
     createdAt: new Date().toISOString()
   };
 
@@ -1229,13 +1330,13 @@ export function getContacts(params: {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
   const filterBarangay = barangay || address;
 
-  // Only query active (non-soft-deleted) contacts that have been added via + Add List AND have NOT yet uploaded a PCU file
-  let filtered = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url);
+  // Only query active (non-soft-deleted) contacts that have NOT yet uploaded a PCU file
+  let filtered = contactsCache.filter(c => c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url);
 
   // Get ALL unique barangays for filtering sidebar/dropdown before search filters are applied
   const allBarangaysSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
+    if (c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
       const bUpper = c.barangay.trim().toUpperCase();
       if (bUpper !== 'UNKNOWN' && bUpper !== 'N/A' && bUpper !== 'NONE') {
         allBarangaysSet.add(c.barangay.trim());
@@ -1247,7 +1348,7 @@ export function getContacts(params: {
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url && c.purok) {
+    if (c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url && c.purok) {
       allPuroksSet.add(c.purok.trim());
     }
   });
@@ -1299,7 +1400,7 @@ export function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true && !c.pcu_file_url && c.barangay.toLowerCase() === bg.toLowerCase());
+    const bgContacts = contactsCache.filter(c => c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay.toLowerCase() === bg.toLowerCase());
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -1336,7 +1437,7 @@ export function getAllFilteredContacts(params: {
 }) {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc' } = params;
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true);
+  let filtered = contactsCache.filter(c => c.deleted_at === null && (c.added_from_print_list !== false));
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     filtered = filtered.filter(c => c.barangay.toLowerCase() === filterBarangay.toLowerCase());
@@ -2377,6 +2478,15 @@ export async function saveSheetsConfig(config: SheetsConfig, username: string) {
       console.error('Failed to pull/sync administrators on configuration save:', err.message);
     }
 
+    try {
+      const barangaysPulled = await pullBarangaysFromGoogleSheets();
+      if (!barangaysPulled) {
+        await syncBarangaysToGoogleSheets();
+      }
+    } catch (err: any) {
+      console.error('Failed to pull/sync barangays on configuration save:', err.message);
+    }
+
     await syncWithGoogleSheets(username);
   }
 }
@@ -2560,12 +2670,15 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       contact_number: rawNumber.trim(),
       created_at: createdAt,
       updated_at: updatedAt,
-      deleted_at: null
+      deleted_at: null,
+      added_locally: true,
+      added_from_print_list: true
     });
   }
 
   contactsCache = newContacts;
   await saveContacts();
+  syncBarangaysToGoogleSheets().catch(err => console.error('Failed to sync Barangays in syncWithGoogleSheets:', err));
   await addActivity(username, `Synchronized ${newContacts.length} contacts from Google Sheet.`);
 
   return {
@@ -2639,6 +2752,121 @@ export async function syncAdminsToGoogleSheets() {
   } catch (err: any) {
     console.error('Failed to sync administrators to Google Sheets:', err.message || err);
   }
+}
+
+export async function syncBarangaysToGoogleSheets() {
+  const sheets = getSheetsClient();
+  if (!sheets) return;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return;
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const barangaySheetName = 'Barangays';
+
+    // Verify sheet exists, if not create it
+    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetsList = spreadsheetInfo.data.sheets || [];
+    const exists = sheetsList.some((s: any) => s.properties?.title === barangaySheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${barangaySheetName}" not found. Creating Barangays table automatically...`);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: {
+                title: barangaySheetName
+              }
+            }
+          }]
+        }
+      });
+    }
+
+    // Clear and rewrite barangays
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${barangaySheetName}!A:Z`
+    });
+
+    const headers = ['Barangay Name'];
+    const rowsToPut = [
+      headers,
+      ...barangaysCache.map(b => [b])
+    ];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${barangaySheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: sanitizeRowsForSheets(rowsToPut)
+      }
+    });
+    console.log('[Google Sheets] Synchronized Barangays list successfully!');
+  } catch (err: any) {
+    console.error('Failed to sync Barangays to Google Sheets:', err.message || err);
+  }
+}
+
+export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
+  const sheets = getSheetsClient();
+  if (!sheets) return false;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const barangaySheetName = 'Barangays';
+
+    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetsList = spreadsheetInfo.data.sheets || [];
+    const exists = sheetsList.some((s: any) => s.properties?.title === barangaySheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${barangaySheetName}" not found. No remote barangays to pull.`);
+      return false;
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${barangaySheetName}!A:A`
+    });
+
+    const rows = res.data.values || [];
+    if (rows.length <= 1) {
+      console.log('Barangays sheet is empty or only contains headers.');
+      return false;
+    }
+
+    const pulled: string[] = [];
+    for (const row of rows.slice(1)) {
+      if (!row || row.length === 0) continue;
+      const bgName = (row[0] || '').toString().trim();
+      if (bgName && !pulled.includes(bgName)) {
+        pulled.push(bgName);
+      }
+    }
+
+    if (pulled.length > 0) {
+      barangaysCache = pulled;
+      await saveBarangays();
+      console.log('[Google Sheets] Successfully pulled Barangays from Google Sheets. Total count:', pulled.length);
+      return true;
+    }
+  } catch (err: any) {
+    console.error('Failed to pull Barangays from Google Sheets:', err.message || err);
+  }
+  return false;
 }
 
 export async function syncSiteSettingsToGoogleSheets() {

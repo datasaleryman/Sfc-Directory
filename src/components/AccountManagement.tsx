@@ -20,6 +20,37 @@ interface AccountManagementProps {
   showToast: (message: string, type: 'success' | 'warning' | 'error') => void;
 }
 
+const NON_BARANGAY_VALUES = new Set([
+  'ALL',
+  'ALL BARANGAYS',
+  'ALL ADDRESSES',
+  'ALL BARANGAY',
+  'ALL ADDRESS',
+  'SELECT',
+  'SELECT BARANGAY',
+  'SELECT ADDRESS',
+  'UNKNOWN',
+  'N/A',
+  'NONE',
+  'NULL',
+  'UNDEFINED',
+  'OTHER',
+  'OTHERS',
+  'PAGADIAN',
+  'PAGADIAN CITY',
+  'ZAMBOANGA DEL SUR'
+]);
+
+function isRealBarangay(name: string): boolean {
+  if (!name || typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const upper = trimmed.toUpperCase();
+  if (NON_BARANGAY_VALUES.has(upper)) return false;
+  if (upper.startsWith('ALL ') || upper.startsWith('SELECT ') || upper.startsWith('FILTER ')) return false;
+  return true;
+}
+
 export const AccountManagement: React.FC<AccountManagementProps> = ({
   authToken,
   currentUsername,
@@ -30,6 +61,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   const [search, setSearch] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('All Barangays');
   const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [statusFilter, setStatusFilter] = useState('All Statuses');
 
   // Base44 roles state
   const [base44Roles, setBase44Roles] = useState<string[]>([
@@ -63,7 +95,36 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Barangay selection list
-  const [barangayList, setBarangayList] = useState<string[]>([]);
+  const DEFAULT_BARANGAYS = [
+    'Navalan',
+    'Kalingayan',
+    'Dampalan',
+    'SAN JOSE',
+    'SAN FRANCISCO',
+    'SANTA MARIA',
+    'Dumalinao',
+    'NAPOLAN',
+    'Balangasan',
+    'Tuburan',
+    'Lumbia',
+    'Banale',
+    'Bulatok',
+    'Dumagoc',
+    'Kawit',
+    'Muricay',
+    'Santiago',
+    'Santo Niño',
+    'Sta. Lucia',
+    'Tawagan Sur',
+    'Tiguma',
+    'White Beach',
+    'Dao',
+    'SAN PEDRO',
+    'Buenavista',
+    'SFC'
+  ];
+
+  const [barangayList, setBarangayList] = useState<string[]>(DEFAULT_BARANGAYS);
   const [fetchingBarangays, setFetchingBarangays] = useState(false);
 
   // Delete modal state
@@ -109,9 +170,10 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       const res = await fetch('/api/public/barangays');
       const data = await res.json();
       if (res.ok && Array.isArray(data.barangays)) {
-        setBarangayList(data.barangays);
-        if (data.barangays.length > 0 && !regBarangay) {
-          setRegBarangay(data.barangays[0]);
+        const filtered = data.barangays.filter((b: string) => isRealBarangay(b));
+        setBarangayList(filtered);
+        if (filtered.length > 0 && (!regBarangay || !isRealBarangay(regBarangay))) {
+          setRegBarangay(filtered[0]);
         }
       }
     } catch (err) {
@@ -176,7 +238,11 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
     setEditTarget(acc);
     setEditFullName(acc.fullName || acc.displayName || '');
     setEditEmail(acc.email || '');
-    setEditBarangay(acc.barangay || (barangayList[0] || 'BARANGAY CENTRAL'));
+    let bg = (acc.barangay || '').trim();
+    if (!isRealBarangay(bg)) {
+      bg = barangayList.find(isRealBarangay) || 'BARANGAY CENTRAL';
+    }
+    setEditBarangay(bg);
     setEditRole(acc.role || 'Staff');
     setEditStatus(acc.status || 'Active');
     setEditPassword('');
@@ -270,6 +336,28 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
     }
   };
 
+  // Handle Approve Pending Account
+  const handleApproveAccount = async (username: string) => {
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(username)}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ status: 'Active' })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to approve account.');
+      }
+      showToast(`Account @${username} approved successfully! User can now log in.`, 'success');
+      fetchAccounts();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // Handle Account Deletion
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -311,10 +399,17 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
     const matchesRole = roleFilter === 'All Roles' || acc.role === roleFilter;
 
-    return matchesSearch && matchesBarangay && matchesRole;
+    const matchesStatus =
+      statusFilter === 'All Statuses' ||
+      acc.status === statusFilter ||
+      (statusFilter === 'Active' && !acc.status);
+
+    return matchesSearch && matchesBarangay && matchesRole && matchesStatus;
   });
 
   const activeCount = accounts.filter(a => a.status === 'Active' || !a.status).length;
+  const pendingAccounts = accounts.filter(a => a.status === 'Pending');
+  const pendingCount = pendingAccounts.length;
   const adminCount = accounts.filter(a => a.role === 'Administrator').length;
 
   return (
@@ -329,7 +424,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             </div>
             <h2 className="text-2xl font-black text-slate-800 tracking-tight font-display">Account Management</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Manage user accounts, edit profiles, assign Base44 roles, and control access permissions. All user updates save to Google Sheets database.
+              Manage user accounts, edit profiles, assign Base44 roles, approve new registrations, and control access permissions.
             </p>
           </div>
 
@@ -369,17 +464,79 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             <div className="text-2xl font-black text-emerald-800 mt-1 font-display">{activeCount}</div>
           </div>
 
+          <div className={`rounded-2xl p-4 border transition-all ${pendingCount > 0 ? 'bg-amber-50 border-amber-200 shadow-xs' : 'bg-slate-50 border-slate-100'}`}>
+            <div className={`text-[10px] font-extrabold uppercase tracking-widest ${pendingCount > 0 ? 'text-amber-800 flex items-center gap-1' : 'text-slate-400'}`}>
+              {pendingCount > 0 && <Clock className="w-3 h-3 text-amber-600 animate-pulse" />}
+              Pending Approval
+            </div>
+            <div className={`text-2xl font-black mt-1 font-display ${pendingCount > 0 ? 'text-amber-900' : 'text-slate-800'}`}>{pendingCount}</div>
+          </div>
+
           <div className="bg-purple-50/60 rounded-2xl p-4 border border-purple-100/60">
             <div className="text-[10px] font-extrabold uppercase tracking-widest text-purple-800">Administrators</div>
             <div className="text-2xl font-black text-purple-800 mt-1 font-display">{adminCount}</div>
           </div>
-
-          <div className="bg-teal-50/60 rounded-2xl p-4 border border-teal-100/60">
-            <div className="text-[10px] font-extrabold uppercase tracking-widest text-teal-800">Base44 Roles</div>
-            <div className="text-2xl font-black text-teal-800 mt-1 font-display">{base44Roles.length}</div>
-          </div>
         </div>
       </div>
+
+      {/* Pending Account Requests Approval Banner */}
+      {pendingAccounts.length > 0 && (
+        <div className="bg-amber-50/90 border border-amber-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300/60 text-amber-800 flex items-center justify-center font-bold shrink-0">
+                <Clock className="w-5 h-5 text-amber-700 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-amber-950 font-display">
+                  Pending Registration Approvals ({pendingAccounts.length})
+                </h3>
+                <p className="text-xs text-amber-800 font-medium">
+                  The following user accounts have registered and require administrator approval before they can log in.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {pendingAccounts.map((acc) => (
+              <div key={acc.username} className="bg-white rounded-2xl p-4 border border-amber-200/60 shadow-xs flex flex-col justify-between space-y-3">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold text-slate-800 text-sm truncate">
+                      {acc.fullName || acc.displayName || `@${acc.username}`}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 text-[10px] font-extrabold border border-amber-200/80 shrink-0">
+                      Pending
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5 truncate">@{acc.username} • {acc.email || `${acc.username}@clinic.gov.ph`}</div>
+                  <div className="text-xs font-semibold text-teal-700 mt-2 flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-teal-600" /> {acc.barangay || 'Central'} • {acc.role || 'Staff'}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => handleApproveAccount(acc.username)}
+                    className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-xs"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setDeleteTarget(acc)}
+                    className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Account Table Controls */}
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/80 space-y-4">
@@ -398,6 +555,21 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
           {/* Filters */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-600">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-transparent outline-none cursor-pointer pr-1"
+              >
+                <option value="All Statuses">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Pending">Pending Approval</option>
+                <option value="Suspended">Suspended</option>
+              </select>
+            </div>
+
             {/* Barangay Filter */}
             <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-600">
               <MapPin className="w-3.5 h-3.5 text-slate-400" />
@@ -529,26 +701,32 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
                       {/* Status Badge */}
                       <td className="py-4 px-4">
-                        <button
-                          onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, acc.status || 'Active')}
-                          disabled={isMasterAdmin}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all ${
-                            acc.status === 'Active'
-                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                              : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                          } ${isMasterAdmin ? 'cursor-default' : 'cursor-pointer'}`}
-                          title={isMasterAdmin ? 'Master admin cannot be suspended' : 'Click to toggle active status'}
-                        >
-                          {acc.status === 'Active' ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Active
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle className="w-3.5 h-3.5 text-rose-600" /> Suspended
-                            </>
-                          )}
-                        </button>
+                        {acc.status === 'Pending' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 text-xs font-extrabold border border-amber-200">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" /> Pending
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, acc.status || 'Active')}
+                            disabled={isMasterAdmin}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all ${
+                              acc.status === 'Active'
+                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                                : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                            } ${isMasterAdmin ? 'cursor-default' : 'cursor-pointer'}`}
+                            title={isMasterAdmin ? 'Master admin status cannot be changed' : 'Click to toggle active status'}
+                          >
+                            {acc.status === 'Active' ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Active
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-600" /> Suspended
+                              </>
+                            )}
+                          </button>
+                        )}
                       </td>
 
                       {/* Registration Date */}
@@ -561,7 +739,17 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
                       {/* Actions */}
                       <td className="py-4 px-6 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {acc.status === 'Pending' && (
+                            <button
+                              onClick={() => handleApproveAccount(acc.username)}
+                              className="px-2.5 py-1 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-extrabold shadow-xs"
+                              title="Approve user registration"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                            </button>
+                          )}
+
                           <button
                             onClick={() => openEditModal(acc)}
                             className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold"
@@ -705,6 +893,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
               </div>
 
               <form onSubmit={handleAddAccount} className="space-y-4">
+                <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="leading-snug">
+                    <p className="font-extrabold text-amber-950">Notice on Account Approval</p>
+                    <p className="text-[11px] text-amber-800/90 mt-0.5">Newly registered accounts will require administrator approval before access is granted.</p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
                     Full Name <span className="text-emerald-600">*</span>
@@ -749,7 +945,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
-                    Barangay (Base44 Address) <span className="text-emerald-600">*</span>
+                    Barangay <span className="text-emerald-600">*</span>
                   </label>
                   <select
                     required
@@ -760,7 +956,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     {fetchingBarangays ? (
                       <option value="">Loading Barangays...</option>
                     ) : (
-                      barangayList.map(bg => (
+                      barangayList.filter(isRealBarangay).map(bg => (
                         <option key={bg} value={bg}>{bg}</option>
                       ))
                     )}
@@ -870,9 +1066,16 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     onChange={(e) => setEditBarangay(e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer"
                   >
-                    {barangayList.map(bg => (
-                      <option key={bg} value={bg}>{bg}</option>
-                    ))}
+                    {fetchingBarangays ? (
+                      <option value="">Loading Barangays...</option>
+                    ) : (
+                      Array.from(new Set([...barangayList, editBarangay]))
+                        .filter(isRealBarangay)
+                        .sort()
+                        .map(bg => (
+                          <option key={bg} value={bg}>{bg}</option>
+                        ))
+                    )}
                   </select>
                 </div>
 

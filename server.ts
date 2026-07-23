@@ -109,9 +109,8 @@ export async function getApp() {
     try {
       const { fullName, email, password, barangay } = req.body;
       const registered = await registerUser({ fullName, email, password, barangay });
-      const token = createToken(registered.username, registered.role as any);
       res.json({
-        token,
+        message: 'Registration successful! Your account is currently pending administrator approval before you can log in.',
         user: registered
       });
     } catch (err: any) {
@@ -135,15 +134,25 @@ export async function getApp() {
         return res.status(401).json({ error: 'Invalid username/email or password.' });
       }
 
+      const inputHash = hashPassword(password);
+      if (user.passwordHash !== inputHash) {
+        console.warn(`[Login Failed] Password mismatch for: ${username}`);
+        return res.status(401).json({ error: 'Invalid username/email or password.' });
+      }
+
+      if (user.status === 'Pending') {
+        console.warn(`[Login Failed] User pending approval: ${username}`);
+        return res.status(403).json({ error: 'Your account registration is pending administrator approval before you can log in.' });
+      }
+
       if (user.status === 'Suspended') {
         console.warn(`[Login Failed] User suspended: ${username}`);
         return res.status(403).json({ error: 'Your account has been suspended. Please contact the administrator.' });
       }
 
-      const inputHash = hashPassword(password);
-      if (user.passwordHash !== inputHash) {
-        console.warn(`[Login Failed] Password mismatch for: ${username}`);
-        return res.status(401).json({ error: 'Invalid username/email or password.' });
+      if (user.status && user.status !== 'Active') {
+        console.warn(`[Login Failed] User not active: ${username} (${user.status})`);
+        return res.status(403).json({ error: `Your account status is ${user.status}. Please contact the administrator.` });
       }
 
       // Success - create cryptographic session token
