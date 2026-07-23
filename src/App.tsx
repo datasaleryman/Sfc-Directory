@@ -148,9 +148,9 @@ export default function App() {
   // Animated Toast notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = (message: string, type: ToastType) => {
+  const showToast = (message: string, type: ToastType, duration?: number) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, type, message }]);
+    setToasts((prev) => [...prev, { id, type, message, duration }]);
   };
 
   const removeToast = (id: string) => {
@@ -377,65 +377,31 @@ export default function App() {
         showToast={showToast}
       />
 
-      {/* Mobile Top Header - Hidden when printing */}
-      <header className="md:hidden bg-emerald-950 border-b border-emerald-900/40 py-3.5 px-6 flex items-center justify-between no-print shrink-0 sticky top-0 z-40">
-        <div className="flex items-center gap-2.5">
-          {siteSettings.logoDataUrl ? (
-            <img 
-              src={siteSettings.logoDataUrl} 
-              alt="Logo" 
-              className="w-8 h-8 rounded-lg object-contain bg-white border border-emerald-800/30" 
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-900/20">
-              <ShieldCheck className="w-4.5 h-4.5" />
-            </div>
-          )}
-          <div>
-            <h1 className="font-bold text-white font-display text-xs tracking-wide leading-none">
-              {siteSettings.faviconTitle || 'Saint Francis Clinic'}
-            </h1>
-            <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider block mt-0.5">
-              Secure Directory
-            </span>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 text-emerald-100/80 hover:text-white hover:bg-white/10 rounded-lg transition-all cursor-pointer"
-          aria-label="Toggle navigation menu"
-        >
-          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
-      </header>
-
       {/* Backdrop overlay for mobile menu */}
       {isMobileMenuOpen && (
         <div
           onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 md:hidden no-print"
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 md:hidden no-print"
         />
       )}
 
       {/* Primary Sidebar Control Panel - Hides when printing */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-emerald-950 text-slate-100 flex flex-col shrink-0 no-print border-r border-emerald-900/40 transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-50 w-64 bg-gradient-to-b from-slate-950 via-emerald-950 to-slate-950 text-slate-100 flex flex-col shrink-0 no-print border-r border-emerald-900/40 shadow-2xl transition-transform duration-300 ease-in-out
         md:static md:translate-x-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="p-6 border-b border-emerald-900/40 bg-emerald-900/20 flex items-center justify-between">
+        <div className="p-6 border-b border-emerald-900/40 bg-gradient-to-r from-emerald-900/40 via-emerald-800/20 to-transparent flex items-center justify-between">
           <div className="flex items-center gap-3">
             {siteSettings.logoDataUrl ? (
               <img 
                 src={siteSettings.logoDataUrl} 
                 alt="Logo" 
-                className="w-9 h-9 rounded-xl object-contain bg-white border border-emerald-800/30" 
+                className="w-9 h-9 rounded-xl object-contain bg-white border border-emerald-800/40 shadow-sm" 
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-900/10">
+              <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/30">
                 <ShieldCheck className="w-5 h-5" />
               </div>
             )}
@@ -443,7 +409,7 @@ export default function App() {
               <h1 className="font-bold text-white font-display text-sm tracking-wide leading-tight">
                 {siteSettings.faviconTitle || 'Saint Francis Clinic'}
               </h1>
-              <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider block mt-0.5">
+              <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block mt-0.5">
                 Clinic Directory
               </span>
             </div>
@@ -481,14 +447,14 @@ export default function App() {
                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer relative overflow-hidden group focus:outline-none ${
                   isActive
                     ? 'text-white'
-                    : 'text-emerald-100/70 hover:text-white'
+                    : 'text-emerald-100/70 hover:text-white hover:bg-emerald-900/30 border border-transparent hover:border-emerald-800/30'
                 }`}
               >
                 {/* Slidable active tab background capsule */}
                 {isActive && (
                   <motion.div
                     layoutId="activeTabGlow"
-                    className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-xl shadow-[0_4px_20px_rgba(16,185,129,0.25)] -z-10"
+                    className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 rounded-xl shadow-[0_4px_20px_rgba(16,185,129,0.35)] -z-10"
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}
@@ -498,7 +464,7 @@ export default function App() {
                   {isActive ? (
                     <>
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-200"></span>
+                      <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-100"></span>
                     </>
                   ) : (
                     <span className="h-1 w-1 rounded-full bg-emerald-700/40 group-hover:bg-emerald-400 group-hover:scale-125 transition-all duration-300"></span>
@@ -522,7 +488,7 @@ export default function App() {
         </nav>
 
         {/* Sidebar Navigation Footer */}
-        <div className="p-4 border-t border-emerald-900/30 bg-emerald-950/20 text-center text-[10px] text-emerald-400/80 font-bold tracking-widest uppercase shrink-0">
+        <div className="p-4 border-t border-emerald-900/40 bg-slate-950/40 text-center text-[10px] text-emerald-400/80 font-bold tracking-widest uppercase shrink-0">
           © 2026 {siteSettings.faviconTitle || 'Saint Francis Clinic'}
         </div>
 
@@ -530,18 +496,27 @@ export default function App() {
 
       {/* Main Panel Content Window */}
       <main className="flex-1 min-w-0 overflow-y-auto print:overflow-visible print:h-auto">
-        {/* Header - Hidden when printing */}
-        <header className="bg-emerald-950 border-b border-emerald-900/40 py-4 px-4 sm:px-6 md:px-8 flex items-center justify-between no-print sticky top-0 z-40 text-white shadow-md shadow-emerald-950/10">
+        {/* Header - Single unified header for both desktop & mobile */}
+        <header className="bg-gradient-to-r from-slate-950 via-emerald-950 to-slate-950 border-b border-emerald-900/40 py-3.5 sm:py-4 px-4 sm:px-6 md:px-8 flex items-center justify-between no-print sticky top-0 z-40 text-white shadow-lg shadow-black/20 backdrop-blur-xl">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="md:hidden p-2 text-emerald-200 hover:text-white bg-emerald-900/50 hover:bg-emerald-900 rounded-xl transition-colors cursor-pointer border border-emerald-800/40 shrink-0"
+              className="md:hidden p-2 text-emerald-200 hover:text-white bg-emerald-900/50 hover:bg-emerald-900 rounded-xl transition-all cursor-pointer border border-emerald-800/40 shrink-0 shadow-xs"
               title="Open navigation menu"
+              aria-label="Open navigation menu"
             >
               <Menu className="w-5 h-5" />
             </button>
+            {siteSettings.logoDataUrl ? (
+              <img 
+                src={siteSettings.logoDataUrl} 
+                alt="Logo" 
+                className="md:hidden w-8 h-8 rounded-lg object-contain bg-white border border-emerald-800/30 shrink-0" 
+                referrerPolicy="no-referrer"
+              />
+            ) : null}
             <div className="min-w-0">
-              <h2 className="text-base sm:text-lg md:text-xl font-bold text-white font-display capitalize truncate">
+              <h2 className="text-sm sm:text-lg md:text-xl font-bold text-white font-display capitalize truncate">
                 {activeTab === 'bulk' 
                   ? (siteSettings.navBulk || 'Bulk Entry Import') 
                   : activeTab === 'print' 
@@ -564,7 +539,16 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Live System Status Pill */}
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-900/60 border border-emerald-800/60 text-[11px] text-emerald-300 font-semibold shadow-inner">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+              </span>
+              <span>System Online</span>
+            </div>
+
             {/* Profile Dropdown */}
             <div className="relative">
               <button

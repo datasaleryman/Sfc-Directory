@@ -140,20 +140,34 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
     fetchHouseholds();
   }, [authToken]);
 
+  // Deduplicate households strictly by Full Name (case-insensitive)
+  const uniqueHouseholds = useMemo(() => {
+    const seenNames = new Set<string>();
+    const result: HouseholdItem[] = [];
+    for (const item of households || []) {
+      const nameKey = (item.full_name || '').trim().toLowerCase();
+      if (nameKey && !seenNames.has(nameKey)) {
+        seenNames.add(nameKey);
+        result.push(item);
+      }
+    }
+    return result;
+  }, [households]);
+
   // Extract unique barangay names for the address filter dropdown
   const uniqueBarangays = useMemo(() => {
     const set = new Set<string>();
-    (households || []).forEach(h => {
+    uniqueHouseholds.forEach(h => {
       if (h && h.barangay) {
         set.add(h.barangay.trim().toUpperCase());
       }
     });
     return Array.from(set).sort();
-  }, [households]);
+  }, [uniqueHouseholds]);
 
   // Filter household records based on search query and selected address filter
   const filteredHouseholds = useMemo(() => {
-    return (households || []).filter(item => {
+    return uniqueHouseholds.filter(item => {
       const matchSearch = 
         (item.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.contact_number || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -166,7 +180,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
 
       return matchSearch && matchAddress;
     });
-  }, [households, searchQuery, selectedBarangay]);
+  }, [uniqueHouseholds, searchQuery, selectedBarangay]);
 
   // Handle +Add List button click
   const handleAddToList = async (item: HouseholdItem) => {
@@ -221,7 +235,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
           <div className="space-y-1 text-center sm:text-left">
             <h4 className="font-bold text-slate-800 text-lg font-display">Household Print List & Directory Extractor</h4>
             <p className="text-xs text-slate-500">
-              Browse Base44 household entries. Click <strong className="text-emerald-700">+Add List</strong> to save a household to Saint Francis Clinic Directory under its respective Barangay folder.
+              Browse Base44 household entries. Click <strong className="text-emerald-700">Add List</strong> to save a household to Saint Francis Clinic Directory under its respective Barangay folder.
             </p>
           </div>
 
@@ -396,7 +410,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                           ) : (
                             <Plus className="w-3 h-3" />
                           )}
-                          +add List
+                          Add List
                         </button>
                       )}
                     </td>

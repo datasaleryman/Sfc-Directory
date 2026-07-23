@@ -78,6 +78,7 @@ export interface Contact {
   longitude?: number;
   geotagged?: boolean;
   added_locally?: boolean;
+  added_from_print_list?: boolean;
   photo_url?: string;
   pcu_file_url?: string;
 }
@@ -146,6 +147,21 @@ let sheetsConfig: SheetsConfig = {
   syncEnabled: false,
   webAppUrl: ''
 };
+
+// Helper to ensure values sent to Google Sheets never exceed single cell limit of 50,000 characters
+function sanitizeCellForSheets(val: any): string | number | boolean {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'number' || typeof val === 'boolean') return val;
+  const str = String(val);
+  if (str.length > 49000) {
+    return str.substring(0, 49000);
+  }
+  return str;
+}
+
+function sanitizeRowsForSheets(rows: any[][]): any[][] {
+  return rows.map(row => row.map(cell => sanitizeCellForSheets(cell)));
+}
 
 let lastSyncStatus = {
   connected: false,
@@ -337,6 +353,10 @@ export async function initDb() {
             anyC.purok = normPurok;
             updated = true;
           }
+        }
+        if (anyC.added_from_print_list === undefined) {
+          anyC.added_from_print_list = true;
+          updated = true;
         }
         if (updated) migrated = true;
         return anyC as Contact;
@@ -592,63 +612,93 @@ async function saveContacts() {
   await safeWriteFile(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
 }
 
-// Fetch raw Base44 Household Submissions for Print List page
+// Fetch raw Base44 Household Submissions & Directory contacts for Print List page
 export async function fetchHouseholdSubmissionsFromBase44() {
+  let base44Households: any[] = [];
   try {
     const submissions = await base44.entities.HouseholdSubmission.list(undefined, 5000);
-    if (!submissions || !Array.isArray(submissions)) {
-      return [];
+    if (submissions && Array.isArray(submissions)) {
+      base44Households = submissions.map((sub: any, idx: number) => {
+        let name = sub.memberName || '';
+        if (!name && sub.fpe && sub.fpe.fullName) {
+          name = sub.fpe.fullName;
+        }
+        if (!name && sub.pmrf_front) {
+          name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
+        }
+        if (!name) {
+          name = 'Unnamed Household';
+        }
+
+        const contact_number = sub.pcsf?.contact || 
+                               sub.fpe?.mobile || 
+                               sub.pmrf_front?.mobile || 
+                               '';
+
+        const barangay = getExactBarangay(sub);
+        const purok = sub.purok || (sub.pcsf?.purok || '');
+
+        const hasGeo = sub.geoLocation && typeof sub.geoLocation.latitude === 'number' && typeof sub.geoLocation.longitude === 'number';
+
+        // Check if already in contactsCache (added to directory via + Add List)
+        const isAlreadyAdded = contactsCache.some(c => 
+          !c.deleted_at &&
+          c.added_from_print_list === true &&
+          c.full_name.toLowerCase() === name.toLowerCase()
+        );
+
+        return {
+          id: sub.id || `sub_${idx + 1}`,
+          full_name: name,
+          barangay: barangay,
+          purok: purok,
+          contact_number: contact_number,
+          created_at: sub.created_date || new Date().toISOString(),
+          latitude: hasGeo ? sub.geoLocation.latitude : undefined,
+          longitude: hasGeo ? sub.geoLocation.longitude : undefined,
+          geotagged: hasGeo,
+          addedToDirectory: isAlreadyAdded
+        };
+      });
     }
-
-    // Map each submission to a standard Household object
-    const households = submissions.map((sub: any, idx: number) => {
-      let name = sub.memberName || '';
-      if (!name && sub.fpe && sub.fpe.fullName) {
-        name = sub.fpe.fullName;
-      }
-      if (!name && sub.pmrf_front) {
-        name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
-      }
-      if (!name) {
-        name = 'Unnamed Household';
-      }
-
-      const contact_number = sub.pcsf?.contact || 
-                             sub.fpe?.mobile || 
-                             sub.pmrf_front?.mobile || 
-                             '';
-
-      const barangay = getExactBarangay(sub);
-      const purok = sub.purok || (sub.pcsf?.purok || '');
-
-      const hasGeo = sub.geoLocation && typeof sub.geoLocation.latitude === 'number' && typeof sub.geoLocation.longitude === 'number';
-
-      // Check if already in contactsCache (added to directory)
-      const isAlreadyAdded = contactsCache.some(c => 
-        !c.deleted_at &&
-        c.full_name.toLowerCase() === name.toLowerCase() && 
-        c.barangay.toLowerCase() === barangay.toLowerCase()
-      );
-
-      return {
-        id: sub.id || `sub_${idx + 1}`,
-        full_name: name,
-        barangay: barangay,
-        purok: purok,
-        contact_number: contact_number,
-        created_at: sub.created_date || new Date().toISOString(),
-        latitude: hasGeo ? sub.geoLocation.latitude : undefined,
-        longitude: hasGeo ? sub.geoLocation.longitude : undefined,
-        geotagged: hasGeo,
-        addedToDirectory: isAlreadyAdded
-      };
-    });
-
-    return households;
   } catch (err: any) {
     console.error('[Base44] Failed to fetch household submissions:', err.message);
-    throw new Error('Failed to load Base44 Household Submissions: ' + err.message);
   }
+
+  // Combine with active contacts from directory (Bulk Entries & manually added contacts)
+  // Deduplicate strictly by case-insensitive full_name
+  const seenNameKeys = new Set<string>();
+
+  const activeContacts = contactsCache.filter(c => c.deleted_at === null);
+  const directoryHouseholds: any[] = [];
+
+  for (const c of activeContacts) {
+    const nameKey = (c.full_name || '').trim().toLowerCase();
+    if (nameKey && !seenNameKeys.has(nameKey)) {
+      seenNameKeys.add(nameKey);
+      directoryHouseholds.push({
+        id: `dir_${c.id}`,
+        full_name: c.full_name,
+        barangay: c.barangay,
+        purok: c.purok || '',
+        contact_number: c.contact_number || '',
+        created_at: c.created_at || new Date().toISOString(),
+        geotagged: false,
+        addedToDirectory: c.added_from_print_list === true
+      });
+    }
+  }
+
+  const uniqueBase44Households: any[] = [];
+  for (const h of base44Households) {
+    const nameKey = (h.full_name || '').trim().toLowerCase();
+    if (nameKey && !seenNameKeys.has(nameKey)) {
+      seenNameKeys.add(nameKey);
+      uniqueBase44Households.push(h);
+    }
+  }
+
+  return [...directoryHouseholds, ...uniqueBase44Households];
 }
 
 // Add a specific Household Submission to the Saint Francis Clinic Directory
@@ -676,6 +726,8 @@ export async function addHouseholdToDirectory(household: {
   );
 
   if (existing) {
+    existing.added_from_print_list = true;
+    await saveContacts();
     return existing;
   }
 
@@ -692,7 +744,8 @@ export async function addHouseholdToDirectory(household: {
     latitude: household.latitude,
     longitude: household.longitude,
     geotagged: Boolean(household.geotagged || (household.latitude && household.longitude)),
-    added_locally: true
+    added_locally: true,
+    added_from_print_list: true
   };
 
   contactsCache.unshift(newContact);
@@ -1130,13 +1183,13 @@ export function getContacts(params: {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
   const filterBarangay = barangay || address;
 
-  // Only query active (non-soft-deleted) contacts
-  let filtered = contactsCache.filter(c => c.deleted_at === null);
+  // Only query active (non-soft-deleted) contacts that have been added via + Add List
+  let filtered = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true);
 
   // Get ALL unique barangays for filtering sidebar/dropdown before search filters are applied
   const allBarangaysSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && c.barangay && c.barangay.trim()) {
+    if (c.deleted_at === null && c.added_from_print_list === true && c.barangay && c.barangay.trim()) {
       const bUpper = c.barangay.trim().toUpperCase();
       if (bUpper !== 'UNKNOWN' && bUpper !== 'N/A' && bUpper !== 'NONE') {
         allBarangaysSet.add(c.barangay.trim());
@@ -1148,7 +1201,7 @@ export function getContacts(params: {
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && c.purok) {
+    if (c.deleted_at === null && c.added_from_print_list === true && c.purok) {
       allPuroksSet.add(c.purok.trim());
     }
   });
@@ -1200,7 +1253,7 @@ export function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => c.deleted_at === null && c.barangay.toLowerCase() === bg.toLowerCase());
+    const bgContacts = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true && c.barangay.toLowerCase() === bg.toLowerCase());
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -1237,7 +1290,7 @@ export function getAllFilteredContacts(params: {
 }) {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc' } = params;
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(c => c.deleted_at === null);
+  let filtered = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true);
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     filtered = filtered.filter(c => c.barangay.toLowerCase() === filterBarangay.toLowerCase());
@@ -1322,7 +1375,8 @@ export async function addContact(
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     deleted_at: null,
-    added_locally: true
+    added_locally: true,
+    added_from_print_list: true
   };
 
   contactsCache.push(newContact);
@@ -1636,7 +1690,8 @@ export async function saveBulkImport(
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           deleted_at: null,
-          added_locally: true
+          added_locally: true,
+          added_from_print_list: false
         };
         contactsCache.push(newContact);
         appended.push(newContact);
@@ -1662,7 +1717,8 @@ export async function saveBulkImport(
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         deleted_at: null,
-        added_locally: true
+        added_locally: true,
+        added_from_print_list: false
       };
       contactsCache.push(newContact);
       appended.push(newContact);
@@ -1757,7 +1813,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
         range: `${sheetName}!A:Z`,
         valueInputOption: 'USER_ENTERED',
         requestBody: {
-          values: valuesToAppend
+          values: sanitizeRowsForSheets(valuesToAppend)
         }
       });
       console.log(`Successfully batch-appended ${appended.length} contacts to Google Sheets.`);
@@ -1803,7 +1859,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
               range: `${sheetName}!A${targetRowIdx}`,
               valueInputOption: 'USER_ENTERED',
               requestBody: {
-                values: [rowValues]
+                values: sanitizeRowsForSheets([rowValues])
               }
             });
           }
@@ -1814,11 +1870,21 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
   } catch (err: any) {
     console.error('Error batch pushing bulk import to Google Sheets:', err.message || err);
   }
+
+  // Fallback to Apps Script Web App if service account is not configured or in addition
+  if (sheetsConfig.webAppUrl) {
+    for (const c of appended) {
+      forwardToWebApp('add', c).catch(() => {});
+    }
+    for (const c of updated) {
+      forwardToWebApp('edit', c).catch(() => {});
+    }
+  }
 }
 
 // Dashboard statistics
 export function getDashboardStats() {
-  const activeContacts = contactsCache.filter(c => c.deleted_at === null);
+  const activeContacts = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true);
   
   // Total Contacts
   const totalContacts = activeContacts.length;
@@ -2016,7 +2082,7 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
           range: `${sheetName}!A1`,
           valueInputOption: 'USER_ENTERED',
           requestBody: {
-            values: updatedRows
+            values: sanitizeRowsForSheets(updatedRows)
           }
         });
       } else if (allRows.length > 0 && !isHeaderRow) {
@@ -2037,7 +2103,7 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
           range: `${sheetName}!A1`,
           valueInputOption: 'USER_ENTERED',
           requestBody: {
-            values: updatedRows
+            values: sanitizeRowsForSheets(updatedRows)
           }
         });
       } else {
@@ -2060,7 +2126,7 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
             range: `${sheetName}!A1`,
             valueInputOption: 'USER_ENTERED',
             requestBody: {
-              values: [updatedHeaderRow]
+              values: sanitizeRowsForSheets([updatedHeaderRow])
             }
           });
         }
@@ -2131,7 +2197,7 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
           range: `${sheetName}!A:Z`,
           valueInputOption: 'USER_ENTERED',
           requestBody: {
-            values: [rowValues]
+            values: sanitizeRowsForSheets([rowValues])
           }
         });
         console.log('Successfully appended contact to Google Sheets using Service Account!');
@@ -2198,7 +2264,7 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
                 range: `${sheetName}!A${targetRowIdx}`,
                 valueInputOption: 'USER_ENTERED',
                 requestBody: {
-                  values: [rowValues]
+                  values: sanitizeRowsForSheets([rowValues])
                 }
               });
               console.log('Successfully updated contact row in Google Sheets using Service Account!');
@@ -2520,7 +2586,7 @@ export async function syncAdminsToGoogleSheets() {
       range: `${adminSheetName}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: rowsToPut
+        values: sanitizeRowsForSheets(rowsToPut)
       }
     });
     console.log('[Google Sheets] Synchronized administrators list successfully!');
@@ -2588,7 +2654,7 @@ export async function syncSiteSettingsToGoogleSheets() {
       range: `${settingsSheetName}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: rowsToPut
+        values: sanitizeRowsForSheets(rowsToPut)
       }
     });
     console.log('[Google Sheets] Synchronized website settings successfully!');
@@ -2647,10 +2713,14 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
           loadedSettings.faviconTitle = unescapeHtml(val);
           break;
         case 'Logo Data URL':
-          loadedSettings.logoDataUrl = unescapeHtml(val);
+          if (val && val.length < 48900) {
+            loadedSettings.logoDataUrl = unescapeHtml(val);
+          }
           break;
         case 'Favicon Data URL':
-          loadedSettings.faviconDataUrl = unescapeHtml(val);
+          if (val && val.length < 48900) {
+            loadedSettings.faviconDataUrl = unescapeHtml(val);
+          }
           break;
         case 'Nav Dashboard':
           loadedSettings.navDashboard = unescapeHtml(val);
@@ -2812,7 +2882,7 @@ export async function appendActivityToGoogleSheets(activity: Activity) {
       range: `${logSheetName}!A:D`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [[activity.id, activity.timestamp, activity.username, activity.action]]
+        values: sanitizeRowsForSheets([[activity.id, activity.timestamp, activity.username, activity.action]])
       }
     });
     console.log('[Google Sheets] Logged activity successfully!');
