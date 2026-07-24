@@ -429,8 +429,8 @@ export async function initDb() {
         if (updated) migrated = true;
         return anyC as Contact;
       });
-      // Filter out auto-synced base44 items; only keep contacts added locally/manually or from Print List
-      contactsCache = contactsCache.filter(c => c && (c.added_locally || c.id >= 100000));
+      // Filter out auto-synced base44 items; only keep contacts added locally/manually, from Print List, or soft-deleted
+      contactsCache = contactsCache.filter(c => c && (c.added_locally || c.id >= 100000 || (c.deleted_at !== null && c.deleted_at !== undefined)));
       safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
     }
 
@@ -1621,9 +1621,6 @@ export async function deleteContact(id: number, username: string) {
   await saveContacts();
   await addActivity(username, `Deleted contact (soft-delete): "${contactsCache[index].full_name}"`);
 
-  // Forward write operation to Apps Script Web App if configured
-  forwardToWebApp('delete', { id }).catch(err => console.error('Error forwarding delete to Sheets Web App:', err));
-
   return true;
 }
 
@@ -1639,11 +1636,6 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
       contactsCache[i].deleted_at = new Date().toISOString();
       contactsCache[i].updated_at = new Date().toISOString();
       count++;
-      
-      // Forward deletion to sheets
-      forwardToWebApp('delete', { id: c.id }).catch(err => 
-        console.error(`Error forwarding bulk-delete of contact ${c.id} to Sheets Web App:`, err)
-      );
     }
   }
 
@@ -2703,17 +2695,34 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const createdAt = createdIdx !== -1 && row[createdIdx] ? row[createdIdx] : new Date().toISOString();
     const updatedAt = updatedIdx !== -1 && row[updatedIdx] ? row[updatedIdx] : new Date().toISOString();
 
+    const formattedName = capitalizeWords(rawName);
+    const formattedBarangay = normalizeBarangayName(rawBarangay);
+
+    // Find if this contact already exists in local cache (matching either ID or case-insensitive name & barangay)
+    const existingLocal = contactsCache.find(lc => 
+      lc.id === id || 
+      (lc.full_name.toLowerCase() === rawName.trim().toLowerCase() && 
+       lc.barangay.toLowerCase() === formattedBarangay.toLowerCase())
+    );
+
     newContacts.push({
       id,
-      full_name: capitalizeWords(rawName),
-      barangay: normalizeBarangayName(rawBarangay),
+      full_name: formattedName,
+      barangay: formattedBarangay,
       purok: rawPurok ? capitalizeWords(rawPurok) : '',
       contact_number: rawNumber.trim(),
       created_at: createdAt,
       updated_at: updatedAt,
-      deleted_at: null,
-      added_locally: true,
-      added_from_print_list: true
+      deleted_at: existingLocal ? existingLocal.deleted_at : null,
+      latitude: existingLocal ? existingLocal.latitude : undefined,
+      longitude: existingLocal ? existingLocal.longitude : undefined,
+      geotagged: existingLocal ? existingLocal.geotagged : false,
+      photo_url: existingLocal ? existingLocal.photo_url : undefined,
+      pcu_file_url: existingLocal ? existingLocal.pcu_file_url : undefined,
+      pcu_uploaded_by: existingLocal ? existingLocal.pcu_uploaded_by : undefined,
+      pcu_uploaded_at: existingLocal ? existingLocal.pcu_uploaded_at : undefined,
+      added_locally: existingLocal ? existingLocal.added_locally : true,
+      added_from_print_list: existingLocal ? existingLocal.added_from_print_list : true
     });
   }
 

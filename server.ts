@@ -129,10 +129,10 @@ export async function getApp() {
         return res.status(400).json({ error: 'Email and password are required.' });
       }
 
-      console.log(`[Login Attempt] Email: ${username}`);
-      const user = findUserByEmail(username);
+      console.log(`[Login Attempt] Email/Username: ${username}`);
+      const user = findUser(username);
       if (!user) {
-        console.warn(`[Login Failed] User not found by email: ${username}`);
+        console.warn(`[Login Failed] User not found by email or username: ${username}`);
         return res.status(401).json({ error: 'Invalid email address or password.' });
       }
 
