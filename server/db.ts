@@ -774,7 +774,8 @@ export async function fetchHouseholdSubmissionsFromBase44() {
         const isAlreadyAdded = contactsCache.some(c => 
           !c.deleted_at &&
           c.full_name.toLowerCase() === name.toLowerCase() &&
-          c.barangay.toLowerCase() === barangay.toLowerCase()
+          c.barangay.toLowerCase() === barangay.toLowerCase() &&
+          c.added_from_print_list !== false
         );
 
         return {
@@ -814,7 +815,7 @@ export async function fetchHouseholdSubmissionsFromBase44() {
         contact_number: c.contact_number || '',
         created_at: c.created_at || new Date().toISOString(),
         geotagged: false,
-        addedToDirectory: true
+        addedToDirectory: c.added_from_print_list !== false
       });
     }
   }
