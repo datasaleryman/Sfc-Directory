@@ -894,6 +894,9 @@ export async function clearAllDirectoryContacts(actorUsername: string) {
   contactsCache = [];
   await saveContacts();
   await addActivity(actorUsername, 'Cleared all contacts from Saint Francis Clinic Directory');
+  if (sheetsConfig.syncEnabled) {
+    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync cleared contacts to Google Sheets:', err));
+  }
   return true;
 }
 
@@ -1631,6 +1634,10 @@ export async function deleteContact(id: number, username: string) {
   await saveContacts();
   await addActivity(username, `Deleted contact (soft-delete): "${contactsCache[index].full_name}"`);
 
+  if (sheetsConfig.syncEnabled) {
+    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync deletions to Google Sheets:', err));
+  }
+
   return true;
 }
 
@@ -1652,9 +1659,108 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
   if (count > 0) {
     await saveContacts();
     await addActivity(username, `Deleted entire Barangay folder "${barangay}" containing ${count} households.`);
+    if (sheetsConfig.syncEnabled) {
+      rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
+    }
   }
 
   return { success: true, count };
+}
+
+// Overwrite Google Sheets with all active (non-soft-deleted) contacts
+export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
+  const sheets = getSheetsClient();
+  if (!sheets) {
+    console.log('[Google Sheets] Sheets client not configured or disabled.');
+    return false;
+  }
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const sheetName = sheetsConfig.sheetName || 'Sheet1';
+
+    // Ensure the sheet exists
+    await ensureSheetExists(sheets, spreadsheetId, sheetName);
+
+    // Get current headers to match column positions
+    const headerResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A1:Z1`
+    });
+    const headerRow = (headerResponse.data.values && headerResponse.data.values[0]) || [];
+    let headers = headerRow.map((h: any) => (h || '').toString().toLowerCase().trim());
+
+    if (headers.length === 0) {
+      headers = ['id', 'name', 'barangay', 'purok', 'contact number', 'created at', 'updated at'];
+    }
+
+    const idIdx = headers.findIndex((h: string) => h.includes('id'));
+    const nameIdx = headers.findIndex((h: string) => h.includes('name') || h.includes('full'));
+    const barangayIdx = headers.findIndex((h: string) => h.includes('barangay') || h.includes('address'));
+    const purokIdx = headers.findIndex((h: string) => h.includes('purok'));
+    const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
+    const createdIdx = headers.findIndex((h: string) => h.includes('created') || h.includes('date'));
+    const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+
+    const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, headers.length - 1, 6);
+
+    // Clear everything in A:Z range
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${sheetName}!A:Z`
+    });
+
+    const activeContacts = contactsCache.filter(c => !c.deleted_at);
+    const rowsToPut = [
+      headerRow.length > 0 ? headerRow : headers.map(h => capitalizeWords(h)),
+      ...activeContacts.map(c => {
+        const rowValues = new Array(maxIdx + 1).fill('');
+
+        if (idIdx !== -1) rowValues[idIdx] = c.id;
+        else rowValues[0] = c.id;
+
+        if (nameIdx !== -1) rowValues[nameIdx] = c.full_name;
+        else rowValues[1] = c.full_name;
+
+        if (barangayIdx !== -1) rowValues[barangayIdx] = c.barangay;
+        else rowValues[2] = c.barangay;
+
+        if (purokIdx !== -1) rowValues[purokIdx] = c.purok;
+        else rowValues[3] = c.purok;
+
+        if (numberIdx !== -1) rowValues[numberIdx] = c.contact_number;
+        else rowValues[4] = c.contact_number;
+
+        if (createdIdx !== -1) rowValues[createdIdx] = c.created_at;
+        else rowValues[5] = c.created_at;
+
+        if (updatedIdx !== -1) rowValues[updatedIdx] = c.updated_at;
+        else rowValues[6] = c.updated_at;
+
+        return rowValues;
+      })
+    ];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: sanitizeRowsForSheets(rowsToPut)
+      }
+    });
+
+    console.log(`[Google Sheets] Overwrote sheet with ${activeContacts.length} active contacts successfully.`);
+    return true;
+  } catch (err: any) {
+    console.error('[Google Sheets] Failed to rewrite contacts to Google Sheets:', err.message || err);
+    return false;
+  }
 }
 
 // Auto-detect bulk separator
