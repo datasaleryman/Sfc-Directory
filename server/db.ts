@@ -1721,8 +1721,9 @@ export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
     const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
     const createdIdx = headers.findIndex((h: string) => h.includes('created') || h.includes('date'));
     const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+    const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
-    const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, headers.length - 1, 6);
+    const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, addedIdx, headers.length - 1, 7);
 
     // Clear everything in A:Z range
     await sheets.spreadsheets.values.clear({
@@ -1756,6 +1757,12 @@ export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
 
         if (updatedIdx !== -1) rowValues[updatedIdx] = c.updated_at;
         else rowValues[6] = c.updated_at;
+
+        if (addedIdx !== -1) {
+          rowValues[addedIdx] = c.added_from_print_list !== false ? 'TRUE' : 'FALSE';
+        } else {
+          rowValues[7] = c.added_from_print_list !== false ? 'TRUE' : 'FALSE';
+        }
 
         return rowValues;
       })
@@ -2089,8 +2096,9 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
       const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
       const createdIdx = headers.findIndex((h: string) => h.includes('created') || h.includes('date'));
       const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+      const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
-      const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, headers.length - 1, 6);
+      const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, addedIdx, headers.length - 1, 7);
 
       const valuesToAppend = appended.map(c => {
         const rowValues = new Array(maxIdx + 1).fill('');
@@ -2115,6 +2123,12 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
 
         if (updatedIdx !== -1) rowValues[updatedIdx] = c.updated_at;
         else rowValues[6] = c.updated_at;
+
+        if (addedIdx !== -1) {
+          rowValues[addedIdx] = c.added_from_print_list !== false ? 'TRUE' : 'FALSE';
+        } else {
+          rowValues[7] = c.added_from_print_list !== false ? 'TRUE' : 'FALSE';
+        }
 
         return rowValues;
       });
@@ -2147,6 +2161,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
         const purokIdx = headers.findIndex((h: string) => h.includes('purok'));
         const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
         const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+        const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
         for (const contact of updated) {
           let targetRowIdx = -1;
@@ -2164,6 +2179,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
             if (purokIdx !== -1) rowValues[purokIdx] = contact.purok;
             if (numberIdx !== -1) rowValues[numberIdx] = contact.contact_number;
             if (updatedIdx !== -1) rowValues[updatedIdx] = contact.updated_at;
+            if (addedIdx !== -1) rowValues[addedIdx] = contact.added_from_print_list !== false ? 'TRUE' : 'FALSE';
 
             await sheets.spreadsheets.values.update({
               spreadsheetId,
@@ -2311,10 +2327,10 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
       // Write default headers
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${sheetName}!A1:G1`,
+        range: `${sheetName}!A1:H1`,
         valueInputOption: 'USER_ENTERED',
         requestBody: {
-          values: [['ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At', 'Updated At']]
+          values: [['ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At', 'Updated At', 'Added To Directory']]
         }
       });
 
@@ -2327,7 +2343,8 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
           c.purok,
           c.contact_number,
           c.created_at,
-          c.updated_at
+          c.updated_at,
+          c.added_from_print_list !== false ? 'TRUE' : 'FALSE'
         ]);
         await sheets.spreadsheets.values.append({
           spreadsheetId,
@@ -2357,13 +2374,14 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
         { test: (h: string) => h.includes('purok'), display: 'Purok' },
         { test: (h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'), display: 'Contact Number' },
         { test: (h: string) => h.includes('created') || h.includes('date'), display: 'Created At' },
-        { test: (h: string) => h.includes('updated') || h.includes('last'), display: 'Updated At' }
+        { test: (h: string) => h.includes('updated') || h.includes('last'), display: 'Updated At' },
+        { test: (h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'), display: 'Added To Directory' }
       ];
 
       // Check if the first row is actually a header row or a data row.
       const isHeaderRow = normalizedExisting.some(h => {
         const clean = h.replace(/[^a-z0-9]/g, '');
-        return ['id', 'name', 'fullname', 'full_name', 'address', 'barangay', 'purok', 'phone', 'phonenumber', 'contact', 'contactnumber', 'contact_number', 'createdat', 'created_at', 'updatedat', 'updated_at', 'created', 'updated', 'date'].includes(clean);
+        return ['id', 'name', 'fullname', 'full_name', 'address', 'barangay', 'purok', 'phone', 'phonenumber', 'contact', 'contactnumber', 'contact_number', 'createdat', 'created_at', 'updatedat', 'updated_at', 'created', 'updated', 'date', 'addedtodirectory'].includes(clean);
       });
 
       // Find if we have a "corrupted mixed row" where standard headers start after index 0
@@ -2399,7 +2417,7 @@ async function ensureSheetExists(sheets: any, spreadsheetId: string, sheetName: 
       } else if (allRows.length > 0 && !isHeaderRow) {
         // First row is actually data, not a header!
         // Prepend the proper header row at A1 and shift all rows down.
-        const correctHeaders = ['ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At', 'Updated At'];
+        const correctHeaders = ['ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At', 'Updated At', 'Added To Directory'];
         const updatedRows = [correctHeaders, ...allRows];
 
         console.log(`First row in sheet "${sheetName}" is data. Prepending headers and shifting rows down.`);
@@ -2478,8 +2496,9 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
         const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
         const createdIdx = headers.findIndex((h: string) => h.includes('created') || h.includes('date'));
         const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+        const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
-        const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, headers.length - 1, 6);
+        const maxIdx = Math.max(idIdx, nameIdx, barangayIdx, purokIdx, numberIdx, createdIdx, updatedIdx, addedIdx, headers.length - 1, 7);
         const rowValues = new Array(maxIdx + 1).fill('');
 
         if (idIdx !== -1) rowValues[idIdx] = data.id;
@@ -2502,6 +2521,12 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
 
         if (updatedIdx !== -1) rowValues[updatedIdx] = data.updated_at;
         else rowValues[6] = data.updated_at;
+
+        if (addedIdx !== -1) {
+          rowValues[addedIdx] = data.added_from_print_list !== false ? 'TRUE' : 'FALSE';
+        } else {
+          rowValues[7] = data.added_from_print_list !== false ? 'TRUE' : 'FALSE';
+        }
 
         await sheets.spreadsheets.values.append({
           spreadsheetId,
@@ -2562,6 +2587,7 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
               const purokIdx = headers.findIndex((h: string) => h.includes('purok'));
               const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
               const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+              const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
               const rowValues = [...rows[targetRowIdx - 1]];
               if (nameIdx !== -1) rowValues[nameIdx] = data.full_name;
@@ -2569,6 +2595,7 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
               if (purokIdx !== -1) rowValues[purokIdx] = data.purok;
               if (numberIdx !== -1) rowValues[numberIdx] = data.contact_number;
               if (updatedIdx !== -1) rowValues[updatedIdx] = data.updated_at;
+              if (addedIdx !== -1) rowValues[addedIdx] = data.added_from_print_list !== false ? 'TRUE' : 'FALSE';
 
               await sheets.spreadsheets.values.update({
                 spreadsheetId,
@@ -2770,6 +2797,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   let numberIdx = -1;
   let createdIdx = -1;
   let updatedIdx = -1;
+  let addedIdx = -1;
   let startIndex = 1;
 
   if (!isHeaderRow) {
@@ -2799,6 +2827,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     numberIdx = headers.findIndex(h => h.includes('number') || h.includes('contact') || h.includes('phone'));
     createdIdx = headers.findIndex(h => h.includes('created') || h.includes('date'));
     updatedIdx = headers.findIndex(h => h.includes('updated') || h.includes('last'));
+    addedIdx = headers.findIndex(h => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
     // Defaults if headers not found
     if (nameIdx === -1) nameIdx = 1;
@@ -2842,6 +2871,19 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
        lc.barangay.toLowerCase() === formattedBarangay.toLowerCase())
     );
 
+    const rawAdded = addedIdx !== -1 ? (row[addedIdx] || '').toString().trim().toUpperCase() : '';
+    let addedFromPrintList = true;
+    if (rawAdded) {
+      addedFromPrintList = !(rawAdded === 'FALSE' || rawAdded === 'NO' || rawAdded === '0' || rawAdded === 'N');
+    } else if (existingLocal) {
+      addedFromPrintList = existingLocal.added_from_print_list !== false;
+    } else {
+      // Default new rows to false if they came from bulk entries, unless we explicitly want them to show.
+      // Wait, is it safer to default to false for unrecognized spreadsheet rows to prevent auto-display on clinic directory?
+      // Yes! To strictly prevent unsolicited display, default to false.
+      addedFromPrintList = false;
+    }
+
     newContacts.push({
       id,
       full_name: formattedName,
@@ -2859,7 +2901,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       pcu_uploaded_by: existingLocal ? existingLocal.pcu_uploaded_by : undefined,
       pcu_uploaded_at: existingLocal ? existingLocal.pcu_uploaded_at : undefined,
       added_locally: existingLocal ? existingLocal.added_locally : true,
-      added_from_print_list: existingLocal ? existingLocal.added_from_print_list : true
+      added_from_print_list: addedFromPrintList
     });
   }
 
