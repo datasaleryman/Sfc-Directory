@@ -121,7 +121,7 @@ export async function getApp() {
   });
 
   // Login
-  app.post('/api/auth/login', (req: Request, res: Response) => {
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
 
@@ -130,6 +130,15 @@ export async function getApp() {
       }
 
       console.log(`[Login Attempt] Email/Username: ${username}`);
+      const sheetsConfig = getSheetsConfig();
+      if (sheetsConfig.syncEnabled) {
+        try {
+          await pullAdminsFromGoogleSheets();
+        } catch (err: any) {
+          console.error('Failed to pull administrators on login request:', err.message);
+        }
+      }
+
       let user: any = undefined;
       const target = username.trim().toLowerCase();
       if (target === 'admin') {
@@ -649,8 +658,16 @@ export async function getApp() {
   });
 
   // Get all registered user accounts
-  app.get('/api/users', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/users', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      const sheetsConfig = getSheetsConfig();
+      if (sheetsConfig.syncEnabled) {
+        try {
+          await pullAdminsFromGoogleSheets();
+        } catch (err: any) {
+          console.error('Failed to pull administrators on getUsers request:', err.message);
+        }
+      }
       const users = getUsers();
       res.json(users);
     } catch (err: any) {
@@ -711,8 +728,16 @@ export async function getApp() {
   // --- Administrator Management Endpoints ---
 
   // List all registered admins
-  app.get('/api/admins', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/admins', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      const sheetsConfig = getSheetsConfig();
+      if (sheetsConfig.syncEnabled) {
+        try {
+          await pullAdminsFromGoogleSheets();
+        } catch (err: any) {
+          console.error('Failed to pull administrators on getAdmins request:', err.message);
+        }
+      }
       const admins = getUsers();
       res.json(admins);
     } catch (err: any) {
