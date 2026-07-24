@@ -253,18 +253,8 @@ export default function App() {
 
     triggerInitialSync();
 
-    // Set up a background poller that checks for updates and refreshes client stats every 15 seconds
-    const intervalId = setInterval(() => {
-      if (isMounted) {
-        console.log('[App Poller] Auto-refreshing statistics...');
-        fetchStats();
-        setLastSyncTime(new Date().toISOString());
-      }
-    }, 15000);
-
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
     };
   }, [authToken]);
 
