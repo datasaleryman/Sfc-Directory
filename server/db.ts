@@ -594,44 +594,59 @@ export async function initDb() {
     // Run background sheets sync if enabled
     if (sheetsConfig.syncEnabled) {
       setTimeout(async () => {
-        try {
-          // 1. Try to pull site settings first from Google Sheets
-          const settingsPulled = await pullSiteSettingsFromGoogleSheets();
-          if (!settingsPulled) {
-            // No settings in sheet yet, so push current local settings
-            await syncSiteSettingsToGoogleSheets();
+        // Prevent hitting Google Sheets API read/write quota limits during rapid development restarts by
+        // only performing initial syncs if local caches are empty. Otherwise, rely on the persistent local JSON files on disk.
+        
+        const settingsEmpty = !siteSettings.title || siteSettings.title === 'SFC Uploader';
+        if (settingsEmpty) {
+          try {
+            // 1. Try to pull site settings first from Google Sheets
+            const settingsPulled = await pullSiteSettingsFromGoogleSheets();
+            if (!settingsPulled) {
+              // No settings in sheet yet, so push current local settings
+              await syncSiteSettingsToGoogleSheets();
+            }
+          } catch (err: any) {
+            console.error('Failed to pull/sync site settings on startup:', err.message);
           }
-        } catch (err: any) {
-          console.error('Failed to pull/sync site settings on startup:', err.message);
         }
 
-        try {
-          // 2. Try to pull administrators first from Google Sheets
-          const adminsPulled = await pullAdminsFromGoogleSheets();
-          if (!adminsPulled) {
-            // No admins in sheet yet, so push current local admins
-            await syncAdminsToGoogleSheets();
+        const adminsEmpty = usersCache.length <= 1;
+        if (adminsEmpty) {
+          try {
+            // 2. Try to pull administrators first from Google Sheets
+            const adminsPulled = await pullAdminsFromGoogleSheets();
+            if (!adminsPulled) {
+              // No admins in sheet yet, so push current local admins
+              await syncAdminsToGoogleSheets();
+            }
+          } catch (err: any) {
+            console.error('Failed to pull/sync administrators on startup:', err.message);
           }
-        } catch (err: any) {
-          console.error('Failed to pull/sync administrators on startup:', err.message);
         }
 
-        try {
-          // 3. Try to pull Barangays first from Google Sheets
-          const barangaysPulled = await pullBarangaysFromGoogleSheets();
-          if (!barangaysPulled) {
-            // No Barangays in sheet yet, so push current official list
-            await syncBarangaysToGoogleSheets();
+        const barangaysEmpty = !barangaysCache || barangaysCache.length <= 1;
+        if (barangaysEmpty) {
+          try {
+            // 3. Try to pull Barangays first from Google Sheets
+            const barangaysPulled = await pullBarangaysFromGoogleSheets();
+            if (!barangaysPulled) {
+              // No Barangays in sheet yet, so push current official list
+              await syncBarangaysToGoogleSheets();
+            }
+          } catch (err: any) {
+            console.error('Failed to pull/sync barangays on startup:', err.message);
           }
-        } catch (err: any) {
-          console.error('Failed to pull/sync barangays on startup:', err.message);
         }
 
-        try {
-          // 3. Run background contacts sync
-          await syncWithGoogleSheets('System Background Sync');
-        } catch (err: any) {
-          console.error('Background Google Sheets Sync failed on startup:', err.message);
+        const contactsEmpty = contactsCache.length === 0;
+        if (contactsEmpty) {
+          try {
+            // 3. Run background contacts sync
+            await syncWithGoogleSheets('System Background Sync');
+          } catch (err: any) {
+            console.error('Background Google Sheets Sync failed on startup:', err.message);
+          }
         }
       }, 1000);
     }
@@ -2640,6 +2655,12 @@ export async function saveSheetsConfig(config: SheetsConfig, username: string) {
   }
 }
 
+export function normalizeCompareName(name1: string, name2: string): boolean {
+  const clean1 = (name1 || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const clean2 = (name2 || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return clean1 === clean2 && clean1.length > 0;
+}
+
 export async function syncWithGoogleSheets(username: string): Promise<{ success: boolean; message: string; count?: number }> {
   lastSyncStatus.lastAttempt = new Date().toISOString();
   let rows: string[][] = [];
@@ -2814,10 +2835,10 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const formattedName = capitalizeWords(rawName);
     const formattedBarangay = normalizeBarangayName(rawBarangay);
 
-    // Find if this contact already exists in local cache (matching either ID or case-insensitive name & barangay)
+    // Find if this contact already exists in local cache (matching either ID safely or case-insensitive name & barangay)
     const existingLocal = contactsCache.find(lc => 
-      lc.id === id || 
-      (lc.full_name.toLowerCase() === rawName.trim().toLowerCase() && 
+      (lc.id && id && lc.id.toString() === id.toString()) || 
+      (normalizeCompareName(lc.full_name, rawName) && 
        lc.barangay.toLowerCase() === formattedBarangay.toLowerCase())
     );
 
