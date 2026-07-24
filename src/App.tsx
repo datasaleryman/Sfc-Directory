@@ -73,8 +73,8 @@ export default function App() {
     navSettings?: string;
     rolePermissions?: Record<string, string[]>;
   }>({
-    title: 'Saint Francis Clinic Directory',
-    faviconTitle: 'Saint Francis Clinic',
+    title: 'SFC Uploader',
+    faviconTitle: 'SFC Uploader',
     logoDataUrl: '',
     faviconDataUrl: '',
     navDashboard: 'Dashboard',
@@ -527,7 +527,7 @@ export default function App() {
                   : activeTab === 'print' 
                     ? (siteSettings.navPrint || 'Formatted Print Directory') 
                     : activeTab === 'directory' 
-                      ? (siteSettings.title || 'Saint Francis Clinic Directory') 
+                      ? (siteSettings.title || 'SFC Uploader') 
                       : activeTab === 'recent-upload'
                         ? (siteSettings.navRecentUpload || 'Recent Upload')
                         : activeTab === 'accounts'

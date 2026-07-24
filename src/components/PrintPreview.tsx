@@ -484,7 +484,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                     return (
                       <tr 
                         key={item.id} 
-                        className={`${isVisibleOnScreen ? '' : 'hidden print:table-row'} hover:bg-slate-50/50`}
+                        className={`${isVisibleOnScreen ? '' : 'hidden'} hover:bg-slate-50/50`}
                       >
                         <td className="py-2.5 px-3 text-center text-slate-500 font-mono border border-slate-300">
                           {index + 1}

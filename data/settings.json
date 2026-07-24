@@ -1,0 +1,78 @@
+{
+  "title": "SFC Uploader",
+  "faviconTitle": "SFC Uploader",
+  "logoDataUrl": "",
+  "faviconDataUrl": "",
+  "navDashboard": "Dashboard",
+  "navDirectory": "Clinic Directory",
+  "navBulk": "Bulk Entry",
+  "navPrint": "Print List",
+  "navAdmins": "Admin Credentials",
+  "navSettings": "Website Settings",
+  "rolePermissions": {
+    "MASTER ADMIN": [
+      "dashboard",
+      "map",
+      "directory",
+      "accounts",
+      "bulk",
+      "print",
+      "settings"
+    ],
+    "IT": [
+      "dashboard",
+      "map",
+      "directory",
+      "accounts",
+      "bulk",
+      "print",
+      "settings"
+    ],
+    "ADMIN": [
+      "dashboard",
+      "map",
+      "directory",
+      "accounts",
+      "bulk",
+      "print",
+      "settings"
+    ],
+    "Administrator": [
+      "dashboard",
+      "map",
+      "directory",
+      "accounts",
+      "bulk",
+      "print",
+      "settings"
+    ],
+    "LEADER": [
+      "dashboard",
+      "map",
+      "directory",
+      "bulk",
+      "print"
+    ],
+    "CO-LEADER": [
+      "dashboard",
+      "map",
+      "directory",
+      "bulk",
+      "print"
+    ],
+    "ENCODER": [
+      "dashboard",
+      "map",
+      "directory",
+      "bulk",
+      "print"
+    ],
+    "STAFF": [
+      "dashboard",
+      "map",
+      "directory",
+      "bulk",
+      "print"
+    ]
+  }
+}

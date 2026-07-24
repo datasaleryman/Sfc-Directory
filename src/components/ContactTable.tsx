@@ -46,6 +46,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   // Role permissions check for LEADER and CO-LEADER
   const userRoleNormalized = (currentUser?.role || '').toUpperCase();
   const isLeaderOrCoLeader = userRoleNormalized === 'LEADER' || userRoleNormalized === 'CO-LEADER' || userRoleNormalized.includes('LEADER');
+  const isAdmin = userRoleNormalized === 'ADMINISTRATOR';
   const userBarangay = currentUser?.barangay || '';
 
   // Folder View state vs Table View
@@ -77,6 +78,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const [viewContact, setViewContact] = useState<Contact | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<string | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState(false);
 
   // Syncing Base44 state
   const [syncing, setSyncing] = useState(false);
@@ -311,6 +314,33 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       showToast(err.message, 'error');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // Bulk soft delete a whole Barangay folder (Admin only)
+  const handleDeleteFolderConfirm = async () => {
+    if (!deleteFolderTarget) return;
+    setDeletingFolder(true);
+
+    try {
+      const res = await fetch(`/api/contacts/folder/${encodeURIComponent(deleteFolderTarget)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete folder.');
+      }
+
+      showToast(`Barangay folder "${deleteFolderTarget}" has been successfully deleted along with ${data.count} households.`, 'success');
+      setDeleteFolderTarget(null);
+      setActiveFolder(null); // Return to folders grid overview if they were inside it
+      fetchContacts();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setDeletingFolder(false);
     }
   };
 
@@ -610,6 +640,18 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     >
                       <FileText className="w-4 h-4" />
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteFolderTarget(folder.barangay);
+                        }}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                        title={`Delete folder ${folder.barangay} & all its households`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
 
                   <button
@@ -682,6 +724,16 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   {exporting?.startsWith('PDF') ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                   Export PDF
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setDeleteFolderTarget(activeFolder)}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                    title={`Delete folder "${activeFolder}" & all its households`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Folder
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1137,6 +1189,49 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Record'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Delete Folder Confirmation */}
+      <AnimatePresence>
+        {deleteFolderTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border border-slate-100"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <Trash2 className="w-6 h-6" />
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-800 font-display">Delete Entire Folder?</h3>
+              <p className="text-xs text-slate-500 mt-2">
+                Are you sure you want to delete the entire <strong className="text-slate-800">Barangay {deleteFolderTarget}</strong> folder?
+              </p>
+              <p className="text-[11px] text-rose-600 font-bold mt-3 bg-rose-50 p-3 rounded-2xl border border-rose-100/65 leading-normal">
+                ⚠️ This will soft-delete ALL household records associated with this Barangay folder from the clinic directory.
+              </p>
+
+              <div className="pt-6 flex gap-3">
+                <button
+                  onClick={() => setDeleteFolderTarget(null)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  disabled={deletingFolder}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteFolderConfirm}
+                  disabled={deletingFolder}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {deletingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Folder'}
                 </button>
               </div>
             </motion.div>

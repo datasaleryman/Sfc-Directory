@@ -7,10 +7,12 @@ import {
   addContact,
   editContact,
   deleteContact,
+  deleteBarangayFolderContacts,
   previewBulkImport,
   saveBulkImport,
   getDashboardStats,
   findUser,
+  findUserByEmail,
   hashPassword,
   addActivity,
   getUsers,
@@ -124,20 +126,20 @@ export async function getApp() {
       const { username, password } = req.body;
 
       if (!username || !password) {
-        return res.status(400).json({ error: 'Username/Email and password are required.' });
+        return res.status(400).json({ error: 'Email and password are required.' });
       }
 
-      console.log(`[Login Attempt] Username: ${username}`);
-      const user = findUser(username);
+      console.log(`[Login Attempt] Email: ${username}`);
+      const user = findUserByEmail(username);
       if (!user) {
-        console.warn(`[Login Failed] User not found: ${username}`);
-        return res.status(401).json({ error: 'Invalid username/email or password.' });
+        console.warn(`[Login Failed] User not found by email: ${username}`);
+        return res.status(401).json({ error: 'Invalid email address or password.' });
       }
 
       const inputHash = hashPassword(password);
       if (user.passwordHash !== inputHash) {
         console.warn(`[Login Failed] Password mismatch for: ${username}`);
-        return res.status(401).json({ error: 'Invalid username/email or password.' });
+        return res.status(401).json({ error: 'Invalid email address or password.' });
       }
 
       if (user.status === 'Pending') {
@@ -398,6 +400,24 @@ export async function getApp() {
 
       await deleteContact(id, username);
       res.json({ success: true, message: 'Contact successfully soft-deleted.' });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Bulk soft delete a Barangay folder (Admin only)
+  app.delete('/api/contacts/folder/:barangay', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const barangay = req.params.barangay;
+      const username = req.user?.username || 'Admin';
+
+      // Check permission - only Administrators are allowed to delete whole folders
+      if (req.user?.role !== 'Administrator') {
+        return res.status(403).json({ error: 'Permission denied. Only Administrators can delete folders.' });
+      }
+
+      const result = await deleteBarangayFolderContacts(barangay, username);
+      res.json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

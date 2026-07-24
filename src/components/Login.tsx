@@ -358,7 +358,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
               )}
               <motion.div variants={formItemVariants}>
                 <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
-                  Username or Email Address
+                  Email Address
                 </label>
                 <div className="relative group">
                   <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors">
@@ -369,7 +369,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
-                    placeholder="Enter username or email"
+                    placeholder="Enter email address"
                     disabled={loading}
                   />
                 </div>

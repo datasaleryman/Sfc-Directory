@@ -269,8 +269,8 @@ export interface SiteSettings {
 }
 
 let siteSettings: SiteSettings = {
-  title: 'Saint Francis Clinic Directory',
-  faviconTitle: 'Saint Francis Clinic',
+  title: 'SFC Uploader',
+  faviconTitle: 'SFC Uploader',
   logoDataUrl: '',
   faviconDataUrl: '',
   navDashboard: 'Dashboard',
@@ -361,6 +361,7 @@ export async function initDb() {
     if (!masterAdmin) {
       usersCache.unshift({
         username: 'admin',
+        email: 'admin@clinic.gov.ph',
         passwordHash: masterHash,
         role: 'Administrator',
         status: 'Active'
@@ -369,6 +370,9 @@ export async function initDb() {
       masterAdmin.passwordHash = masterHash;
       masterAdmin.role = 'Administrator';
       masterAdmin.status = 'Active';
+      if (!masterAdmin.email) {
+        masterAdmin.email = 'admin@clinic.gov.ph';
+      }
     }
     safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2));
 
@@ -530,8 +534,8 @@ export async function initDb() {
         }
 
         siteSettings = {
-          title: unescapeHtml(parsed.title || 'Saint Francis Clinic Directory'),
-          faviconTitle: unescapeHtml(parsed.faviconTitle || 'Saint Francis Clinic'),
+          title: unescapeHtml(parsed.title || 'SFC Uploader'),
+          faviconTitle: unescapeHtml(parsed.faviconTitle || 'SFC Uploader'),
           logoDataUrl,
           faviconDataUrl,
           navDashboard: unescapeHtml(parsed.navDashboard || 'Dashboard'),
@@ -769,8 +773,8 @@ export async function fetchHouseholdSubmissionsFromBase44() {
         // Check if already in contactsCache (added to directory via + Add List)
         const isAlreadyAdded = contactsCache.some(c => 
           !c.deleted_at &&
-          c.added_from_print_list === true &&
-          c.full_name.toLowerCase() === name.toLowerCase()
+          c.full_name.toLowerCase() === name.toLowerCase() &&
+          c.barangay.toLowerCase() === barangay.toLowerCase()
         );
 
         return {
@@ -795,7 +799,7 @@ export async function fetchHouseholdSubmissionsFromBase44() {
   // Deduplicate strictly by case-insensitive full_name
   const seenNameKeys = new Set<string>();
 
-  const activeContacts = contactsCache.filter(c => c.deleted_at === null);
+  const activeContacts = contactsCache.filter(c => !c.deleted_at);
   const directoryHouseholds: any[] = [];
 
   for (const c of activeContacts) {
@@ -810,7 +814,7 @@ export async function fetchHouseholdSubmissionsFromBase44() {
         contact_number: c.contact_number || '',
         created_at: c.created_at || new Date().toISOString(),
         geotagged: false,
-        addedToDirectory: c.added_from_print_list === true
+        addedToDirectory: true
       });
     }
   }
@@ -935,6 +939,15 @@ export function findUser(input: string): User | undefined {
   const target = input.trim().toLowerCase();
   return usersCache.find(
     u => u && typeof u.username === 'string' && (u.username.toLowerCase() === target || (typeof u.email === 'string' && u.email.toLowerCase() === target))
+  );
+}
+
+// User helper matching email specifically
+export function findUserByEmail(email: string): User | undefined {
+  if (!email) return undefined;
+  const target = email.trim().toLowerCase();
+  return usersCache.find(
+    u => u && typeof u.email === 'string' && u.email.toLowerCase() === target
   );
 }
 
@@ -1331,12 +1344,12 @@ export function getContacts(params: {
   const filterBarangay = barangay || address;
 
   // Only query active (non-soft-deleted) contacts that have NOT yet uploaded a PCU file
-  let filtered = contactsCache.filter(c => c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url);
+  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
 
   // Get ALL unique barangays for filtering sidebar/dropdown before search filters are applied
   const allBarangaysSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
+    if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
       const bUpper = c.barangay.trim().toUpperCase();
       if (bUpper !== 'UNKNOWN' && bUpper !== 'N/A' && bUpper !== 'NONE') {
         allBarangaysSet.add(c.barangay.trim());
@@ -1348,7 +1361,7 @@ export function getContacts(params: {
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
   contactsCache.forEach(c => {
-    if (c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url && c.purok) {
+    if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.purok) {
       allPuroksSet.add(c.purok.trim());
     }
   });
@@ -1400,7 +1413,7 @@ export function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => c.deleted_at === null && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay.toLowerCase() === bg.toLowerCase());
+    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay.toLowerCase() === bg.toLowerCase());
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -1437,7 +1450,7 @@ export function getAllFilteredContacts(params: {
 }) {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc' } = params;
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(c => c.deleted_at === null && (c.added_from_print_list !== false));
+  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     filtered = filtered.filter(c => c.barangay.toLowerCase() === filterBarangay.toLowerCase());
@@ -1503,7 +1516,7 @@ export async function addContact(
   // Check for duplicate among active records
   const isDuplicate = contactsCache.some(
     c =>
-      c.deleted_at === null &&
+      !c.deleted_at &&
       c.full_name.toLowerCase() === formattedName.toLowerCase() &&
       c.contact_number === rawNumber
   );
@@ -1542,7 +1555,7 @@ export async function editContact(
   contact: { full_name: string; barangay: string; purok?: string; address?: string; contact_number: string },
   username: string
 ) {
-  const index = contactsCache.findIndex(c => c.id === id && c.deleted_at === null);
+  const index = contactsCache.findIndex(c => c.id === id && !c.deleted_at);
   if (index === -1) {
     throw new Error('Contact not found or has been deleted.');
   }
@@ -1564,7 +1577,7 @@ export async function editContact(
   const isDuplicate = contactsCache.some(
     c =>
       c.id !== id &&
-      c.deleted_at === null &&
+      !c.deleted_at &&
       c.full_name.toLowerCase() === formattedName.toLowerCase() &&
       c.contact_number === rawNumber
   );
@@ -1597,7 +1610,7 @@ export async function editContact(
 
 // Delete a contact (Soft Delete)
 export async function deleteContact(id: number, username: string) {
-  const index = contactsCache.findIndex(c => c.id === id && c.deleted_at === null);
+  const index = contactsCache.findIndex(c => c.id === id && !c.deleted_at);
   if (index === -1) {
     throw new Error('Contact not found or already deleted.');
   }
@@ -1612,6 +1625,34 @@ export async function deleteContact(id: number, username: string) {
   forwardToWebApp('delete', { id }).catch(err => console.error('Error forwarding delete to Sheets Web App:', err));
 
   return true;
+}
+
+// Delete an entire Barangay folder (Soft delete all contacts inside it)
+export async function deleteBarangayFolderContacts(barangay: string, username: string) {
+  if (!barangay) throw new Error('Barangay name is required.');
+  const target = barangay.trim().toLowerCase();
+  
+  let count = 0;
+  for (let i = 0; i < contactsCache.length; i++) {
+    const c = contactsCache[i];
+    if (!c.deleted_at && c.barangay && c.barangay.trim().toLowerCase() === target) {
+      contactsCache[i].deleted_at = new Date().toISOString();
+      contactsCache[i].updated_at = new Date().toISOString();
+      count++;
+      
+      // Forward deletion to sheets
+      forwardToWebApp('delete', { id: c.id }).catch(err => 
+        console.error(`Error forwarding bulk-delete of contact ${c.id} to Sheets Web App:`, err)
+      );
+    }
+  }
+
+  if (count > 0) {
+    await saveContacts();
+    await addActivity(username, `Deleted entire Barangay folder "${barangay}" containing ${count} households.`);
+  }
+
+  return { success: true, count };
 }
 
 // Auto-detect bulk separator
@@ -1733,7 +1774,7 @@ export function previewBulkImport(text: string): {
     // Check duplicate in database
     const dbDuplicate = contactsCache.some(
       c =>
-        c.deleted_at === null &&
+        !c.deleted_at &&
         c.full_name.toLowerCase() === name.toLowerCase() &&
         (number ? c.contact_number === number : (!c.contact_number && c.barangay === barangay))
     );
@@ -1808,7 +1849,7 @@ export async function saveBulkImport(
     // Find database duplicate
     const duplicateIndex = contactsCache.findIndex(
       c =>
-        c.deleted_at === null &&
+        !c.deleted_at &&
         c.full_name.toLowerCase() === formattedName.toLowerCase() &&
         (number ? c.contact_number === number : (!c.contact_number && c.barangay === formattedBarangay))
     );
@@ -2031,7 +2072,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
 
 // Dashboard statistics
 export function getDashboardStats() {
-  const activeContacts = contactsCache.filter(c => c.deleted_at === null && c.added_from_print_list === true);
+  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list === true);
   
   // Total Contacts
   const totalContacts = activeContacts.length;
@@ -2728,15 +2769,19 @@ export async function syncAdminsToGoogleSheets() {
     });
 
     // Write headers and data
-    const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL'];
+    const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At'];
     const rowsToPut = [
       headers,
       ...usersCache.map(u => [
         u.username,
         u.passwordHash,
         u.role,
-        u.displayName || '',
-        u.avatarDataUrl || ''
+        u.displayName || u.fullName || '',
+        u.avatarDataUrl || '',
+        u.email || '',
+        u.barangay || '',
+        u.status || 'Active',
+        u.createdAt || ''
       ])
     ];
 
@@ -3066,7 +3111,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${adminSheetName}!A:E`
+      range: `${adminSheetName}!A:I`
     });
 
     const rows = res.data.values || [];
@@ -3083,6 +3128,10 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const role = row[2]?.trim();
       const displayName = row[3]?.trim() || '';
       const avatarDataUrl = row[4]?.trim() || '';
+      const email = row[5]?.trim() || '';
+      const barangay = row[6]?.trim() || '';
+      const status = row[7]?.trim() || 'Active';
+      const createdAt = row[8]?.trim() || new Date().toISOString();
 
       if (!username || !passwordHash || !role) continue;
 
@@ -3092,10 +3141,11 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         role,
         displayName,
         avatarDataUrl,
-        email: username.includes('@') ? username : '',
-        barangay: 'Central',
-        status: 'Active',
-        createdAt: new Date().toISOString()
+        fullName: displayName || username,
+        email: email || (username.includes('@') ? username : ''),
+        barangay: barangay || 'Central',
+        status: (status as any) || 'Active',
+        createdAt
       });
     }
 
@@ -3108,9 +3158,21 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         }
       }
 
-      usersCache = remoteUsers;
+      // Merge: Keep all remote users. For any local user not present in remoteUsers,
+      // preserve them if they are Pending, so they are not lost.
+      const mergedUsers = [...remoteUsers];
+      for (const localUser of usersCache) {
+        const existsInRemote = remoteUsers.some(
+          u => u.username.toLowerCase() === localUser.username.toLowerCase()
+        );
+        if (!existsInRemote && localUser.status === 'Pending') {
+          mergedUsers.push(localUser);
+        }
+      }
+
+      usersCache = mergedUsers;
       fs.writeFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-      console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total count:', remoteUsers.length);
+      console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total count:', usersCache.length);
       return true;
     }
   } catch (err: any) {
@@ -3211,7 +3273,7 @@ async function savePCUUpdates() {
 
 // Upload a contact photo
 export async function uploadContactPhoto(contactId: number, photoDataUrl: string, username: string) {
-  const contact = contactsCache.find(c => c.id === contactId && c.deleted_at === null);
+  const contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
   if (!contact) {
     throw new Error('Contact not found or has been deleted.');
   }
@@ -3240,7 +3302,7 @@ export async function uploadContactPhoto(contactId: number, photoDataUrl: string
 
 // Add a PCU Update (saves to Base44 PCUUpdate entity + locally)
 export async function addPCUUpdate(contactId: number, fullName: string, fileName: string, fileData: string, username: string) {
-  const contact = contactsCache.find(c => c.id === contactId && c.deleted_at === null);
+  const contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
   const barangay = contact ? contact.barangay : '';
   const purok = contact ? contact.purok : '';
   
@@ -3361,7 +3423,7 @@ export function getRecentUploads(params: {
   const { username, search, barangay, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
 
   let filtered = contactsCache.filter(c => {
-    if (c.deleted_at !== null) return false;
+    if (c.deleted_at) return false;
     if (!c.pcu_file_url) return false;
 
     const uploader = (c.pcu_uploaded_by || '').toLowerCase().trim();
