@@ -130,7 +130,15 @@ export async function getApp() {
       }
 
       console.log(`[Login Attempt] Email/Username: ${username}`);
-      const user = findUser(username);
+      let user: any = undefined;
+      const target = username.trim().toLowerCase();
+      if (target === 'admin') {
+        user = findUser('admin');
+      } else {
+        // Enforce email-only login for standard users
+        user = findUserByEmail(target);
+      }
+
       if (!user) {
         console.warn(`[Login Failed] User not found by email or username: ${username}`);
         return res.status(401).json({ error: 'Invalid email address or password.' });

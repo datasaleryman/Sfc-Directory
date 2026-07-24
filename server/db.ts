@@ -1068,19 +1068,28 @@ export async function registerUser(data: {
     throw new Error('Password must be at least 4 characters long.');
   }
 
-  // Derive username from email or name
-  const username = trimmedEmail.split('@')[0].replace(/[^a-z0-9_]/g, '');
-
-  // Check if email or username already exists
-  const existing = usersCache.find(
-    u => u.username.toLowerCase() === username || (u.email && u.email.toLowerCase() === trimmedEmail)
-  );
-  if (existing) {
+  // Check if email already exists
+  const emailExists = usersCache.some(u => u.email && u.email.toLowerCase() === trimmedEmail);
+  if (emailExists) {
     throw new Error('An account with this email address already exists. Please log in.');
   }
 
+  // Derive username from email or name
+  let username = trimmedEmail.split('@')[0].replace(/[^a-z0-9_]/g, '');
+  if (!username) {
+    username = 'user';
+  }
+
+  // Ensure username is unique to avoid collision in local files or sheet
+  let finalUsername = username;
+  let counter = 1;
+  while (usersCache.some(u => u.username.toLowerCase() === finalUsername.toLowerCase())) {
+    finalUsername = `${username}${counter}`;
+    counter++;
+  }
+
   const newUser: User = {
-    username,
+    username: finalUsername,
     email: trimmedEmail,
     fullName: trimmedName,
     displayName: trimmedName,
@@ -1093,7 +1102,7 @@ export async function registerUser(data: {
 
   usersCache.push(newUser);
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-  await addActivity(username, `Registered new account (${trimmedName} - ${trimmedBarangay}) with role ${trimmedRole}`);
+  await addActivity(finalUsername, `Registered new account (${trimmedName} - ${trimmedBarangay}) with role ${trimmedRole}`);
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
 
   return {
