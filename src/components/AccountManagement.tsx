@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Search, Filter, ShieldCheck, Mail, MapPin, Trash2, CheckCircle2, AlertCircle, Clock, ShieldAlert, Loader2, User, UserCheck, RefreshCw, X, Edit3, Shield } from 'lucide-react';
+import { Users, UserPlus, Search, Filter, ShieldCheck, Mail, MapPin, Trash2, CheckCircle2, AlertCircle, Clock, ShieldAlert, Loader2, User, UserCheck, RefreshCw, X, Edit3, Shield, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export interface UserAccount {
@@ -12,6 +12,7 @@ export interface UserAccount {
   createdAt: string;
   displayName?: string;
   avatarDataUrl?: string;
+  passwordPlain?: string;
 }
 
 interface AccountManagementProps {
@@ -57,6 +58,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   showToast
 }) => {
   const [accounts, setAccounts] = useState<UserAccount[]>([]);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  const togglePasswordVisibility = (username: string) => {
+    setVisiblePasswords(prev => ({
+      ...prev,
+      [username]: !prev[username]
+    }));
+  };
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('All Barangays');
@@ -639,6 +648,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                   <th className="py-3.5 px-4">Contact Email</th>
                   <th className="py-3.5 px-4">Assigned Barangay</th>
                   <th className="py-3.5 px-4">Role Permission</th>
+                  <th className="py-3.5 px-4">Account Password</th>
                   <th className="py-3.5 px-4">Account Status</th>
                   <th className="py-3.5 px-4">Registered Date</th>
                   <th className="py-3.5 px-6 text-right">Actions</th>
@@ -712,6 +722,29 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                             ))}
                           </select>
                         )}
+                      </td>
+
+                      {/* Password */}
+                      <td className="py-4 px-4 font-mono text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-600 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg max-w-[120px] truncate block font-bold">
+                            {visiblePasswords[acc.username] 
+                              ? (acc.passwordPlain || '••••••••') 
+                              : '••••••••'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => togglePasswordVisibility(acc.username)}
+                            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer shrink-0"
+                            title={visiblePasswords[acc.username] ? "Hide password" : "Show password"}
+                          >
+                            {visiblePasswords[acc.username] ? (
+                              <EyeOff className="w-3.5 h-3.5" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </td>
 
                       {/* Status Badge */}
@@ -845,6 +878,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       <Shield className="w-3 h-3 text-slate-500" />
                       {acc.role}
                     </span>
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
+                      <span className="font-mono text-[11px]">
+                        PW: {visiblePasswords[acc.username] ? (acc.passwordPlain || '••••••••') : '••••••••'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility(acc.username)}
+                        className="text-slate-400 hover:text-slate-600 focus:outline-hidden cursor-pointer"
+                      >
+                        {visiblePasswords[acc.username] ? (
+                          <EyeOff className="w-3 h-3" />
+                        ) : (
+                          <Eye className="w-3 h-3" />
+                        )}
+                      </button>
+                    </span>
                   </div>
 
                   <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
@@ -948,14 +997,27 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                   <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
                     Password <span className="text-emerald-600">*</span>
                   </label>
-                  <input
-                    type="password"
-                    required
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Password (min 4 chars)"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                  />
+                  <div className="relative">
+                    <input
+                      type={visiblePasswords['reg'] ? 'text' : 'password'}
+                      required
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="Password (min 4 chars)"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('reg')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                    >
+                      {visiblePasswords['reg'] ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -1131,17 +1193,53 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                   </div>
                 </div>
 
+                {editTarget.passwordPlain && (
+                  <div className="bg-emerald-50 border border-emerald-100/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                    <div>
+                      <span className="font-extrabold text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">Current Account Password</span>
+                      <span className="font-mono font-black text-emerald-800 text-sm tracking-wide">
+                        {visiblePasswords[editTarget.username + '_edit'] ? editTarget.passwordPlain : '••••••••'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility(editTarget.username + '_edit')}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-white rounded-xl border border-slate-100 transition-all cursor-pointer shadow-xs shrink-0"
+                      title={visiblePasswords[editTarget.username + '_edit'] ? "Hide password" : "Show password"}
+                    >
+                      {visiblePasswords[editTarget.username + '_edit'] ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
                     New Password <span className="text-slate-400 font-normal">(Leave blank to keep current)</span>
                   </label>
-                  <input
-                    type="password"
-                    value={editPassword}
-                    onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="New password (optional)"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                  />
+                  <div className="relative">
+                    <input
+                      type={visiblePasswords['new_edit'] ? 'text' : 'password'}
+                      value={editPassword}
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      placeholder="New password (optional)"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('new_edit')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                    >
+                      {visiblePasswords['new_edit'] ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="pt-3 flex gap-3">

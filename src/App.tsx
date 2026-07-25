@@ -148,9 +148,21 @@ export default function App() {
       .catch(err => console.error('Error fetching site settings:', err));
   };
 
-  // Fetch settings on load
+  // Fetch settings on load, focus, and via polling
   useEffect(() => {
     fetchSettings();
+
+    const handleFocus = () => {
+      fetchSettings();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    const interval = setInterval(fetchSettings, 15000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
   }, []);
 
   // Redirect if current active tab is not permitted for user's role

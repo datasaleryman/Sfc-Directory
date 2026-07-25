@@ -115,6 +115,7 @@ export interface User {
   createdAt?: string;
   displayName?: string;
   avatarDataUrl?: string;
+  passwordPlain?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -301,10 +302,39 @@ let siteSettings: SiteSettings = {
 
 export let siteSettingsLoadedFromSheets = false;
 let settingsPullPromise: Promise<boolean> | null = null;
+let lastSettingsPullTime = 0;
 
 export async function pullSiteSettingsOnce(): Promise<boolean> {
-  // Website settings are loaded from the local settings.json file and do not read from Google Sheets.
-  return true;
+  if (!sheetsConfig.syncEnabled) {
+    return true;
+  }
+
+  // If we pulled very recently (within 5 seconds), use cache to prevent hitting Google Sheets API rate limits
+  if (siteSettingsLoadedFromSheets && (Date.now() - lastSettingsPullTime < 5000)) {
+    return true;
+  }
+
+  if (settingsPullPromise) {
+    return settingsPullPromise;
+  }
+
+  settingsPullPromise = (async () => {
+    try {
+      const result = await pullSiteSettingsFromGoogleSheets();
+      if (result) {
+        siteSettingsLoadedFromSheets = true;
+        lastSettingsPullTime = Date.now();
+      }
+      return result;
+    } catch (err) {
+      console.error('Failed to pull site settings in pullSiteSettingsOnce:', err);
+      return false;
+    } finally {
+      settingsPullPromise = null;
+    }
+  })();
+
+  return settingsPullPromise;
 }
 
 export function getSiteSettings() {
@@ -336,6 +366,8 @@ export function saveSiteSettings(settings: Partial<SiteSettings>) {
     }
 
     safeWriteFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
+    siteSettingsLoadedFromSheets = true;
+    lastSettingsPullTime = Date.now();
     syncSiteSettingsToGoogleSheets().catch(err => console.error('Failed to sync site settings to Sheets:', err));
   } catch (err) {
     console.error('Failed to write settings file:', err);
@@ -388,11 +420,13 @@ export async function initDb() {
         username: 'admin',
         email: 'admin@clinic.gov.ph',
         passwordHash: masterHash,
+        passwordPlain: '2026',
         role: 'Administrator',
         status: 'Active'
       });
     } else {
       masterAdmin.passwordHash = masterHash;
+      masterAdmin.passwordPlain = '2026';
       masterAdmin.role = 'Administrator';
       masterAdmin.status = 'Active';
       if (!masterAdmin.email) {
@@ -990,7 +1024,8 @@ export function getUsers() {
     status: u.status || 'Active',
     createdAt: u.createdAt || new Date().toISOString(),
     displayName: u.displayName || u.fullName || '',
-    avatarDataUrl: u.avatarDataUrl || ''
+    avatarDataUrl: u.avatarDataUrl || '',
+    passwordPlain: u.passwordPlain || ''
   }));
 }
 
@@ -1137,6 +1172,7 @@ export async function registerUser(data: {
     displayName: trimmedName,
     barangay: trimmedBarangay,
     passwordHash: hashPassword(trimmedPass),
+    passwordPlain: trimmedPass,
     role: trimmedRole,
     status: 'Pending',
     createdAt: new Date().toISOString()
@@ -1258,6 +1294,7 @@ export async function editUserAccount(
       throw new Error('Password must be at least 4 characters long.');
     }
     user.passwordHash = hashPassword(trimmedPass);
+    user.passwordPlain = trimmedPass;
   }
 
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
@@ -1322,6 +1359,7 @@ export async function updateUserProfile(
       throw new Error('Password must be at least 4 characters long.');
     }
     user.passwordHash = hashPassword(trimmedPass);
+    user.passwordPlain = trimmedPass;
   }
 
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
@@ -3004,7 +3042,7 @@ export async function syncAdminsToGoogleSheets() {
     });
 
     // Write headers and data
-    const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At'];
+    const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At', 'Plain Password'];
     const rowsToPut = [
       headers,
       ...usersCache.map(u => [
@@ -3016,7 +3054,8 @@ export async function syncAdminsToGoogleSheets() {
         u.email || '',
         u.barangay || '',
         u.status || 'Active',
-        u.createdAt || ''
+        u.createdAt || '',
+        u.passwordPlain || ''
       ])
     ];
 
@@ -3339,7 +3378,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${adminSheetName}!A:I`
+      range: `${adminSheetName}!A:J`
     });
 
     const rows = res.data.values || [];
@@ -3360,6 +3399,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const barangay = row[6]?.trim() || '';
       const status = row[7]?.trim() || 'Active';
       const createdAt = row[8]?.trim() || new Date().toISOString();
+      const passwordPlain = row[9]?.trim() || '';
 
       if (!username || !passwordHash || !role) continue;
 
@@ -3373,7 +3413,8 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         email: email || (username.includes('@') ? username : ''),
         barangay: barangay || 'Central',
         status: (status as any) || 'Active',
-        createdAt
+        createdAt,
+        passwordPlain
       });
     }
 
