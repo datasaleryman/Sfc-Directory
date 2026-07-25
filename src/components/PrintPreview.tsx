@@ -312,7 +312,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
           <div className="space-y-1 text-center sm:text-left">
             <h4 className="font-bold text-slate-800 text-lg font-display">Household Print List & Directory Extractor</h4>
             <p className="text-xs text-slate-500">
-              Browse household entries. Click <strong className="text-emerald-700">Add List</strong> to save a household to Saint Francis Clinic Directory under its respective Barangay folder.
+              Browse household entries. Click <strong className="text-emerald-700">Added List</strong> to save a household to Saint Francis Clinic Directory under its respective Barangay folder.
             </p>
           </div>
 
@@ -520,7 +520,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                               ) : (
                                 <Plus className="w-3 h-3" />
                               )}
-                              Add List
+                              Added List
                             </button>
                           )}
                         </td>
