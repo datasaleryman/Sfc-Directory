@@ -581,8 +581,25 @@ export async function initDb() {
         let logoDataUrl = unescapeHtml(parsed.logoDataUrl || '');
         let faviconDataUrl = unescapeHtml(parsed.faviconDataUrl || '');
 
+        if (fs.existsSync(LOGO_DATA_FILE)) {
+          try {
+            const fileLogo = fs.readFileSync(LOGO_DATA_FILE, 'utf-8');
+            if (fileLogo && fileLogo.length > logoDataUrl.length) {
+              logoDataUrl = fileLogo;
+            }
+          } catch (e) {}
+        }
         if (!logoDataUrl && fs.existsSync(LOGO_DATA_FILE)) {
           try { logoDataUrl = fs.readFileSync(LOGO_DATA_FILE, 'utf-8'); } catch (e) {}
+        }
+
+        if (fs.existsSync(FAVICON_DATA_FILE)) {
+          try {
+            const fileFavicon = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8');
+            if (fileFavicon && fileFavicon.length > faviconDataUrl.length) {
+              faviconDataUrl = fileFavicon;
+            }
+          } catch (e) {}
         }
         if (!faviconDataUrl && fs.existsSync(FAVICON_DATA_FILE)) {
           try { faviconDataUrl = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'); } catch (e) {}
@@ -3322,7 +3339,8 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
         if (!localLogo) {
           localLogo = siteSettings.logoDataUrl || '';
         }
-        if (localLogo && val.length < localLogo.length && (val.length === 49000 || !val)) {
+        const isPrefix = localLogo && (localLogo.startsWith(val) || unescapeHtml(localLogo).startsWith(unescapeHtml(val)));
+        if (localLogo && (val.length === 49000 || isPrefix || val.length < localLogo.length || !val)) {
           pulledSettings.logoDataUrl = localLogo;
         } else {
           pulledSettings.logoDataUrl = val;
@@ -3335,7 +3353,8 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
         if (!localFavicon) {
           localFavicon = siteSettings.faviconDataUrl || '';
         }
-        if (localFavicon && val.length < localFavicon.length && (val.length === 49000 || !val)) {
+        const isPrefix = localFavicon && (localFavicon.startsWith(val) || unescapeHtml(localFavicon).startsWith(unescapeHtml(val)));
+        if (localFavicon && (val.length === 49000 || isPrefix || val.length < localFavicon.length || !val)) {
           pulledSettings.faviconDataUrl = localFavicon;
         } else {
           pulledSettings.faviconDataUrl = val;
