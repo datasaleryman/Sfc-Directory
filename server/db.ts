@@ -593,6 +593,14 @@ export async function initDb() {
 
     // Run background sheets sync if enabled
     if (sheetsConfig.syncEnabled) {
+      // In serverless environments (Netlify, AWS Lambda, etc.), we MUST skip automatic background sync on cold-start initialization.
+      // This ensures instantaneous boot times, eliminates Netlify 502/504 gateway timeouts, and completely avoids Google Sheets API quota exhaustion.
+      // Additionally, we strictly never perform automatic push or write operations on startup to prevent resetting/overwriting remote spreadsheet data.
+      if (process.env.NETLIFY === 'true' || process.env.LAMBDA_TASK_ROOT) {
+        console.log('[Startup] Serverless environment detected. Skipping background Google Sheets startup sync to avoid rate limits and unnecessary remote database connections.');
+        return;
+      }
+
       setTimeout(async () => {
         // Prevent hitting Google Sheets API read/write quota limits during rapid development restarts by
         // only performing initial syncs if local caches are empty. Otherwise, rely on the persistent local JSON files on disk.
@@ -601,13 +609,10 @@ export async function initDb() {
         if (settingsEmpty) {
           try {
             // 1. Try to pull site settings first from Google Sheets
-            const settingsPulled = await pullSiteSettingsFromGoogleSheets();
-            if (!settingsPulled) {
-              // No settings in sheet yet, so push current local settings
-              await syncSiteSettingsToGoogleSheets();
-            }
+            // SAFETY GUARANTEE: ONLY pull, NEVER automatically push/write or reset the remote sheet on startup.
+            await pullSiteSettingsFromGoogleSheets();
           } catch (err: any) {
-            console.error('Failed to pull/sync site settings on startup:', err.message);
+            console.error('Failed to pull site settings on startup:', err.message);
           }
         }
 
@@ -615,13 +620,10 @@ export async function initDb() {
         if (adminsEmpty) {
           try {
             // 2. Try to pull administrators first from Google Sheets
-            const adminsPulled = await pullAdminsFromGoogleSheets();
-            if (!adminsPulled) {
-              // No admins in sheet yet, so push current local admins
-              await syncAdminsToGoogleSheets();
-            }
+            // SAFETY GUARANTEE: ONLY pull, NEVER automatically push/write or reset the remote sheet on startup.
+            await pullAdminsFromGoogleSheets();
           } catch (err: any) {
-            console.error('Failed to pull/sync administrators on startup:', err.message);
+            console.error('Failed to pull administrators on startup:', err.message);
           }
         }
 
@@ -629,20 +631,17 @@ export async function initDb() {
         if (barangaysEmpty) {
           try {
             // 3. Try to pull Barangays first from Google Sheets
-            const barangaysPulled = await pullBarangaysFromGoogleSheets();
-            if (!barangaysPulled) {
-              // No Barangays in sheet yet, so push current official list
-              await syncBarangaysToGoogleSheets();
-            }
+            // SAFETY GUARANTEE: ONLY pull, NEVER automatically push/write or reset the remote sheet on startup.
+            await pullBarangaysFromGoogleSheets();
           } catch (err: any) {
-            console.error('Failed to pull/sync barangays on startup:', err.message);
+            console.error('Failed to pull barangays on startup:', err.message);
           }
         }
 
         const contactsEmpty = contactsCache.length === 0;
         if (contactsEmpty) {
           try {
-            // 3. Run background contacts sync
+            // 3. Run background contacts sync (which pulls from Sheets)
             await syncWithGoogleSheets('System Background Sync');
           } catch (err: any) {
             console.error('Background Google Sheets Sync failed on startup:', err.message);
@@ -1036,13 +1035,22 @@ export async function getBase44Roles(): Promise<string[]> {
     'STAFF'
   ];
 
-  const roleSet = new Set<string>(defaultRoles);
+  const roleMap = new Map<string, string>();
+
+  // Initialize with uppercase default roles
+  defaultRoles.forEach(r => {
+    roleMap.set(r.toUpperCase(), r);
+  });
 
   // Collect roles from existing accounts cache
   if (Array.isArray(usersCache)) {
     usersCache.forEach(u => {
       if (u.role && u.role.trim()) {
-        roleSet.add(u.role.trim());
+        const trimmed = u.role.trim();
+        const upper = trimmed.toUpperCase();
+        if (!roleMap.has(upper)) {
+          roleMap.set(upper, trimmed);
+        }
       }
     });
   }
@@ -1051,12 +1059,16 @@ export async function getBase44Roles(): Promise<string[]> {
   if (siteSettings && siteSettings.rolePermissions) {
     Object.keys(siteSettings.rolePermissions).forEach(r => {
       if (r && r.trim()) {
-        roleSet.add(r.trim());
+        const trimmed = r.trim();
+        const upper = trimmed.toUpperCase();
+        if (!roleMap.has(upper)) {
+          roleMap.set(upper, trimmed);
+        }
       }
     });
   }
 
-  return Array.from(roleSet).sort((a, b) => a.localeCompare(b));
+  return Array.from(roleMap.values()).sort((a, b) => a.localeCompare(b));
 }
 
 export async function registerUser(data: {

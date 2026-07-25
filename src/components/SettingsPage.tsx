@@ -109,26 +109,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   // Toggle page access for a specific role
   const togglePageForRole = (roleName: string, pageId: string) => {
     setRolePermissions(prev => {
-      const current = prev[roleName] || [];
+      const roleUpper = roleName.toUpperCase();
+      const actualKey = Object.keys(prev).find(k => k.toUpperCase() === roleUpper) || roleName;
+      const current = prev[actualKey] || [];
       const updated = current.includes(pageId)
         ? current.filter(p => p !== pageId)
         : [...current, pageId];
-      return { ...prev, [roleName]: updated };
+      return { ...prev, [actualKey]: updated };
     });
   };
 
   const grantAllPages = (roleName: string) => {
-    setRolePermissions(prev => ({
-      ...prev,
-      [roleName]: APP_PAGES.map(p => p.id)
-    }));
+    setRolePermissions(prev => {
+      const roleUpper = roleName.toUpperCase();
+      const actualKey = Object.keys(prev).find(k => k.toUpperCase() === roleUpper) || roleName;
+      return {
+        ...prev,
+        [actualKey]: APP_PAGES.map(p => p.id)
+      };
+    });
   };
 
   const clearAllPages = (roleName: string) => {
-    setRolePermissions(prev => ({
-      ...prev,
-      [roleName]: []
-    }));
+    setRolePermissions(prev => {
+      const roleUpper = roleName.toUpperCase();
+      const actualKey = Object.keys(prev).find(k => k.toUpperCase() === roleUpper) || roleName;
+      return {
+        ...prev,
+        [actualKey]: []
+      };
+    });
   };
 
   // Fetch Base44 roles on mount
@@ -832,7 +842,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
           <div className="space-y-4">
             {rolesList.map((roleName) => {
-              const allowedPages = rolePermissions[roleName] || [];
+              const roleUpper = roleName.toUpperCase();
+              const actualKey = Object.keys(rolePermissions).find(k => k.toUpperCase() === roleUpper) || roleName;
+              const allowedPages = rolePermissions[actualKey] || [];
               
               let roleBadgeColor = "bg-slate-100 text-slate-700 border-slate-200";
               if (roleName === 'MASTER ADMIN') roleBadgeColor = "bg-purple-100 text-purple-800 border-purple-200";

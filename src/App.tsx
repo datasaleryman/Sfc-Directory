@@ -90,12 +90,32 @@ export default function App() {
   const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'Administrator', 'Master Admin'].includes(userRole);
 
   const hasTabPermission = (tabId: string) => {
-    if (isSuperUser) return true;
-    const rolePerms = siteSettings?.rolePermissions?.[userRole];
-    if (rolePerms && Array.isArray(rolePerms)) {
-      return rolePerms.includes(tabId);
+    // Safety check: Prevent lockouts for administrative roles
+    const usernameLower = adminUser?.username?.toLowerCase() || '';
+    const roleUpper = userRole.toUpperCase();
+    const isAdminAccount = usernameLower === 'admin' || 
+                           roleUpper === 'MASTER ADMIN' || 
+                           roleUpper === 'ADMINISTRATOR';
+
+    if (isAdminAccount && (tabId === 'settings' || tabId === 'accounts')) {
+      return true;
     }
-    // Fallback default permissions
+
+    // Check custom role permissions case-insensitively
+    if (siteSettings?.rolePermissions) {
+      const matchingKey = Object.keys(siteSettings.rolePermissions).find(
+        (key) => key.toUpperCase() === roleUpper
+      );
+      if (matchingKey) {
+        const rolePerms = siteSettings.rolePermissions[matchingKey];
+        if (Array.isArray(rolePerms)) {
+          return rolePerms.includes(tabId);
+        }
+      }
+    }
+
+    // Default fallbacks if no customized permissions are configured
+    if (isSuperUser) return true;
     if (tabId === 'settings' || tabId === 'accounts') return false;
     return true;
   };
