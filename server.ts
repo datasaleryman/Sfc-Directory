@@ -512,14 +512,6 @@ export async function getApp() {
   // Delete/Remove PCU File from contact (restores household to Saint Francis Clinic Directory)
   app.delete('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userObj = req.user ? findUser(req.user.username) : null;
-      const userRole = (userObj?.role || req.user?.role || '').toUpperCase();
-      const isAdmin = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR', 'MASTER_ADMIN'].includes(userRole) || userRole.includes('ADMIN');
-
-      if (!isAdmin) {
-        return res.status(403).json({ error: 'Only administrators can return household records to the directory.' });
-      }
-
       const id = parseInt(req.params.id, 10);
       const username = req.user?.username || 'Admin';
       const updatedContact = await removePCUFileFromContact(id, username);

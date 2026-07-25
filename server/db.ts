@@ -3878,12 +3878,57 @@ export async function removePCUFileFromContact(contactId: number, username: stri
   const contact = contactsCache.find(c => c.id === contactId);
   if (!contact) throw new Error('Contact record not found.');
 
+  // Find and remove from base44 database
+  try {
+    const pcuEntity = (base44.entities as any).PCUUpdate;
+    if (pcuEntity && typeof pcuEntity.list === 'function') {
+      console.log(`[Base44 SDK] Searching for PCUUpdate records to delete for contact: ${contact.full_name}...`);
+      const submissions = await pcuEntity.list(undefined, 5000);
+      if (submissions && Array.isArray(submissions)) {
+        // Extract firstName and lastName to compare
+        const nameParts = (contact.full_name || '').trim().split(/\s+/);
+        let firstName = 'Unknown';
+        let lastName = 'Unknown';
+        if (nameParts.length > 1) {
+          firstName = nameParts.slice(0, -1).join(' ');
+          lastName = nameParts[nameParts.length - 1];
+        } else if (nameParts.length === 1 && nameParts[0] !== '') {
+          firstName = nameParts[0];
+          lastName = 'Unknown';
+        }
+
+        const matchLower = (str?: string) => (str || '').trim().toLowerCase();
+        
+        // Find matching updates
+        const matchingEntries = submissions.filter((sub: any) => {
+          return (
+            (matchLower(sub.firstName) === matchLower(firstName) && matchLower(sub.lastName) === matchLower(lastName)) ||
+            (sub.contact === contact.contact_number && contact.contact_number !== '')
+          );
+        });
+
+        for (const entry of matchingEntries) {
+          if (entry.id && typeof pcuEntity.delete === 'function') {
+            console.log(`[Base44 SDK] Automatically deleting matching PCUUpdate record ${entry.id} from base44 database...`);
+            await pcuEntity.delete(entry.id);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Base44 SDK Warning] Failed to delete matching PCUUpdate from Base44 DB:', err.message || err);
+  }
+
+  // Remove matching updates from local cache
+  pcuUpdatesCache = pcuUpdatesCache.filter(p => p.contactId !== contactId);
+  await savePCUUpdates();
+
   delete contact.pcu_file_url;
   delete contact.pcu_uploaded_by;
   delete contact.pcu_uploaded_at;
   contact.updated_at = new Date().toISOString();
 
   await saveContacts();
-  await addActivity(username, `Removed PCU File from contact: "${contact.full_name}"`);
+  await addActivity(username, `Restored household record to Clinic Directory and deleted associated PCU file: "${contact.full_name}"`);
   return contact;
 }

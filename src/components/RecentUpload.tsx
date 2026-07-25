@@ -105,12 +105,7 @@ export const RecentUpload: React.FC<RecentUploadProps> = ({
 
   // Remove PCU file from contact (moves it back to Saint Francis Clinic Directory)
   const handleRemovePCU = async (contact: Contact) => {
-    if (!isAdmin) {
-      showToast('Only administrators can return household records to the directory.', 'error');
-      return;
-    }
-
-    if (!window.confirm(`Are you sure you want to remove the PCU file for household "${contact.full_name}"? This household will be transferred back to the Saint Francis Clinic Directory.`)) {
+    if (!window.confirm(`Are you sure you want to restore household "${contact.full_name}"? This will transfer it back to the Saint Francis Clinic Directory and remove it from the PCU uploads and base44 database.`)) {
       return;
     }
 
@@ -125,10 +120,10 @@ export const RecentUpload: React.FC<RecentUploadProps> = ({
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to remove PCU file.');
+        throw new Error(data.error || 'Failed to restore household.');
       }
 
-      showToast(`PCU File removed! "${contact.full_name}" has been transferred back to Saint Francis Clinic Directory.`, 'info');
+      showToast(`Household "${contact.full_name}" has been restored back to Saint Francis Clinic Directory and removed from PCU uploads.`, 'success');
       if (selectedContact?.id === contact.id) {
         setSelectedContact(null);
       }
@@ -373,21 +368,15 @@ export const RecentUpload: React.FC<RecentUploadProps> = ({
                   <span>View Details</span>
                 </button>
 
-                {isAdmin ? (
-                  <button
-                    onClick={() => handleRemovePCU(contact)}
-                    disabled={removingId === contact.id}
-                    className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1"
-                    title="Remove PCU file and return household to Saint Francis Clinic Directory"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Return to Directory</span>
-                  </button>
-                ) : (
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    Admin Return Only
-                  </span>
-                )}
+                <button
+                  onClick={() => handleRemovePCU(contact)}
+                  disabled={removingId === contact.id}
+                  className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-200 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                  title="Restore this household back to Saint Francis Clinic Directory"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${removingId === contact.id ? 'animate-spin' : ''}`} />
+                  <span>Restore</span>
+                </button>
               </div>
             </motion.div>
           ))}
@@ -547,36 +536,23 @@ export const RecentUpload: React.FC<RecentUploadProps> = ({
                   </div>
                 </div>
 
-                {isAdmin ? (
-                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-amber-800 text-[11px] flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <span>
-                      To return this household back to the Saint Francis Clinic Directory barangay folders, click "Return to Directory" below.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-slate-600 text-[11px] flex items-start gap-2">
-                    <ShieldCheck className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                    <span>
-                      Only Administrators can return household records to the Saint Francis Clinic Directory.
-                    </span>
-                  </div>
-                )}
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200/80 text-emerald-800 text-[11px] flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>
+                    To transfer this household back to the Saint Francis Clinic Directory and delete its PCU file, click "Restore to Directory" below.
+                  </span>
+                </div>
               </div>
 
               {/* Modal Footer */}
               <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-                {isAdmin ? (
-                  <button
-                    onClick={() => handleRemovePCU(selectedContact)}
-                    className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Return to Directory</span>
-                  </button>
-                ) : (
-                  <div />
-                )}
+                <button
+                  onClick={() => handleRemovePCU(selectedContact)}
+                  className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Restore to Directory</span>
+                </button>
 
                 <button
                   onClick={() => setSelectedContact(null)}
