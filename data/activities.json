@@ -1,5 +1,29 @@
 [
   {
+    "id": "1d1531e1-c406-4a30-bbb2-8e453a6d84cc",
+    "timestamp": "2026-07-25T06:18:48.166Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 406 contacts from Google Sheet."
+  },
+  {
+    "id": "cc06b74c-7d9c-4b51-89cc-8a8c1292fb4b",
+    "timestamp": "2026-07-25T06:16:59.776Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "229fadcb-c9ee-4e5b-84b4-dc965aceb608",
+    "timestamp": "2026-07-25T06:16:56.815Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "8b47b494-2f20-4a85-aefd-2169aa9a160c",
+    "timestamp": "2026-07-25T06:16:38.180Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 406 contacts from Google Sheet."
+  },
+  {
     "id": "2db6dffc-1612-4067-8a04-c385c1155a3a",
     "timestamp": "2026-07-23T05:47:28.349Z",
     "username": "admin",

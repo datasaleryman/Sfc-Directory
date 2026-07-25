@@ -412,10 +412,10 @@ export async function initDb() {
       usersCache = [];
     }
 
-    // Ensure master admin exists with password "2026"
+    // Ensure master admin exists
     const masterAdmin = usersCache.find(u => u.username.toLowerCase() === 'admin');
-    const masterHash = hashPassword('2026');
     if (!masterAdmin) {
+      const masterHash = hashPassword('2026');
       usersCache.unshift({
         username: 'admin',
         email: 'admin@clinic.gov.ph',
@@ -425,10 +425,6 @@ export async function initDb() {
         status: 'Active'
       });
     } else {
-      masterAdmin.passwordHash = masterHash;
-      masterAdmin.passwordPlain = '2026';
-      masterAdmin.role = 'Administrator';
-      masterAdmin.status = 'Active';
       if (!masterAdmin.email) {
         masterAdmin.email = 'admin@clinic.gov.ph';
       }
@@ -2092,7 +2088,7 @@ export async function saveBulkImport(
           updated_at: new Date().toISOString(),
           deleted_at: null,
           added_locally: true,
-          added_from_print_list: false
+          added_from_print_list: true
         };
         contactsCache.push(newContact);
         appended.push(newContact);
@@ -2119,7 +2115,7 @@ export async function saveBulkImport(
         updated_at: new Date().toISOString(),
         deleted_at: null,
         added_locally: true,
-        added_from_print_list: false
+        added_from_print_list: true
       };
       contactsCache.push(newContact);
       appended.push(newContact);
@@ -2961,10 +2957,8 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     } else if (existingLocal) {
       addedFromPrintList = existingLocal.added_from_print_list !== false;
     } else {
-      // Default new rows to false if they came from bulk entries, unless we explicitly want them to show.
-      // Wait, is it safer to default to false for unrecognized spreadsheet rows to prevent auto-display on clinic directory?
-      // Yes! To strictly prevent unsolicited display, default to false.
-      addedFromPrintList = false;
+      // Default new rows from Google Sheets to true so they are displayed accurately.
+      addedFromPrintList = true;
     }
 
     newContacts.push({
@@ -3320,6 +3314,32 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
         } catch (e) {
           console.error('Failed to parse rolePermissions JSON:', val);
         }
+      } else if (key === 'logoDataUrl') {
+        let localLogo = '';
+        if (fs.existsSync(LOGO_DATA_FILE)) {
+          try { localLogo = fs.readFileSync(LOGO_DATA_FILE, 'utf-8'); } catch (e) {}
+        }
+        if (!localLogo) {
+          localLogo = siteSettings.logoDataUrl || '';
+        }
+        if (localLogo && val.length < localLogo.length && (val.length === 49000 || !val)) {
+          pulledSettings.logoDataUrl = localLogo;
+        } else {
+          pulledSettings.logoDataUrl = val;
+        }
+      } else if (key === 'faviconDataUrl') {
+        let localFavicon = '';
+        if (fs.existsSync(FAVICON_DATA_FILE)) {
+          try { localFavicon = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'); } catch (e) {}
+        }
+        if (!localFavicon) {
+          localFavicon = siteSettings.faviconDataUrl || '';
+        }
+        if (localFavicon && val.length < localFavicon.length && (val.length === 49000 || !val)) {
+          pulledSettings.faviconDataUrl = localFavicon;
+        } else {
+          pulledSettings.faviconDataUrl = val;
+        }
       } else {
         (pulledSettings as any)[key] = val;
       }
@@ -3428,13 +3448,13 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       }
 
       // Merge: Keep all remote users. For any local user not present in remoteUsers,
-      // preserve them if they are Pending, so they are not lost.
+      // preserve them so they are not lost.
       const mergedUsers = [...remoteUsers];
       for (const localUser of usersCache) {
         const existsInRemote = remoteUsers.some(
           u => u.username.toLowerCase() === localUser.username.toLowerCase()
         );
-        if (!existsInRemote && localUser.status === 'Pending') {
+        if (!existsInRemote) {
           mergedUsers.push(localUser);
         }
       }

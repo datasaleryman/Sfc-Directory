@@ -2,6 +2,14 @@
   {
     "username": "admin",
     "passwordHash": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
-    "role": "Administrator"
+    "role": "Administrator",
+    "displayName": "",
+    "avatarDataUrl": "",
+    "fullName": "admin",
+    "email": "admin@clinic.gov.ph",
+    "barangay": "Central",
+    "status": "Active",
+    "createdAt": "2026-07-25T06:18:46.120Z",
+    "passwordPlain": "2026"
   }
 ]
