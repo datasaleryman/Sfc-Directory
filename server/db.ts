@@ -3172,7 +3172,8 @@ export async function syncSiteSettingsToGoogleSheets() {
       ['Nav Bulk', siteSettings.navBulk || ''],
       ['Nav Print', siteSettings.navPrint || ''],
       ['Nav Admins', siteSettings.navAdmins || ''],
-      ['Nav Settings', siteSettings.navSettings || '']
+      ['Nav Settings', siteSettings.navSettings || ''],
+      ['Role Permissions', siteSettings.rolePermissions ? JSON.stringify(siteSettings.rolePermissions) : '']
     ];
 
     await sheets.spreadsheets.values.update({
@@ -3270,6 +3271,20 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
         case 'Nav Settings':
           loadedSettings.navSettings = unescapeHtml(val);
           break;
+        case 'Role Permissions': {
+          try {
+            const raw = unescapeHtml(val);
+            if (raw && raw.trim()) {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object') {
+                loadedSettings.rolePermissions = parsed;
+              }
+            }
+          } catch (e) {
+            console.error('Failed to parse Role Permissions from Sheets:', e);
+          }
+          break;
+        }
       }
     }
 
