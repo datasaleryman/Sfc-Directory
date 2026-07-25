@@ -145,7 +145,14 @@ export default function App() {
           }
         }
       })
-      .catch(err => console.error('Error fetching site settings:', err));
+      .catch(err => {
+        // Prevent console error noise for transient network errors (e.g., during dev server restarts)
+        if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+          console.warn('Site settings fetch suspended (server starting/restarting).');
+        } else {
+          console.error('Error fetching site settings:', err);
+        }
+      });
   };
 
   // Fetch settings on load, focus, and via polling

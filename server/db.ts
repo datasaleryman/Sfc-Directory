@@ -583,26 +583,26 @@ export async function initDb() {
 
         if (fs.existsSync(LOGO_DATA_FILE)) {
           try {
-            const fileLogo = fs.readFileSync(LOGO_DATA_FILE, 'utf-8');
+            const fileLogo = unescapeHtml(fs.readFileSync(LOGO_DATA_FILE, 'utf-8'));
             if (fileLogo && fileLogo.length > logoDataUrl.length) {
               logoDataUrl = fileLogo;
             }
           } catch (e) {}
         }
         if (!logoDataUrl && fs.existsSync(LOGO_DATA_FILE)) {
-          try { logoDataUrl = fs.readFileSync(LOGO_DATA_FILE, 'utf-8'); } catch (e) {}
+          try { logoDataUrl = unescapeHtml(fs.readFileSync(LOGO_DATA_FILE, 'utf-8')); } catch (e) {}
         }
 
         if (fs.existsSync(FAVICON_DATA_FILE)) {
           try {
-            const fileFavicon = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8');
+            const fileFavicon = unescapeHtml(fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'));
             if (fileFavicon && fileFavicon.length > faviconDataUrl.length) {
               faviconDataUrl = fileFavicon;
             }
           } catch (e) {}
         }
         if (!faviconDataUrl && fs.existsSync(FAVICON_DATA_FILE)) {
-          try { faviconDataUrl = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'); } catch (e) {}
+          try { faviconDataUrl = unescapeHtml(fs.readFileSync(FAVICON_DATA_FILE, 'utf-8')); } catch (e) {}
         }
 
         siteSettings = {
@@ -845,8 +845,8 @@ export async function fetchHouseholdSubmissionsFromBase44() {
         // Check if already in contactsCache (added to directory via + Add List)
         const isAlreadyAdded = contactsCache.some(c => 
           !c.deleted_at &&
-          c.full_name.toLowerCase() === name.toLowerCase() &&
-          c.barangay.toLowerCase() === barangay.toLowerCase() &&
+          normalizeCompareName(c.full_name, name) &&
+          normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(barangay).toLowerCase() &&
           c.added_from_print_list !== false
         );
 
@@ -923,14 +923,20 @@ export async function addHouseholdToDirectory(household: {
     throw new Error('Household full name is required.');
   }
 
-  // Check if contact already exists in directory
+  // Check if contact already exists in directory (even if soft-deleted or inactive)
   const existing = contactsCache.find(
-    c => !c.deleted_at && c.full_name.toLowerCase() === formattedName.toLowerCase() && c.barangay.toLowerCase() === trimmedBarangay.toLowerCase()
+    c => normalizeCompareName(c.full_name, formattedName) && 
+         normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(trimmedBarangay).toLowerCase()
   );
 
   if (existing) {
     existing.added_from_print_list = true;
+    existing.deleted_at = null; // restore in case it was previously soft-deleted
+    existing.updated_at = new Date().toISOString();
     await saveContacts();
+    if (sheetsConfig.syncEnabled) {
+      forwardToWebApp('edit', existing).catch(err => console.error('Failed to sync re-added contact to Sheets:', err));
+    }
     return existing;
   }
 
@@ -961,11 +967,18 @@ export async function addHouseholdToDirectory(household: {
   return newContact;
 }
 
-// Clear all contacts from the directory
+// Clear all contacts from the directory (Mark inactive instead of deleting)
 export async function clearAllDirectoryContacts(actorUsername: string) {
-  contactsCache = [];
+  let count = 0;
+  for (let i = 0; i < contactsCache.length; i++) {
+    if (contactsCache[i].added_from_print_list !== false) {
+      contactsCache[i].added_from_print_list = false;
+      contactsCache[i].updated_at = new Date().toISOString();
+      count++;
+    }
+  }
   await saveContacts();
-  await addActivity(actorUsername, 'Cleared all contacts from Saint Francis Clinic Directory');
+  await addActivity(actorUsername, `Removed all ${count} contacts from Saint Francis Clinic Directory (marked inactive)`);
   if (sheetsConfig.syncEnabled) {
     rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync cleared contacts to Google Sheets:', err));
   }
@@ -1635,15 +1648,24 @@ export async function addContact(
   const formattedBarangay = normalizeBarangayName(rawBarangay);
   const formattedPurok = rawPurok ? capitalizeWords(rawPurok) : '';
 
-  // Check for duplicate among active records
-  const isDuplicate = contactsCache.some(
+  // Check for duplicate among active records or reactivate inactive ones
+  const existing = contactsCache.find(
     c =>
       !c.deleted_at &&
       c.full_name.toLowerCase() === formattedName.toLowerCase() &&
       c.contact_number === rawNumber
   );
 
-  if (isDuplicate) {
+  if (existing) {
+    if (existing.added_from_print_list === false) {
+      existing.added_from_print_list = true;
+      existing.updated_at = new Date().toISOString();
+      await saveContacts();
+      if (sheetsConfig.syncEnabled) {
+        forwardToWebApp('edit', existing).catch(err => console.error('Failed to sync reactivated contact to Sheets:', err));
+      }
+      return existing;
+    }
     throw new Error(`Duplicate contact: "${formattedName}" with number ${rawNumber} already exists.`);
   }
 
@@ -1730,18 +1752,18 @@ export async function editContact(
   return contactsCache[index];
 }
 
-// Delete a contact (Soft Delete)
+// Delete a contact (Soft Delete - Update membership status to false instead of deleting)
 export async function deleteContact(id: number, username: string) {
-  const index = contactsCache.findIndex(c => c.id === id && !c.deleted_at);
+  const index = contactsCache.findIndex(c => c.id === id && !c.deleted_at && c.added_from_print_list !== false);
   if (index === -1) {
-    throw new Error('Contact not found or already deleted.');
+    throw new Error('Contact not found or already removed from directory.');
   }
 
-  contactsCache[index].deleted_at = new Date().toISOString();
+  contactsCache[index].added_from_print_list = false;
   contactsCache[index].updated_at = new Date().toISOString();
 
   await saveContacts();
-  await addActivity(username, `Deleted contact (soft-delete): "${contactsCache[index].full_name}"`);
+  await addActivity(username, `Removed contact from Clinic Directory (marked inactive): "${contactsCache[index].full_name}"`);
 
   if (sheetsConfig.syncEnabled) {
     rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync deletions to Google Sheets:', err));
@@ -1750,7 +1772,7 @@ export async function deleteContact(id: number, username: string) {
   return true;
 }
 
-// Delete an entire Barangay folder (Soft delete all contacts inside it)
+// Delete an entire Barangay folder (Update all membership statuses in the folder to false)
 export async function deleteBarangayFolderContacts(barangay: string, username: string) {
   if (!barangay) throw new Error('Barangay name is required.');
   const target = barangay.trim().toLowerCase();
@@ -1758,8 +1780,8 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
   let count = 0;
   for (let i = 0; i < contactsCache.length; i++) {
     const c = contactsCache[i];
-    if (!c.deleted_at && c.barangay && c.barangay.trim().toLowerCase() === target) {
-      contactsCache[i].deleted_at = new Date().toISOString();
+    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(target).toLowerCase()) {
+      contactsCache[i].added_from_print_list = false;
       contactsCache[i].updated_at = new Date().toISOString();
       count++;
     }
@@ -1767,7 +1789,7 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
 
   if (count > 0) {
     await saveContacts();
-    await addActivity(username, `Deleted entire Barangay folder "${barangay}" containing ${count} households.`);
+    await addActivity(username, `Removed entire Barangay folder "${barangay}" containing ${count} households from Clinic Directory.`);
     if (sheetsConfig.syncEnabled) {
       rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
     }
@@ -2999,7 +3021,45 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     });
   }
 
-  contactsCache = newContacts;
+  // Merge the pulled contacts from Google Sheets into our local contactsCache.
+  // We NEVER discard contacts that were added locally or from the print list but aren't in Google Sheets.
+  const mergedContacts: Contact[] = [...newContacts];
+  
+  for (const lc of contactsCache) {
+    const alreadyExists = mergedContacts.some(mc => 
+      (mc.id && lc.id && mc.id.toString() === lc.id.toString()) || 
+      (normalizeCompareName(mc.full_name, lc.full_name) && 
+       normalizeBarangayName(mc.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
+    );
+    
+    if (!alreadyExists) {
+      // Keep local contacts that are not in Google Sheets so they never disappear!
+      mergedContacts.push(lc);
+    } else {
+      // If it already exists in Google Sheets, preserve local-only fields
+      const targetIndex = mergedContacts.findIndex(mc => 
+        (mc.id && lc.id && mc.id.toString() === lc.id.toString()) || 
+        (normalizeCompareName(mc.full_name, lc.full_name) && 
+         normalizeBarangayName(mc.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
+      );
+      if (targetIndex !== -1) {
+        mergedContacts[targetIndex] = {
+          ...lc,
+          ...mergedContacts[targetIndex],
+          photo_url: mergedContacts[targetIndex].photo_url || lc.photo_url,
+          pcu_file_url: mergedContacts[targetIndex].pcu_file_url || lc.pcu_file_url,
+          pcu_uploaded_by: mergedContacts[targetIndex].pcu_uploaded_by || lc.pcu_uploaded_by,
+          pcu_uploaded_at: mergedContacts[targetIndex].pcu_uploaded_at || lc.pcu_uploaded_at,
+          latitude: mergedContacts[targetIndex].latitude || lc.latitude,
+          longitude: mergedContacts[targetIndex].longitude || lc.longitude,
+          geotagged: mergedContacts[targetIndex].geotagged || lc.geotagged,
+          deleted_at: mergedContacts[targetIndex].deleted_at !== undefined ? mergedContacts[targetIndex].deleted_at : lc.deleted_at
+        };
+      }
+    }
+  }
+
+  contactsCache = mergedContacts;
   await saveContacts();
   syncBarangaysToGoogleSheets().catch(err => console.error('Failed to sync Barangays in syncWithGoogleSheets:', err));
   await addActivity(username, `Synchronized ${newContacts.length} contacts from Google Sheet.`);
@@ -3322,7 +3382,7 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
     for (const row of rows.slice(1)) {
       if (!row || row.length < 2) continue;
       const key = (row[0] || '').toString().trim();
-      const val = (row[1] || '').toString().trim();
+      const val = unescapeHtml((row[1] || '').toString().trim());
       if (!key) continue;
 
       if (key === 'rolePermissions') {
@@ -3334,12 +3394,12 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
       } else if (key === 'logoDataUrl') {
         let localLogo = '';
         if (fs.existsSync(LOGO_DATA_FILE)) {
-          try { localLogo = fs.readFileSync(LOGO_DATA_FILE, 'utf-8'); } catch (e) {}
+          try { localLogo = unescapeHtml(fs.readFileSync(LOGO_DATA_FILE, 'utf-8')); } catch (e) {}
         }
         if (!localLogo) {
           localLogo = siteSettings.logoDataUrl || '';
         }
-        const isPrefix = localLogo && (localLogo.startsWith(val) || unescapeHtml(localLogo).startsWith(unescapeHtml(val)));
+        const isPrefix = localLogo && localLogo.startsWith(val);
         if (localLogo && (val.length === 49000 || isPrefix || val.length < localLogo.length || !val)) {
           pulledSettings.logoDataUrl = localLogo;
         } else {
@@ -3348,12 +3408,12 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
       } else if (key === 'faviconDataUrl') {
         let localFavicon = '';
         if (fs.existsSync(FAVICON_DATA_FILE)) {
-          try { localFavicon = fs.readFileSync(FAVICON_DATA_FILE, 'utf-8'); } catch (e) {}
+          try { localFavicon = unescapeHtml(fs.readFileSync(FAVICON_DATA_FILE, 'utf-8')); } catch (e) {}
         }
         if (!localFavicon) {
           localFavicon = siteSettings.faviconDataUrl || '';
         }
-        const isPrefix = localFavicon && (localFavicon.startsWith(val) || unescapeHtml(localFavicon).startsWith(unescapeHtml(val)));
+        const isPrefix = localFavicon && localFavicon.startsWith(val);
         if (localFavicon && (val.length === 49000 || isPrefix || val.length < localFavicon.length || !val)) {
           pulledSettings.faviconDataUrl = localFavicon;
         } else {

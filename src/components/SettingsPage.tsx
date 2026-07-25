@@ -228,7 +228,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
-  // Convert file upload to base64 data URL
+  // Convert file upload to base64 data URL with client-side optimization and resizing
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'favicon') => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -238,10 +238,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       return;
     }
 
-    // Retain 100% original image quality. We support high-resolution pictures up to 50MB.
-    // By loading the file directly via FileReader as a raw base64 data URL without
-    // any canvas resizing, downscaling, or compression, we preserve the exact quality
-    // of the uploaded image perfectly.
     if (file.size > 50 * 1024 * 1024) {
       showToast('Image size should be less than 50MB.', 'warning');
       return;
@@ -250,13 +246,66 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64String = reader.result as string;
-      if (type === 'logo') {
-        setLogoDataUrl(base64String);
-        showToast('Website Logo updated in preview! Click Save to persist changes.', 'info');
-      } else if (type === 'favicon') {
-        setFaviconDataUrl(base64String);
-        showToast('Favicon updated in preview! Click Save to persist changes.', 'info');
-      }
+
+      // Optimize and resize the image client-side to standard logo/favicon size (max 256x256).
+      // This ensures excellent visual quality while maintaining extremely compact base64 strings
+      // that sync reliably to Google Sheets.
+      const img = new Image();
+      img.src = base64String;
+      img.onload = () => {
+        const maxWidth = 256;
+        const maxHeight = 256;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          // Try to export as PNG first to preserve transparency for brand layouts
+          let finalBase64 = canvas.toDataURL('image/png');
+          // If PNG exceeds 40,000 chars, compress as JPEG to stay safely within limits
+          if (finalBase64.length > 40000) {
+            finalBase64 = canvas.toDataURL('image/jpeg', 0.85);
+          }
+
+          if (type === 'logo') {
+            setLogoDataUrl(finalBase64);
+            showToast('Website Logo uploaded and optimized! Click Save to persist changes.', 'info');
+          } else if (type === 'favicon') {
+            setFaviconDataUrl(finalBase64);
+            showToast('Favicon uploaded and optimized! Click Save to persist changes.', 'info');
+          }
+        } else {
+          // Fallback if canvas fails
+          if (type === 'logo') {
+            setLogoDataUrl(base64String);
+            showToast('Website Logo updated! Click Save to persist.', 'info');
+          } else if (type === 'favicon') {
+            setFaviconDataUrl(base64String);
+            showToast('Favicon updated! Click Save to persist.', 'info');
+          }
+        }
+      };
+      img.onerror = () => {
+        if (type === 'logo') {
+          setLogoDataUrl(base64String);
+        } else if (type === 'favicon') {
+          setFaviconDataUrl(base64String);
+        }
+      };
     };
     reader.readAsDataURL(file);
   };
