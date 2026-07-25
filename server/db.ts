@@ -282,6 +282,25 @@ let siteSettings: SiteSettings = {
   rolePermissions: DEFAULT_ROLE_PERMISSIONS
 };
 
+export let siteSettingsLoadedFromSheets = false;
+let settingsPullPromise: Promise<boolean> | null = null;
+
+export async function pullSiteSettingsOnce(): Promise<boolean> {
+  if (!sheetsConfig.syncEnabled) return false;
+  if (siteSettingsLoadedFromSheets) return true;
+  if (!settingsPullPromise) {
+    settingsPullPromise = pullSiteSettingsFromGoogleSheets().then(res => {
+      siteSettingsLoadedFromSheets = true;
+      return res;
+    }).catch(err => {
+      console.error('Lazy settings pull failed:', err);
+      settingsPullPromise = null; // allow retry
+      return false;
+    });
+  }
+  return settingsPullPromise;
+}
+
 export function getSiteSettings() {
   return siteSettings;
 }
@@ -593,61 +612,34 @@ export async function initDb() {
 
     // Run background sheets sync if enabled
     if (sheetsConfig.syncEnabled) {
-      // In serverless environments (Netlify, AWS Lambda, etc.), we MUST skip automatic background sync on cold-start initialization.
-      // This ensures instantaneous boot times, eliminates Netlify 502/504 gateway timeouts, and completely avoids Google Sheets API quota exhaustion.
-      // Additionally, we strictly never perform automatic push or write operations on startup to prevent resetting/overwriting remote spreadsheet data.
-      if (process.env.NETLIFY === 'true' || process.env.LAMBDA_TASK_ROOT) {
-        console.log('[Startup] Serverless environment detected. Skipping background Google Sheets startup sync to avoid rate limits and unnecessary remote database connections.');
-        return;
-      }
-
       setTimeout(async () => {
-        // Prevent hitting Google Sheets API read/write quota limits during rapid development restarts by
-        // only performing initial syncs if local caches are empty. Otherwise, rely on the persistent local JSON files on disk.
-        
-        const settingsEmpty = !siteSettings.title || siteSettings.title === 'SFC Uploader';
-        if (settingsEmpty) {
-          try {
-            // 1. Try to pull site settings first from Google Sheets
-            // SAFETY GUARANTEE: ONLY pull, NEVER automatically push/write or reset the remote sheet on startup.
-            await pullSiteSettingsFromGoogleSheets();
-          } catch (err: any) {
-            console.error('Failed to pull site settings on startup:', err.message);
-          }
+        // Pull configurations and settings on startup to ensure we always have the latest state from Google Sheets.
+        // In serverless environments (Netlify, AWS Lambda), we only pull settings/admins/barangays and skip the heavy contacts database sync.
+        try {
+          console.log('[Startup] Loading settings, administrators, and barangays from Google Sheets...');
+          await pullSiteSettingsFromGoogleSheets();
+          await pullAdminsFromGoogleSheets();
+          await pullBarangaysFromGoogleSheets();
+        } catch (err: any) {
+          console.error('[Startup] Failed to pull startup configurations from Google Sheets:', err.message || err);
         }
 
-        const adminsEmpty = usersCache.length <= 1;
-        if (adminsEmpty) {
-          try {
-            // 2. Try to pull administrators first from Google Sheets
-            // SAFETY GUARANTEE: ONLY pull, NEVER automatically push/write or reset the remote sheet on startup.
-            await pullAdminsFromGoogleSheets();
-          } catch (err: any) {
-            console.error('Failed to pull administrators on startup:', err.message);
-          }
-        }
-
-        const barangaysEmpty = !barangaysCache || barangaysCache.length <= 1;
-        if (barangaysEmpty) {
-          try {
-            // 3. Try to pull Barangays first from Google Sheets
-            // SAFETY GUARANTEE: ONLY pull, NEVER automatically push/write or reset the remote sheet on startup.
-            await pullBarangaysFromGoogleSheets();
-          } catch (err: any) {
-            console.error('Failed to pull barangays on startup:', err.message);
-          }
+        // Only run heavy background contacts sync if NOT in a serverless environment
+        if (process.env.NETLIFY === 'true' || process.env.LAMBDA_TASK_ROOT) {
+          console.log('[Startup] Serverless environment detected. Skipping heavy background contacts synchronization.');
+          return;
         }
 
         const contactsEmpty = contactsCache.length === 0;
         if (contactsEmpty) {
           try {
-            // 3. Run background contacts sync (which pulls from Sheets)
+            console.log('[Startup] Performing background contacts synchronization...');
             await syncWithGoogleSheets('System Background Sync');
           } catch (err: any) {
             console.error('Background Google Sheets Sync failed on startup:', err.message);
           }
         }
-      }, 1000);
+      }, 100);
     }
   } catch (err) {
     console.error('Error initializing database:', err);

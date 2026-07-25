@@ -27,6 +27,7 @@ import {
   syncWithGoogleSheets,
   getSiteSettings,
   saveSiteSettings,
+  pullSiteSettingsOnce,
   pullSiteSettingsFromGoogleSheets,
   pullAdminsFromGoogleSheets,
   updateUserProfile,
@@ -624,8 +625,11 @@ export async function getApp() {
   // --- Site Settings Endpoints ---
 
   // Get current site settings (public)
-  app.get('/api/site/settings', (req: Request, res: Response) => {
+  app.get('/api/site/settings', async (req: Request, res: Response) => {
     try {
+      if (getSheetsConfig().syncEnabled) {
+        await pullSiteSettingsOnce();
+      }
       const settings = getSiteSettings();
       res.json(settings);
     } catch (err: any) {
