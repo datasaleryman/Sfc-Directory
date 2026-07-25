@@ -5,7 +5,8 @@ import {
   Lock, 
   Upload, 
   Loader2, 
-  Save 
+  Save,
+  MapPin
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -13,7 +14,7 @@ interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   authToken: string | null;
-  adminUser: { username: string; role: string; displayName?: string; avatarDataUrl?: string } | null;
+  adminUser: { username: string; role: string; displayName?: string; avatarDataUrl?: string; barangay?: string } | null;
   onAdminUserUpdated: (user: any, token?: string) => void;
   showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
@@ -28,6 +29,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 }) => {
   const [profileUsername, setProfileUsername] = useState('');
   const [profileDisplayName, setProfileDisplayName] = useState('');
+  const [profileBarangay, setProfileBarangay] = useState('');
   const [avatarDataUrl, setAvatarDataUrl] = useState('');
   const [profilePassword, setProfilePassword] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
@@ -38,6 +40,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       setProfileUsername(adminUser.username);
       setProfileDisplayName(adminUser.displayName || '');
       setAvatarDataUrl(adminUser.avatarDataUrl || '');
+      setProfileBarangay(adminUser.barangay || '');
     }
   }, [adminUser, isOpen]);
 
@@ -85,7 +88,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           username: profileUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''),
           displayName: profileDisplayName.trim(),
           avatarDataUrl,
-          password: profilePassword ? profilePassword.trim() : undefined
+          password: profilePassword ? profilePassword.trim() : undefined,
+          barangay: profileBarangay.trim()
         })
       });
 
@@ -205,6 +209,25 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     value={profileDisplayName}
                     onChange={(e) => setProfileDisplayName(e.target.value)}
                     placeholder="e.g. Dr. Francis"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 rounded-xl transition-all text-xs outline-none text-slate-700 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Barangay Input */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Barangay Address
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                    <MapPin className="w-3.5 h-3.5" />
+                  </span>
+                  <input
+                    type="text"
+                    value={profileBarangay}
+                    onChange={(e) => setProfileBarangay(e.target.value)}
+                    placeholder="e.g. Barangay San Jose"
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 rounded-xl transition-all text-xs outline-none text-slate-700 font-medium"
                   />
                 </div>

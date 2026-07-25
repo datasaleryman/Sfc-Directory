@@ -258,6 +258,21 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       return;
     }
 
+    if (editEmail.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(editEmail.trim())) {
+        showToast('Please enter a valid email address.', 'warning');
+        return;
+      }
+    }
+
+    if (editPassword.trim()) {
+      if (editPassword.trim().length < 4) {
+        showToast('Password must be at least 4 characters long.', 'warning');
+        return;
+      }
+    }
+
     setSavingEdit(true);
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(editTarget.username)}`, {
@@ -1085,10 +1100,10 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       Role Permission <span className="text-emerald-600">*</span>
                     </label>
                     <select
-                      disabled={editTarget.username.toLowerCase() === 'admin'}
+                      disabled={editTarget.username.toLowerCase() === 'admin' || editTarget.username.toLowerCase() === currentUsername.toLowerCase()}
                       value={editRole}
                       onChange={(e) => setEditRole(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer"
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                     >
                       {!base44Roles.includes(editRole) && (
                         <option value={editRole}>{editRole}</option>
@@ -1104,12 +1119,13 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       Account Status
                     </label>
                     <select
-                      disabled={editTarget.username.toLowerCase() === 'admin'}
+                      disabled={editTarget.username.toLowerCase() === 'admin' || editTarget.username.toLowerCase() === currentUsername.toLowerCase()}
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value as any)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer"
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                     >
                       <option value="Active">Active</option>
+                      <option value="Pending">Pending</option>
                       <option value="Suspended">Suspended</option>
                     </select>
                   </div>

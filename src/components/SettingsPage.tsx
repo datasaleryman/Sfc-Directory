@@ -30,8 +30,10 @@ interface SettingsPageProps {
     logoDataUrl: string;
     faviconDataUrl: string;
     navDashboard?: string;
+    navMap?: string;
     navDirectory?: string;
     navRecentUpload?: string;
+    navAccounts?: string;
     navBulk?: string;
     navPrint?: string;
     navAdmins?: string;
@@ -81,8 +83,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [logoDataUrl, setLogoDataUrl] = useState(siteSettings.logoDataUrl);
   const [faviconDataUrl, setFaviconDataUrl] = useState(siteSettings.faviconDataUrl);
   const [navDashboard, setNavDashboard] = useState(siteSettings.navDashboard || 'Dashboard');
+  const [navMap, setNavMap] = useState(siteSettings.navMap || 'Clinic Map');
   const [navDirectory, setNavDirectory] = useState(siteSettings.navDirectory || 'Clinic Directory');
   const [navRecentUpload, setNavRecentUpload] = useState(siteSettings.navRecentUpload || 'Recent Upload');
+  const [navAccounts, setNavAccounts] = useState(siteSettings.navAccounts || 'Account Management');
   const [navBulk, setNavBulk] = useState(siteSettings.navBulk || 'Bulk Entry');
   const [navPrint, setNavPrint] = useState(siteSettings.navPrint || 'Print List');
   const [navAdmins, setNavAdmins] = useState(siteSettings.navAdmins || 'Admin Credentials');
@@ -170,8 +174,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setFaviconDataUrl(siteSettings.faviconDataUrl);
     }
     setNavDashboard(siteSettings.navDashboard || 'Dashboard');
+    setNavMap(siteSettings.navMap || 'Clinic Map');
     setNavDirectory(siteSettings.navDirectory || 'Clinic Directory');
     setNavRecentUpload(siteSettings.navRecentUpload || 'Recent Upload');
+    setNavAccounts(siteSettings.navAccounts || 'Account Management');
     setNavBulk(siteSettings.navBulk || 'Bulk Entry');
     setNavPrint(siteSettings.navPrint || 'Print List');
     setNavAdmins(siteSettings.navAdmins || 'Admin Credentials');
@@ -279,8 +285,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           logoDataUrl,
           faviconDataUrl,
           navDashboard: navDashboard.trim() || 'Dashboard',
+          navMap: navMap.trim() || 'Clinic Map',
           navDirectory: navDirectory.trim() || 'Clinic Directory',
           navRecentUpload: navRecentUpload.trim() || 'Recent Upload',
+          navAccounts: navAccounts.trim() || 'Account Management',
           navBulk: navBulk.trim() || 'Bulk Entry',
           navPrint: navPrint.trim() || 'Print List',
           navAdmins: navAdmins.trim() || 'Admin Credentials',
@@ -311,8 +319,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setLogoDataUrl('');
       setFaviconDataUrl('');
       setNavDashboard('Dashboard');
+      setNavMap('Clinic Map');
       setNavDirectory('Clinic Directory');
       setNavRecentUpload('Recent Upload');
+      setNavAccounts('Account Management');
       setNavBulk('Bulk Entry');
       setNavPrint('Print List');
       setNavAdmins('Admin Credentials');
@@ -709,6 +719,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
               <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Clinic Map Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navMap}
+                  onChange={(e) => setNavMap(e.target.value)}
+                  placeholder="e.g. Clinic Map"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Clinic Directory Link Title
                 </label>
                 <input
@@ -729,6 +752,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   value={navRecentUpload}
                   onChange={(e) => setNavRecentUpload(e.target.value)}
                   placeholder="e.g. Recent Upload"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Account Management Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navAccounts}
+                  onChange={(e) => setNavAccounts(e.target.value)}
+                  placeholder="e.g. Account Management"
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
                 />
               </div>

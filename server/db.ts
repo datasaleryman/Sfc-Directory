@@ -255,14 +255,14 @@ export function getSheetsStatus() {
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
-  'MASTER ADMIN': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-  'IT': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-  'ADMIN': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-  'Administrator': ['dashboard', 'map', 'directory', 'accounts', 'bulk', 'print', 'settings'],
-  'LEADER': ['dashboard', 'map', 'directory', 'bulk', 'print'],
-  'CO-LEADER': ['dashboard', 'map', 'directory', 'bulk', 'print'],
-  'ENCODER': ['dashboard', 'map', 'directory', 'bulk', 'print'],
-  'STAFF': ['dashboard', 'map', 'directory', 'bulk', 'print']
+  'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+  'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+  'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+  'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
+  'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
+  'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
+  'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
+  'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print']
 };
 
 export interface SiteSettings {
@@ -271,7 +271,10 @@ export interface SiteSettings {
   logoDataUrl: string;
   faviconDataUrl: string;
   navDashboard?: string;
+  navMap?: string;
   navDirectory?: string;
+  navRecentUpload?: string;
+  navAccounts?: string;
   navBulk?: string;
   navPrint?: string;
   navAdmins?: string;
@@ -285,7 +288,10 @@ let siteSettings: SiteSettings = {
   logoDataUrl: '',
   faviconDataUrl: '',
   navDashboard: 'Dashboard',
+  navMap: 'Clinic Map',
   navDirectory: 'Clinic Directory',
+  navRecentUpload: 'Recent Upload',
+  navAccounts: 'Account Management',
   navBulk: 'Bulk Entry',
   navPrint: 'Print List',
   navAdmins: 'Admin Credentials',
@@ -297,19 +303,8 @@ export let siteSettingsLoadedFromSheets = false;
 let settingsPullPromise: Promise<boolean> | null = null;
 
 export async function pullSiteSettingsOnce(): Promise<boolean> {
-  if (!sheetsConfig.syncEnabled) return false;
-  if (siteSettingsLoadedFromSheets) return true;
-  if (!settingsPullPromise) {
-    settingsPullPromise = pullSiteSettingsFromGoogleSheets().then(res => {
-      siteSettingsLoadedFromSheets = true;
-      return res;
-    }).catch(err => {
-      console.error('Lazy settings pull failed:', err);
-      settingsPullPromise = null; // allow retry
-      return false;
-    });
-  }
-  return settingsPullPromise;
+  // Website settings are loaded from the local settings.json file and do not read from Google Sheets.
+  return true;
 }
 
 export function getSiteSettings() {
@@ -569,7 +564,10 @@ export async function initDb() {
           logoDataUrl,
           faviconDataUrl,
           navDashboard: unescapeHtml(parsed.navDashboard || 'Dashboard'),
+          navMap: unescapeHtml(parsed.navMap || 'Clinic Map'),
           navDirectory: unescapeHtml(parsed.navDirectory || 'Clinic Directory'),
+          navRecentUpload: unescapeHtml(parsed.navRecentUpload || 'Recent Upload'),
+          navAccounts: unescapeHtml(parsed.navAccounts || 'Account Management'),
           navBulk: unescapeHtml(parsed.navBulk || 'Bulk Entry'),
           navPrint: unescapeHtml(parsed.navPrint || 'Print List'),
           navAdmins: unescapeHtml(parsed.navAdmins || 'Admin Credentials'),
@@ -630,12 +628,22 @@ export async function initDb() {
         // Pull configurations and settings on startup to ensure we always have the latest state from Google Sheets.
         // In serverless environments (Netlify, AWS Lambda), we only pull settings/admins/barangays and skip the heavy contacts database sync.
         try {
-          console.log('[Startup] Loading settings, administrators, and barangays from Google Sheets...');
+          console.log('[Startup] Syncing database tables with Google Sheets...');
           await pullSiteSettingsFromGoogleSheets();
-          await pullAdminsFromGoogleSheets();
-          await pullBarangaysFromGoogleSheets();
+          
+          const adminsPulled = await pullAdminsFromGoogleSheets();
+          if (!adminsPulled) {
+            console.log('[Startup] Administrators table missing or empty on Sheets. Creating and matching administrators table...');
+            await syncAdminsToGoogleSheets();
+          }
+
+          const barangaysPulled = await pullBarangaysFromGoogleSheets();
+          if (!barangaysPulled) {
+            console.log('[Startup] Barangays table missing or empty on Sheets. Creating and matching barangays table...');
+            await syncBarangaysToGoogleSheets();
+          }
         } catch (err: any) {
-          console.error('[Startup] Failed to pull startup configurations from Google Sheets:', err.message || err);
+          console.error('[Startup] Failed to sync startup configurations with Google Sheets:', err.message || err);
         }
 
         // Only run heavy background contacts sync if NOT in a serverless environment
@@ -644,14 +652,11 @@ export async function initDb() {
           return;
         }
 
-        const contactsEmpty = contactsCache.length === 0;
-        if (contactsEmpty) {
-          try {
-            console.log('[Startup] Performing background contacts synchronization...');
-            await syncWithGoogleSheets('System Background Sync');
-          } catch (err: any) {
-            console.error('Background Google Sheets Sync failed on startup:', err.message);
-          }
+        try {
+          console.log('[Startup] Performing background contacts table synchronization and match validation...');
+          await syncWithGoogleSheets('System Background Sync');
+        } catch (err: any) {
+          console.error('Background Google Sheets Sync failed on startup:', err.message || err);
         }
       }, 100);
     }
@@ -1194,8 +1199,23 @@ export async function editUserAccount(
     throw new Error('User account not found.');
   }
 
-  if (targetUsername.toLowerCase() === 'admin' && updates.role && updates.role !== 'Administrator') {
-    throw new Error('Master admin role cannot be changed.');
+  if (targetUsername.toLowerCase() === 'admin') {
+    if (updates.role && updates.role !== 'Administrator') {
+      throw new Error('Master admin role cannot be changed.');
+    }
+    if (updates.status && updates.status !== 'Active') {
+      throw new Error('Master admin account must remain Active.');
+    }
+  }
+
+  // Prevent logged-in user from self-demoting role or self-suspending status
+  if (targetUsername.toLowerCase() === actorUsername.toLowerCase()) {
+    if (updates.role && updates.role !== 'Administrator' && user.role === 'Administrator') {
+      throw new Error('You cannot demote your own Administrator role.');
+    }
+    if (updates.status && updates.status !== 'Active') {
+      throw new Error('You cannot suspend or deactivate your own account.');
+    }
   }
 
   if (updates.fullName !== undefined) {
@@ -1257,7 +1277,7 @@ export async function editUserAccount(
 
 export async function updateUserProfile(
   currentUsername: string,
-  updates: { username?: string; displayName?: string; avatarDataUrl?: string; password?: string }
+  updates: { username?: string; displayName?: string; avatarDataUrl?: string; password?: string; barangay?: string }
 ) {
   const user = usersCache.find(u => u.username.toLowerCase() === currentUsername.toLowerCase());
   if (!user) {
@@ -1292,6 +1312,10 @@ export async function updateUserProfile(
     user.avatarDataUrl = updates.avatarDataUrl;
   }
 
+  if (updates.barangay !== undefined) {
+    user.barangay = updates.barangay.trim();
+  }
+
   if (updates.password) {
     const trimmedPass = updates.password.trim();
     if (trimmedPass.length < 4) {
@@ -1308,7 +1332,8 @@ export async function updateUserProfile(
     username: user.username,
     role: user.role,
     displayName: user.displayName || '',
-    avatarDataUrl: user.avatarDataUrl || ''
+    avatarDataUrl: user.avatarDataUrl || '',
+    barangay: user.barangay || ''
   };
 }
 
@@ -3132,197 +3157,12 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
 }
 
 export async function syncSiteSettingsToGoogleSheets() {
-  const sheets = getSheetsClient();
-  if (!sheets) return;
-
-  try {
-    let spreadsheetId = sheetsConfig.spreadsheetId;
-    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match) {
-      spreadsheetId = match[1];
-    }
-    const settingsSheetName = 'SiteSettings';
-
-    // Verify sheet exists, if not create it
-    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
-    markSheetsConnected();
-
-    const sheetsList = spreadsheetInfo.data.sheets || [];
-    const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
-
-    if (!exists) {
-      console.log(`Sheet "${settingsSheetName}" not found. Creating website settings table automatically...`);
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [{
-            addSheet: {
-              properties: {
-                title: settingsSheetName
-              }
-            }
-          }]
-        }
-      });
-    }
-
-    // Clear and rewrite site settings
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `${settingsSheetName}!A:Z`
-    });
-
-    const headers = ['Setting Key', 'Setting Value'];
-    const logoValForSheet = (siteSettings.logoDataUrl && siteSettings.logoDataUrl.length > 30000) 
-      ? '[PERMANENTLY_STORED_LOCALLY]' 
-      : (siteSettings.logoDataUrl || '');
-    const faviconValForSheet = (siteSettings.faviconDataUrl && siteSettings.faviconDataUrl.length > 30000) 
-      ? '[PERMANENTLY_STORED_LOCALLY]' 
-      : (siteSettings.faviconDataUrl || '');
-
-    const rowsToPut = [
-      headers,
-      ['Title', siteSettings.title || ''],
-      ['Favicon Title', siteSettings.faviconTitle || ''],
-      ['Logo Data URL', logoValForSheet],
-      ['Favicon Data URL', faviconValForSheet],
-      ['Nav Dashboard', siteSettings.navDashboard || ''],
-      ['Nav Directory', siteSettings.navDirectory || ''],
-      ['Nav Bulk', siteSettings.navBulk || ''],
-      ['Nav Print', siteSettings.navPrint || ''],
-      ['Nav Admins', siteSettings.navAdmins || ''],
-      ['Nav Settings', siteSettings.navSettings || ''],
-      ['Role Permissions', siteSettings.rolePermissions ? JSON.stringify(siteSettings.rolePermissions) : '']
-    ];
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${settingsSheetName}!A1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: sanitizeRowsForSheets(rowsToPut)
-      }
-    });
-    console.log('[Google Sheets] Synchronized website settings successfully!');
-  } catch (err: any) {
-    console.error('Failed to sync site settings to Google Sheets:', err.message || err);
-    markSheetsDisconnected(err);
-  }
+  // Website Settings are permanently saved 100% locally on the server and do not touch the Google Sheets database to avoid resets or overwrites.
+  return;
 }
 
 export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
-  const sheets = getSheetsClient();
-  if (!sheets) return false;
-
-  try {
-    let spreadsheetId = sheetsConfig.spreadsheetId;
-    if (!spreadsheetId) return false;
-
-    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match) {
-      spreadsheetId = match[1];
-    }
-    const settingsSheetName = 'SiteSettings';
-
-    // Verify sheet exists
-    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
-    markSheetsConnected();
-
-    const sheetsList = spreadsheetInfo.data.sheets || [];
-    const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
-
-    if (!exists) {
-      console.log(`Sheet "${settingsSheetName}" not found. No remote settings to pull.`);
-      return false;
-    }
-
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${settingsSheetName}!A:B`
-    });
-
-    const rows = res.data.values || [];
-    if (rows.length <= 1) {
-      console.log('SiteSettings sheet is empty or only contains headers.');
-      return false;
-    }
-
-    const loadedSettings: Partial<SiteSettings> = {};
-    for (const row of rows.slice(1)) {
-      if (!row || row.length < 2) continue;
-      const key = (row[0] || '').toString().trim();
-      const val = row[1];
-      if (!key) continue;
-
-      switch (key) {
-        case 'Title':
-          loadedSettings.title = unescapeHtml(val);
-          break;
-        case 'Favicon Title':
-          loadedSettings.faviconTitle = unescapeHtml(val);
-          break;
-        case 'Logo Data URL': {
-          const unescapedLogo = unescapeHtml(val);
-          if (unescapedLogo && unescapedLogo.startsWith('data:image/') && !unescapedLogo.includes('[') && unescapedLogo.length > 50) {
-            loadedSettings.logoDataUrl = unescapedLogo;
-          }
-          break;
-        }
-        case 'Favicon Data URL': {
-          const unescapedFavicon = unescapeHtml(val);
-          if (unescapedFavicon && unescapedFavicon.startsWith('data:image/') && !unescapedFavicon.includes('[') && unescapedFavicon.length > 50) {
-            loadedSettings.faviconDataUrl = unescapedFavicon;
-          }
-          break;
-        }
-        case 'Nav Dashboard':
-          loadedSettings.navDashboard = unescapeHtml(val);
-          break;
-        case 'Nav Directory':
-          loadedSettings.navDirectory = unescapeHtml(val);
-          break;
-        case 'Nav Bulk':
-          loadedSettings.navBulk = unescapeHtml(val);
-          break;
-        case 'Nav Print':
-          loadedSettings.navPrint = unescapeHtml(val);
-          break;
-        case 'Nav Admins':
-          loadedSettings.navAdmins = unescapeHtml(val);
-          break;
-        case 'Nav Settings':
-          loadedSettings.navSettings = unescapeHtml(val);
-          break;
-        case 'Role Permissions': {
-          try {
-            const raw = unescapeHtml(val);
-            if (raw && raw.trim()) {
-              const parsed = JSON.parse(raw);
-              if (parsed && typeof parsed === 'object') {
-                loadedSettings.rolePermissions = {
-                  ...DEFAULT_ROLE_PERMISSIONS,
-                  ...parsed
-                };
-              }
-            }
-          } catch (e) {
-            console.error('Failed to parse Role Permissions from Sheets:', e);
-          }
-          break;
-        }
-      }
-    }
-
-    if (Object.keys(loadedSettings).length > 0) {
-      siteSettings = { ...siteSettings, ...loadedSettings };
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
-      console.log('[Google Sheets] Successfully pulled site settings from Google Sheets:', Object.keys(loadedSettings));
-      return true;
-    }
-  } catch (err: any) {
-    console.error('Failed to pull site settings from Google Sheets:', err.message || err);
-    markSheetsDisconnected(err);
-  }
+  // Website settings are stored 100% locally on the server permanently to avoid resets or overwrites.
   return false;
 }
 

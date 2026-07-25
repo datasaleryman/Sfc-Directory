@@ -36,7 +36,7 @@ import { RecentUpload } from './components/RecentUpload.js';
 export default function App() {
   // Authentication & Session States
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('dir_auth_token'));
-  const [adminUser, setAdminUser] = useState<{ username: string; role: string; displayName?: string; avatarDataUrl?: string } | null>(() => {
+  const [adminUser, setAdminUser] = useState<{ username: string; role: string; displayName?: string; avatarDataUrl?: string; barangay?: string } | null>(() => {
     const saved = localStorage.getItem('dir_admin_user');
     return saved ? JSON.parse(saved) : null;
   });
@@ -65,8 +65,10 @@ export default function App() {
     logoDataUrl: string;
     faviconDataUrl: string;
     navDashboard?: string;
+    navMap?: string;
     navDirectory?: string;
     navRecentUpload?: string;
+    navAccounts?: string;
     navBulk?: string;
     navPrint?: string;
     navAdmins?: string;
@@ -78,8 +80,10 @@ export default function App() {
     logoDataUrl: '',
     faviconDataUrl: '',
     navDashboard: 'Dashboard',
+    navMap: 'Clinic Map',
     navDirectory: 'Clinic Directory',
     navRecentUpload: 'Recent Upload',
+    navAccounts: 'Account Management',
     navBulk: 'Bulk Entry',
     navPrint: 'Print List',
     navAdmins: 'Admin Credentials',
@@ -442,10 +446,10 @@ export default function App() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {([
             { id: 'dashboard', label: siteSettings.navDashboard || 'Dashboard', icon: LayoutDashboard },
-            { id: 'map', label: 'Clinic Map', icon: MapPin },
+            { id: 'map', label: siteSettings.navMap || 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
             { id: 'recent-upload', label: siteSettings.navRecentUpload || 'Recent Upload', icon: UploadCloud },
-            { id: 'accounts', label: 'Account Management', icon: ShieldCheck },
+            { id: 'accounts', label: siteSettings.navAccounts || 'Account Management', icon: ShieldCheck },
             { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
             { id: 'print', label: siteSettings.navPrint || 'Print List', icon: Printer },
           ] as const)
@@ -537,17 +541,17 @@ export default function App() {
                   : activeTab === 'print' 
                     ? (siteSettings.navPrint || 'Formatted Print Directory') 
                     : activeTab === 'directory' 
-                      ? (siteSettings.title || 'SFC Uploader') 
+                      ? (siteSettings.navDirectory || 'Clinic Directory') 
                       : activeTab === 'recent-upload'
                         ? (siteSettings.navRecentUpload || 'Recent Upload')
                         : activeTab === 'accounts'
-                          ? 'Account Management'
+                          ? (siteSettings.navAccounts || 'Account Management')
                           : activeTab === 'admins' 
                             ? (siteSettings.navAdmins || 'Admin Credentials') 
                             : activeTab === 'settings'
                               ? (siteSettings.navSettings || 'Website Settings')
                               : activeTab === 'map'
-                                ? 'Clinic Map'
+                                ? (siteSettings.navMap || 'Clinic Map')
                                 : (siteSettings.navDashboard || 'Dashboard Overview')}
               </h2>
               <p className="text-[11px] sm:text-xs text-emerald-300/80 mt-0.5 truncate hidden sm:block">

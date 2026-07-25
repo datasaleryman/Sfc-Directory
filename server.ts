@@ -225,14 +225,15 @@ export async function getApp() {
         return res.status(401).json({ error: 'Authentication required.' });
       }
 
-      const { username, displayName, avatarDataUrl, password } = req.body;
+      const { username, displayName, avatarDataUrl, password, barangay } = req.body;
       const currentUsername = req.user.username;
 
       const updatedUser = await updateUserProfile(currentUsername, {
         username,
         displayName,
         avatarDataUrl,
-        password
+        password,
+        barangay
       });
 
       // If username has changed, generate a new token for the user so they stay logged in
