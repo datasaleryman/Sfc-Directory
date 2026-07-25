@@ -816,6 +816,7 @@ async function saveContacts() {
 
 // Fetch raw Base44 Household Submissions & Directory contacts for Print List page
 export async function fetchHouseholdSubmissionsFromBase44() {
+  await ensureContactsSynced();
   let base44Households: any[] = [];
   try {
     const submissions = await base44.entities.HouseholdSubmission.list(undefined, 5000);
@@ -2798,6 +2799,46 @@ export async function saveSheetsConfig(config: SheetsConfig, username: string) {
 
     await syncWithGoogleSheets(username);
   }
+}
+
+export let contactsLoadedFromSheets = false;
+let contactsSyncPromise: Promise<any> | null = null;
+let lastContactsSyncTime = 0;
+
+export async function ensureContactsSynced(): Promise<boolean> {
+  if (!sheetsConfig.syncEnabled) {
+    return true;
+  }
+
+  // If we synced very recently (within 10 seconds), use cache to prevent hitting Google Sheets API rate limits
+  if (contactsLoadedFromSheets && (Date.now() - lastContactsSyncTime < 10000)) {
+    return true;
+  }
+
+  if (contactsSyncPromise) {
+    await contactsSyncPromise;
+    return true;
+  }
+
+  contactsSyncPromise = (async () => {
+    try {
+      console.log('[Sync] Lazy-syncing contacts from Google Sheets...');
+      const result = await syncWithGoogleSheets('Lazy Load/Sync');
+      if (result && result.success) {
+        contactsLoadedFromSheets = true;
+        lastContactsSyncTime = Date.now();
+      }
+      return result;
+    } catch (err) {
+      console.error('Failed to lazy sync contacts from Google Sheets:', err);
+      return { success: false };
+    } finally {
+      contactsSyncPromise = null;
+    }
+  })();
+
+  await contactsSyncPromise;
+  return true;
 }
 
 export function normalizeCompareName(name1: string, name2: string): boolean {

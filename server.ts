@@ -41,7 +41,8 @@ import {
   addPCUUpdate,
   getPCUUpdates,
   getRecentUploads,
-  removePCUFileFromContact
+  removePCUFileFromContact,
+  ensureContactsSynced
 } from './server/db.js';
 import {
   createToken,
@@ -89,6 +90,21 @@ export async function getApp() {
   // Security: Max payload limit (set to 50mb to preserve original high-quality uploads) & XSS sanitization
   app.use(express.json({ limit: '50mb' }));
   app.use(sanitizeInput);
+
+  // Middleware to ensure contacts are loaded/synchronized from Google Sheets before accessing contact routes
+  const ensureSyncedMiddleware = async (req: Request, res: Response, next: any) => {
+    try {
+      await ensureContactsSynced();
+      next();
+    } catch (err: any) {
+      console.error('[Sync Middleware] Failed to ensure contacts are synced:', err.message);
+      next(); // Continue anyway to avoid blocking the app in case Google Sheets is temporarily down
+    }
+  };
+
+  app.use('/api/contacts', ensureSyncedMiddleware);
+  app.use('/api/base44/households', ensureSyncedMiddleware);
+  app.use('/api/dashboard/stats', ensureSyncedMiddleware);
 
   // --- API Endpoints ---
 
