@@ -211,6 +211,17 @@ let lastSyncStatus = {
   error: null as string | null
 };
 
+export function markSheetsConnected() {
+  lastSyncStatus.connected = true;
+  lastSyncStatus.lastSuccess = new Date().toISOString();
+  lastSyncStatus.error = null;
+}
+
+export function markSheetsDisconnected(err: any) {
+  lastSyncStatus.connected = false;
+  lastSyncStatus.error = err?.message || String(err) || 'Unknown connection error';
+}
+
 let base44SyncStatus = {
   lastAttempt: null as string | null,
   lastSuccess: null as string | null,
@@ -563,7 +574,10 @@ export async function initDb() {
           navPrint: unescapeHtml(parsed.navPrint || 'Print List'),
           navAdmins: unescapeHtml(parsed.navAdmins || 'Admin Credentials'),
           navSettings: unescapeHtml(parsed.navSettings || 'Website Settings'),
-          rolePermissions: parsed.rolePermissions || DEFAULT_ROLE_PERMISSIONS
+          rolePermissions: {
+            ...DEFAULT_ROLE_PERMISSIONS,
+            ...(parsed.rolePermissions || {})
+          }
         };
       } catch (e) {
         console.error('Error parsing site settings:', e);
@@ -1705,6 +1719,7 @@ export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
 
     // Ensure the sheet exists
     await ensureSheetExists(sheets, spreadsheetId, sheetName);
+    markSheetsConnected();
 
     // Get current headers to match column positions
     const headerResponse = await sheets.spreadsheets.values.get({
@@ -1785,6 +1800,7 @@ export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
     return true;
   } catch (err: any) {
     console.error('[Google Sheets] Failed to rewrite contacts to Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
     return false;
   }
 }
@@ -2935,6 +2951,8 @@ export async function syncAdminsToGoogleSheets() {
 
     // Verify sheet exists, if not create it
     const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
     const sheetsList = spreadsheetInfo.data.sheets || [];
     const exists = sheetsList.some((s: any) => s.properties?.title === adminSheetName);
 
@@ -2988,6 +3006,7 @@ export async function syncAdminsToGoogleSheets() {
     console.log('[Google Sheets] Synchronized administrators list successfully!');
   } catch (err: any) {
     console.error('Failed to sync administrators to Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
   }
 }
 
@@ -3006,6 +3025,8 @@ export async function syncBarangaysToGoogleSheets() {
 
     // Verify sheet exists, if not create it
     const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
     const sheetsList = spreadsheetInfo.data.sheets || [];
     const exists = sheetsList.some((s: any) => s.properties?.title === barangaySheetName);
 
@@ -3048,6 +3069,7 @@ export async function syncBarangaysToGoogleSheets() {
     console.log('[Google Sheets] Synchronized Barangays list successfully!');
   } catch (err: any) {
     console.error('Failed to sync Barangays to Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
   }
 }
 
@@ -3066,6 +3088,8 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
     const barangaySheetName = 'Barangays';
 
     const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
     const sheetsList = spreadsheetInfo.data.sheets || [];
     const exists = sheetsList.some((s: any) => s.properties?.title === barangaySheetName);
 
@@ -3102,6 +3126,7 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
     }
   } catch (err: any) {
     console.error('Failed to pull Barangays from Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
   }
   return false;
 }
@@ -3120,6 +3145,8 @@ export async function syncSiteSettingsToGoogleSheets() {
 
     // Verify sheet exists, if not create it
     const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
     const sheetsList = spreadsheetInfo.data.sheets || [];
     const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
 
@@ -3179,6 +3206,7 @@ export async function syncSiteSettingsToGoogleSheets() {
     console.log('[Google Sheets] Synchronized website settings successfully!');
   } catch (err: any) {
     console.error('Failed to sync site settings to Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
   }
 }
 
@@ -3198,6 +3226,8 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
 
     // Verify sheet exists
     const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
     const sheetsList = spreadsheetInfo.data.sheets || [];
     const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
 
@@ -3220,7 +3250,7 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
     const loadedSettings: Partial<SiteSettings> = {};
     for (const row of rows.slice(1)) {
       if (!row || row.length < 2) continue;
-      const key = row[0];
+      const key = (row[0] || '').toString().trim();
       const val = row[1];
       if (!key) continue;
 
@@ -3269,7 +3299,10 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
             if (raw && raw.trim()) {
               const parsed = JSON.parse(raw);
               if (parsed && typeof parsed === 'object') {
-                loadedSettings.rolePermissions = parsed;
+                loadedSettings.rolePermissions = {
+                  ...DEFAULT_ROLE_PERMISSIONS,
+                  ...parsed
+                };
               }
             }
           } catch (e) {
@@ -3288,6 +3321,7 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
     }
   } catch (err: any) {
     console.error('Failed to pull site settings from Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
   }
   return false;
 }
@@ -3308,6 +3342,8 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
 
     // Verify sheet exists
     const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
     const sheetsList = spreadsheetInfo.data.sheets || [];
     const exists = sheetsList.some((s: any) => s.properties?.title === adminSheetName);
 
@@ -3384,6 +3420,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
     }
   } catch (err: any) {
     console.error('Failed to pull administrators from Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
   }
   return false;
 }
