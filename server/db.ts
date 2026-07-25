@@ -3157,12 +3157,157 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
 }
 
 export async function syncSiteSettingsToGoogleSheets() {
-  // Website Settings are permanently saved 100% locally on the server and do not touch the Google Sheets database to avoid resets or overwrites.
-  return;
+  const sheets = getSheetsClient();
+  if (!sheets) return;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return;
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const settingsSheetName = 'WebsiteSettings';
+
+    // Verify sheet exists, if not create it
+    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
+    const sheetsList = spreadsheetInfo.data.sheets || [];
+    const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${settingsSheetName}" not found. Creating WebsiteSettings table automatically...`);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: {
+                title: settingsSheetName
+              }
+            }
+          }]
+        }
+      });
+    }
+
+    // Clear and rewrite site settings
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${settingsSheetName}!A:Z`
+    });
+
+    const headers = ['Key', 'Value'];
+    const rowsToPut = [
+      headers,
+      ['title', siteSettings.title || ''],
+      ['faviconTitle', siteSettings.faviconTitle || ''],
+      ['logoDataUrl', siteSettings.logoDataUrl || ''],
+      ['faviconDataUrl', siteSettings.faviconDataUrl || ''],
+      ['navDashboard', siteSettings.navDashboard || ''],
+      ['navMap', siteSettings.navMap || ''],
+      ['navDirectory', siteSettings.navDirectory || ''],
+      ['navRecentUpload', siteSettings.navRecentUpload || ''],
+      ['navAccounts', siteSettings.navAccounts || ''],
+      ['navBulk', siteSettings.navBulk || ''],
+      ['navPrint', siteSettings.navPrint || ''],
+      ['navAdmins', siteSettings.navAdmins || ''],
+      ['navSettings', siteSettings.navSettings || ''],
+      ['rolePermissions', siteSettings.rolePermissions ? JSON.stringify(siteSettings.rolePermissions) : '']
+    ];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${settingsSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: sanitizeRowsForSheets(rowsToPut)
+      }
+    });
+    console.log('[Google Sheets] Synchronized WebsiteSettings list successfully!');
+  } catch (err: any) {
+    console.error('Failed to sync WebsiteSettings to Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
+  }
 }
 
 export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
-  // Website settings are stored 100% locally on the server permanently to avoid resets or overwrites.
+  const sheets = getSheetsClient();
+  if (!sheets) return false;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const settingsSheetName = 'WebsiteSettings';
+
+    const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+    markSheetsConnected();
+
+    const sheetsList = spreadsheetInfo.data.sheets || [];
+    const exists = sheetsList.some((s: any) => s.properties?.title === settingsSheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${settingsSheetName}" not found. No remote site settings to pull.`);
+      return false;
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${settingsSheetName}!A:B`
+    });
+
+    const rows = res.data.values || [];
+    if (rows.length <= 1) {
+      console.log('WebsiteSettings sheet is empty or only contains headers.');
+      return false;
+    }
+
+    const pulledSettings: Partial<SiteSettings> = {};
+    for (const row of rows.slice(1)) {
+      if (!row || row.length < 2) continue;
+      const key = (row[0] || '').toString().trim();
+      const val = (row[1] || '').toString().trim();
+      if (!key) continue;
+
+      if (key === 'rolePermissions') {
+        try {
+          pulledSettings.rolePermissions = JSON.parse(val);
+        } catch (e) {
+          console.error('Failed to parse rolePermissions JSON:', val);
+        }
+      } else {
+        (pulledSettings as any)[key] = val;
+      }
+    }
+
+    if (Object.keys(pulledSettings).length > 0) {
+      siteSettings = {
+        ...siteSettings,
+        ...pulledSettings
+      };
+      
+      // Save pulled settings locally as cache
+      if (siteSettings.logoDataUrl) {
+        safeWriteFileSync(LOGO_DATA_FILE, siteSettings.logoDataUrl, 'utf-8');
+      }
+      if (siteSettings.faviconDataUrl) {
+        safeWriteFileSync(FAVICON_DATA_FILE, siteSettings.faviconDataUrl, 'utf-8');
+      }
+      safeWriteFileSync(SETTINGS_FILE, JSON.stringify(siteSettings, null, 2), 'utf-8');
+      
+      console.log('[Google Sheets] Successfully pulled WebsiteSettings from Google Sheets.');
+      return true;
+    }
+  } catch (err: any) {
+    console.error('Failed to pull WebsiteSettings from Google Sheets:', err.message || err);
+    markSheetsDisconnected(err);
+  }
   return false;
 }
 
