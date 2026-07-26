@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square } from 'lucide-react';
 import { Contact } from '../types.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -80,6 +80,72 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const [deleting, setDeleting] = useState(false);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<string | null>(null);
   const [deletingFolder, setDeletingFolder] = useState(false);
+
+  // Designate Barangay Folder state
+  const [userAccounts, setUserAccounts] = useState<Array<{ username: string; email: string; fullName: string; barangay: string; role: string; status: string }>>([]);
+  const [designateModalOpen, setDesignateModalOpen] = useState(false);
+  const [targetDesignateBarangay, setTargetDesignateBarangay] = useState<string>('');
+  const [savingDesignation, setSavingDesignation] = useState(false);
+
+  const fetchUserAccounts = async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch('/api/users', {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        setUserAccounts(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch user accounts:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserAccounts();
+  }, [authToken]);
+
+  const handleOpenDesignateModal = (barangayName?: string) => {
+    const bName = barangayName || (barangayFolders[0]?.barangay || (allAddresses[0] && allAddresses[0] !== 'All Barangays' ? allAddresses[0] : 'Navalan'));
+    setTargetDesignateBarangay(bName);
+    setDesignateModalOpen(true);
+  };
+
+  const handleSaveDesignation = async () => {
+    if (!targetDesignateBarangay.trim()) {
+      showToast('Please select or enter a Barangay name.', 'warning');
+      return;
+    }
+
+    setSavingDesignation(true);
+    try {
+      const res = await fetch('/api/admin/designate-barangay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          barangay: targetDesignateBarangay.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to designate barangay folder.');
+      }
+
+      showToast(data.message || `Barangay "${targetDesignateBarangay}" folder designated successfully!`, 'success');
+      setDesignateModalOpen(false);
+      fetchUserAccounts();
+      fetchContacts();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setSavingDesignation(false);
+    }
+  };
 
   // Syncing Base44 state
   const [syncing, setSyncing] = useState(false);
@@ -572,97 +638,144 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               />
             </div>
 
-            <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-emerald-600" />
-              <span>{filteredFolders.length} Folders Available</span>
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-600" />
+                <span>{filteredFolders.length} Folders Available</span>
+              </div>
+
+              {isAdmin && (
+                <button
+                  onClick={() => handleOpenDesignateModal()}
+                  className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs shrink-0"
+                  title="Select a designated barangay and make it available to assigned user accounts"
+                >
+                  <UserCheck className="w-4 h-4 text-emerald-200" />
+                  <span>Designate Barangay to Accounts</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Barangay Folders Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredFolders.map((folder) => (
-              <motion.div
-                key={folder.barangay}
-                whileHover={{ y: -3, transition: { duration: 0.15 } }}
-                className="bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-300 transition-all overflow-hidden flex flex-col justify-between group"
-              >
-                {/* Folder Top Tab Design */}
-                <div className="p-6 pb-4">
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200/70 border border-amber-300/60 text-amber-800 flex items-center justify-center shadow-xs group-hover:from-emerald-100 group-hover:to-emerald-200 group-hover:border-emerald-300 group-hover:text-emerald-800 transition-colors">
-                      <Folder className="w-6 h-6 fill-amber-300/50 group-hover:fill-emerald-300/50 transition-colors" />
+            {filteredFolders.map((folder) => {
+              const assignedAccounts = userAccounts.filter(
+                u => u.barangay && u.barangay.trim().toLowerCase() === folder.barangay.trim().toLowerCase()
+              );
+              const assignedCount = assignedAccounts.length;
+              const isUserDesignated = userBarangay && userBarangay.trim().toLowerCase() === folder.barangay.trim().toLowerCase();
+
+              return (
+                <motion.div
+                  key={folder.barangay}
+                  whileHover={{ y: -3, transition: { duration: 0.15 } }}
+                  className="bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-300 transition-all overflow-hidden flex flex-col justify-between group"
+                >
+                  {/* Folder Top Tab Design */}
+                  <div className="p-6 pb-4">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200/70 border border-amber-300/60 text-amber-800 flex items-center justify-center shadow-xs group-hover:from-emerald-100 group-hover:to-emerald-200 group-hover:border-emerald-300 group-hover:text-emerald-800 transition-colors">
+                        <Folder className="w-6 h-6 fill-amber-300/50 group-hover:fill-emerald-300/50 transition-colors" />
+                      </div>
+
+                      <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-extrabold text-xs">
+                        {folder.count} Households
+                      </span>
                     </div>
 
-                    <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-extrabold text-xs">
-                      {folder.count} Households
-                    </span>
+                    <h3 className="text-lg font-extrabold text-slate-800 font-display group-hover:text-emerald-700 transition-colors">
+                      {folder.barangay}
+                    </h3>
+                    <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                      Official Barangay Records Folder
+                    </p>
+
+                    {/* Assigned Accounts & Designated Badges */}
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      {isUserDesignated && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-[10px] flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-emerald-700" /> Designated for Your Account
+                        </span>
+                      )}
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] flex items-center gap-1">
+                        <User className="w-3 h-3 text-slate-500" />
+                        {assignedCount} {assignedCount === 1 ? 'Account' : 'Accounts'} Assigned
+                      </span>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                      <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{folder.purokCount} Puroks</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
+                        <Navigation className="w-3.5 h-3.5 text-teal-600" />
+                        <span>{folder.geotaggedCount} Geotagged</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <h3 className="text-lg font-extrabold text-slate-800 font-display group-hover:text-emerald-700 transition-colors">
-                    {folder.barangay}
-                  </h3>
-                  <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                    Official Barangay Records Folder
-                  </p>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
-                    <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{folder.purokCount} Puroks</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
-                      <Navigation className="w-3.5 h-3.5 text-teal-600" />
-                      <span>{folder.geotaggedCount} Geotagged</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Folder Bottom Action Bar */}
-                <div className="p-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleExportExcel(folder.barangay);
-                      }}
-                      className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
-                      title={`Export ${folder.barangay} to Excel`}
-                    >
-                      <ArrowDownToLine className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleExportPDF(folder.barangay);
-                      }}
-                      className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
-                      title={`Export ${folder.barangay} to PDF`}
-                    >
-                      <FileText className="w-4 h-4" />
-                    </button>
-                    {isAdmin && (
+                  {/* Folder Bottom Action Bar */}
+                  <div className="p-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setDeleteFolderTarget(folder.barangay);
+                          handleExportExcel(folder.barangay);
                         }}
-                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
-                        title={`Delete folder ${folder.barangay} & all its households`}
+                        className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
+                        title={`Export ${folder.barangay} to Excel`}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <ArrowDownToLine className="w-4 h-4" />
                       </button>
-                    )}
-                  </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleExportPDF(folder.barangay);
+                        }}
+                        className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
+                        title={`Export ${folder.barangay} to PDF`}
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDesignateModal(folder.barangay);
+                            }}
+                            className="p-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/80 bg-emerald-50 border border-emerald-200/70 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                            title={`Designate ${folder.barangay} folder to accounts`}
+                          >
+                            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="hidden sm:inline">Designate</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteFolderTarget(folder.barangay);
+                            }}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                            title={`Delete folder ${folder.barangay} & all its households`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
 
-                  <button
-                    onClick={() => openFolder(folder.barangay)}
-                    className="px-4 py-2 bg-slate-900 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    Open Folder <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
+                    <button
+                      onClick={() => openFolder(folder.barangay)}
+                      className="px-4 py-2 bg-slate-900 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      Open Folder <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1232,6 +1345,140 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px]"
                 >
                   {deletingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Folder'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Designate Barangay Folder to Accounts */}
+      <AnimatePresence>
+        {designateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col my-auto"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                    <UserCheck className="w-5 h-5 text-emerald-700" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-800 font-display">Designate Barangay Folder</h3>
+                    <p className="text-xs text-slate-400 font-medium">Assign folder access to user accounts</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setDesignateModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-left">
+                {/* Select/Enter Barangay */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Select Barangay to Designate
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={targetDesignateBarangay}
+                      onChange={(e) => setTargetDesignateBarangay(e.target.value)}
+                      placeholder="e.g. Navalan, Dampalan, SAN JOSE..."
+                      className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 focus:bg-white transition-all"
+                    />
+                    <select
+                      value={targetDesignateBarangay}
+                      onChange={(e) => {
+                        if (e.target.value) setTargetDesignateBarangay(e.target.value);
+                      }}
+                      className="px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer max-w-[150px]"
+                    >
+                      <option value="">Select Existing</option>
+                      {allAddresses.filter(a => a && a !== 'All Barangays').map(b => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">
+                    Select any Barangay name to make its folder available in Clinic Directory.
+                  </p>
+                </div>
+
+                {/* Info panel showing accounts whose assigned barangay matches targetDesignateBarangay */}
+                {(() => {
+                  const matchingAccounts = userAccounts.filter(
+                    u => u.barangay && u.barangay.trim().toLowerCase() === targetDesignateBarangay.trim().toLowerCase()
+                  );
+
+                  return (
+                    <div className="mt-4 p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <UserCheck className="w-4 h-4 text-emerald-700" />
+                          Accounts Assigned to {targetDesignateBarangay || 'this Barangay'} ({matchingAccounts.length})
+                        </label>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          Automatic Access
+                        </span>
+                      </div>
+
+                      {matchingAccounts.length > 0 ? (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {matchingAccounts.map((account) => (
+                            <div
+                              key={account.username}
+                              className="p-2 bg-white rounded-xl border border-emerald-200/60 flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <span className="font-bold text-slate-800">{account.fullName || account.username}</span>
+                                <span className="text-slate-400 font-normal ml-1">(@{account.username})</span>
+                              </div>
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-extrabold text-[10px] rounded-md uppercase">
+                                {account.role}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 font-medium italic p-1">
+                          No user accounts are currently assigned to "{targetDesignateBarangay}". When accounts are assigned to this Barangay in Account Management, this folder will automatically be visible to them.
+                        </p>
+                      )}
+
+                      <div className="mt-2.5 pt-2 border-t border-emerald-200/60 text-[11px] font-medium text-emerald-800">
+                        ✓ All user accounts with Barangay equal to <strong>"{targetDesignateBarangay || 'Selected Barangay'}"</strong> will automatically see and view this folder.
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div className="pt-4 mt-2 border-t border-slate-100 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDesignateModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
+                  disabled={savingDesignation}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveDesignation}
+                  disabled={savingDesignation}
+                  className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px]"
+                >
+                  {savingDesignation ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Designated Folder'}
                 </button>
               </div>
             </motion.div>

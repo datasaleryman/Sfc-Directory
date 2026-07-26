@@ -20,6 +20,7 @@ import {
   registerUser,
   updateUserRole,
   updateUserStatus,
+  designateBarangayForUsers,
   createAdminUser,
   deleteAdminUser,
   requestPasswordResetPIN,
@@ -292,17 +293,39 @@ export async function getApp() {
     }
   });
 
+  // Designate Barangay Folder to User Accounts (Admin action)
+  app.post('/api/admin/designate-barangay', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userObj = req.user ? findUser(req.user.username) : null;
+      const userRole = (userObj?.role || req.user?.role || '').toUpperCase();
+      const isAdminRole = userRole === 'ADMINISTRATOR' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || req.user?.username.toLowerCase() === 'admin';
+
+      if (!isAdminRole) {
+        return res.status(403).json({ error: 'Only administrators can designate barangay folders to accounts.' });
+      }
+
+      const { barangay, usernames } = req.body;
+      const result = await designateBarangayForUsers(barangay, usernames, req.user!.username);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to designate barangay folder to accounts.' });
+    }
+  });
+
   // Get contacts list (paginated, sorted, searched, filtered)
   app.get('/api/contacts', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     try {
       const userObj = req.user ? findUser(req.user.username) : null;
       const userRole = (userObj?.role || req.user?.role || '').toUpperCase();
       const userBarangay = userObj?.barangay || '';
-      const isLeaderRole = userRole === 'LEADER' || userRole === 'CO-LEADER' || userRole.includes('LEADER');
+      const isAdminRole = userRole === 'ADMINISTRATOR' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || req.user?.username.toLowerCase() === 'admin';
 
       let address = req.query.address as string | undefined;
-      if (isLeaderRole && userBarangay) {
-        address = userBarangay;
+      // For non-admin accounts assigned to a barangay, restrict/default address filter to their designated barangay
+      if (!isAdminRole && userBarangay) {
+        if (!address || address === 'All Barangays' || address === 'All Addresses') {
+          address = userBarangay;
+        }
       }
 
       const search = req.query.search as string | undefined;
@@ -322,11 +345,24 @@ export async function getApp() {
         limit
       });
 
-      // If Leader/Co-Leader, filter returned folders list so they only see their assigned barangay folder
-      if (isLeaderRole && userBarangay && Array.isArray(results.barangayFolders)) {
-        results.barangayFolders = results.barangayFolders.filter(
-          (f) => f.barangay.trim().toLowerCase() === userBarangay.trim().toLowerCase()
+      // If non-admin user with assigned barangay, filter returned folders so their designated barangay folder is available
+      if (!isAdminRole && userBarangay && Array.isArray(results.barangayFolders)) {
+        const assignedLower = userBarangay.trim().toLowerCase();
+        const filtered = results.barangayFolders.filter(
+          (f) => f.barangay.trim().toLowerCase() === assignedLower
         );
+
+        if (filtered.length > 0) {
+          results.barangayFolders = filtered;
+        } else {
+          // If no records exist yet for this designated barangay, return a folder entry so the folder is available
+          results.barangayFolders = [{
+            barangay: userBarangay,
+            count: 0,
+            purokCount: 0,
+            geotaggedCount: 0
+          }];
+        }
       }
 
       res.json(results);

@@ -1352,6 +1352,39 @@ export async function editUserAccount(
   };
 }
 
+export async function designateBarangayForUsers(barangay: string, usernames?: string[], actorUsername?: string) {
+  if (!barangay || !barangay.trim()) {
+    throw new Error('Designated Barangay name is required.');
+  }
+  const trimmedBarangay = barangay.trim();
+
+  let updatedCount = 0;
+  if (Array.isArray(usernames) && usernames.length > 0) {
+    for (const uname of usernames) {
+      const user = usersCache.find(u => u.username.toLowerCase() === uname.toLowerCase());
+      if (user && user.username.toLowerCase() !== 'admin') {
+        user.barangay = trimmedBarangay;
+        updatedCount++;
+      }
+    }
+    await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+    syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync updated designated barangays to Sheets:', err));
+  }
+
+  // Count how many accounts are currently assigned to this barangay
+  const matchingAccounts = usersCache.filter(u => u.barangay && u.barangay.trim().toLowerCase() === trimmedBarangay.toLowerCase());
+
+  await addActivity(actorUsername || 'admin', `Designated Barangay folder "${trimmedBarangay}". Available to ${matchingAccounts.length} account(s) assigned to this barangay.`);
+
+  return {
+    success: true,
+    message: `Barangay "${trimmedBarangay}" folder designated successfully! Available to ${matchingAccounts.length} account(s) assigned to ${trimmedBarangay}.`,
+    matchingAccountCount: matchingAccounts.length,
+    matchingAccounts: matchingAccounts.map(u => ({ username: u.username, fullName: u.fullName || u.username, role: u.role })),
+    barangay: trimmedBarangay
+  };
+}
+
 export async function updateUserProfile(
   currentUsername: string,
   updates: { username?: string; displayName?: string; avatarDataUrl?: string; password?: string; barangay?: string }
