@@ -1467,6 +1467,110 @@ export async function deleteAdminUser(username: string, creatorUsername: string)
   syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
 }
 
+// In-memory store for password reset verification PINs
+const resetTokensMap = new Map<string, { pin: string; expiresAt: number; email: string; username: string }>();
+
+export async function requestPasswordResetPIN(emailOrUsername: string) {
+  if (!emailOrUsername || !emailOrUsername.trim()) {
+    throw new Error('Please enter your email address or username.');
+  }
+
+  const target = emailOrUsername.trim().toLowerCase();
+  let user: User | undefined = undefined;
+
+  if (target === 'admin') {
+    user = findUser('admin');
+  } else {
+    user = findUserByEmail(target) || findUser(target);
+  }
+
+  if (!user) {
+    throw new Error(`No registered account found with email or username "${emailOrUsername}". Please check your credentials or register a new account.`);
+  }
+
+  // Generate 6-digit PIN
+  const pin = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // Store PIN valid for 15 minutes
+  resetTokensMap.set(user.username.toLowerCase(), {
+    pin,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    email: user.email || user.username,
+    username: user.username
+  });
+
+  await addActivity(user.username, `Requested password reset verification PIN.`);
+
+  return {
+    success: true,
+    message: 'Verification PIN generated successfully.',
+    email: user.email || user.username,
+    username: user.username,
+    pin
+  };
+}
+
+export async function verifyAndResetPassword(emailOrUsername: string, pin: string, newPassword: string) {
+  if (!emailOrUsername || !emailOrUsername.trim()) {
+    throw new Error('Please enter your email address or username.');
+  }
+  if (!pin || !pin.trim()) {
+    throw new Error('Please enter the 6-digit verification PIN.');
+  }
+  if (!newPassword || !newPassword.trim()) {
+    throw new Error('Please enter a new password.');
+  }
+
+  const trimmedPass = newPassword.trim();
+  if (trimmedPass.length < 4) {
+    throw new Error('New password must be at least 4 characters long.');
+  }
+
+  const target = emailOrUsername.trim().toLowerCase();
+  let user: User | undefined = undefined;
+
+  if (target === 'admin') {
+    user = findUser('admin');
+  } else {
+    user = findUserByEmail(target) || findUser(target);
+  }
+
+  if (!user) {
+    throw new Error('User account not found.');
+  }
+
+  const tokenData = resetTokensMap.get(user.username.toLowerCase());
+  if (!tokenData) {
+    throw new Error('No active password reset request found for this account. Please request a new PIN.');
+  }
+
+  if (Date.now() > tokenData.expiresAt) {
+    resetTokensMap.delete(user.username.toLowerCase());
+    throw new Error('The verification PIN has expired (15 min limit). Please request a new PIN.');
+  }
+
+  if (tokenData.pin !== pin.trim()) {
+    throw new Error('Invalid 6-digit verification PIN. Please double check the code.');
+  }
+
+  // PIN verified - update password
+  user.passwordHash = hashPassword(trimmedPass);
+  user.passwordPlain = trimmedPass;
+
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  resetTokensMap.delete(user.username.toLowerCase());
+  
+  await addActivity(user.username, `Successfully reset account password.`);
+  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync updated user password to Sheets:', err));
+
+  return {
+    success: true,
+    message: 'Password reset successfully! You can now log in with your new password.',
+    username: user.username,
+    email: user.email || user.username
+  };
+}
+
 // String Helper for Capitalization
 function capitalizeWords(str: string): string {
   return str

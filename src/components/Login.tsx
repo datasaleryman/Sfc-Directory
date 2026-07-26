@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, User, KeyRound, Loader2, Activity, Mail, MapPin, UserPlus, ArrowRight, ShieldCheck, Clock, X, AlertCircle } from 'lucide-react';
+import { Lock, User, KeyRound, Loader2, Activity, Mail, MapPin, UserPlus, ArrowRight, ShieldCheck, Clock, X, AlertCircle, Eye, EyeOff, CheckCircle2, RefreshCw, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface LoginProps {
   onLoginSuccess: (token: string, user: { username: string; role: string; email?: string; fullName?: string; barangay?: string }) => void;
-  showToast: (message: string, type: 'success' | 'warning' | 'error') => void;
+  showToast: (message: string, type: 'success' | 'warning' | 'error' | 'info') => void;
   siteSettings: {
     title: string;
     faviconTitle: string;
@@ -45,7 +45,7 @@ function isRealBarangay(name: string): boolean {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSettings }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   // Sign in state
@@ -57,6 +57,15 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regBarangay, setRegBarangay] = useState('BARANGAY CENTRAL');
+
+  // Forgot password state
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotPin, setForgotPin] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [generatedPinDisplay, setGeneratedPinDisplay] = useState<string | null>(null);
+  const [showForgotPassToggle, setShowForgotPassToggle] = useState(false);
 
   // Barangays database list
   const DEFAULT_BARANGAYS = [
@@ -220,6 +229,95 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
     }
   };
 
+  const handleForgotRequestPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      showToast('Please enter your email address or username.', 'warning');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/forgot-password/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailOrUsername: forgotEmail.trim() })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to request reset PIN.');
+      }
+
+      setGeneratedPinDisplay(data.pin || null);
+      if (data.pin) {
+        setForgotPin(data.pin);
+      }
+      setForgotStep(2);
+      showToast(`Verification code generated for ${data.email || forgotEmail}!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotPin.trim()) {
+      showToast('Please enter the 6-digit verification code.', 'warning');
+      return;
+    }
+    if (!forgotNewPassword.trim()) {
+      showToast('Please enter a new password.', 'warning');
+      return;
+    }
+    if (forgotNewPassword.trim().length < 4) {
+      showToast('Password must be at least 4 characters long.', 'warning');
+      return;
+    }
+    if (forgotNewPassword.trim() !== forgotConfirmPassword.trim()) {
+      showToast('Passwords do not match. Please re-enter passwords carefully.', 'warning');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/forgot-password/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailOrUsername: forgotEmail.trim(),
+          pin: forgotPin.trim(),
+          newPassword: forgotNewPassword.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to reset password.');
+      }
+
+      showToast('Password reset successfully! You can now sign in with your new password.', 'success');
+
+      // Pre-fill sign in form
+      setUsername(forgotEmail.trim());
+      setPassword(forgotNewPassword.trim());
+
+      // Reset state
+      setForgotStep(1);
+      setForgotPin('');
+      setForgotNewPassword('');
+      setForgotConfirmPassword('');
+      setGeneratedPinDisplay(null);
+      setMode('login');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Stagger entry variants
   const formContainerVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -285,7 +383,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
           </motion.h2>
           
           <motion.p variants={formItemVariants} className="text-xs font-medium text-slate-400 mt-1 relative z-10">
-            {mode === 'login' ? 'Clinic Directory Portal Access' : 'Register New Clinic Account'}
+            {mode === 'login' ? 'Clinic Directory Portal Access' : mode === 'register' ? 'Register New Clinic Account' : 'Account Password Recovery'}
           </motion.p>
 
           {/* Mode Navigation Switcher Tabs */}
@@ -374,6 +472,18 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                   <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
                     Security Password
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(username || '');
+                      setForgotStep(1);
+                      setGeneratedPinDisplay(null);
+                      setMode('forgot');
+                    }}
+                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
                 <div className="relative group">
                   <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors">
@@ -422,7 +532,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                 </button>
               </motion.div>
             </motion.form>
-          ) : (
+          ) : mode === 'register' ? (
             <motion.form
               key="register-form"
               variants={formSwitchVariants}
@@ -578,6 +688,207 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                 </button>
               </motion.div>
             </motion.form>
+          ) : (
+            <motion.div
+              key="forgot-form"
+              variants={formSwitchVariants}
+              initial="hidden"
+              animate="show"
+              exit="exit"
+              className="p-6 sm:p-8 space-y-4"
+            >
+              {forgotStep === 1 ? (
+                <form onSubmit={handleForgotRequestPin} className="space-y-4">
+                  <div className="text-center mb-1">
+                    <h3 className="text-base font-extrabold text-slate-800">Forgot Password?</h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-snug">
+                      Enter your registered email address or username below to issue a 6-digit verification reset code.
+                    </p>
+                  </div>
+
+                  <motion.div variants={formItemVariants}>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                      Email Address / Username <span className="text-emerald-600">*</span>
+                    </label>
+                    <div className="relative group">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                        <Mail className="w-4.5 h-4.5" />
+                      </span>
+                      <input
+                        type="text"
+                        required
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
+                        placeholder="e.g. maria.santos@gmail.com or admin"
+                        disabled={loading}
+                      />
+                    </div>
+                  </motion.div>
+
+                  <motion.div variants={formItemVariants} className="pt-2">
+                    <motion.button
+                      type="submit"
+                      disabled={loading}
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 disabled:from-emerald-400 disabled:to-emerald-400 text-white font-bold text-sm rounded-2xl shadow-[0_8px_20px_rgba(16,185,129,0.25)] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Issuing Reset Code...
+                        </>
+                      ) : (
+                        <>
+                          <KeyRound className="w-4 h-4 shrink-0" />
+                          Request Reset Code
+                        </>
+                      )}
+                    </motion.button>
+                  </motion.div>
+
+                  <motion.div variants={formItemVariants} className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setMode('login')}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700 hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                    </button>
+                  </motion.div>
+                </form>
+              ) : (
+                <form onSubmit={handleForgotResetPassword} className="space-y-4">
+                  {/* Code Notice Banner */}
+                  <motion.div variants={formItemVariants} className="p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-900 shadow-2xs">
+                    <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="leading-snug flex-1">
+                      <p className="font-extrabold text-emerald-950">Verification Code Issued</p>
+                      <p className="text-[11px] text-emerald-800/90 mt-0.5">
+                        A 6-digit security code was generated for <span className="font-bold underline">{forgotEmail}</span>.
+                      </p>
+                      {generatedPinDisplay && (
+                        <div className="mt-2 p-2 bg-white rounded-xl border border-emerald-300 text-center flex items-center justify-center gap-2 shadow-2xs">
+                          <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Verification PIN:</span>
+                          <span className="text-base font-black tracking-widest text-emerald-700 font-mono">{generatedPinDisplay}</span>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+
+                  {/* 6-Digit PIN */}
+                  <motion.div variants={formItemVariants}>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                      6-Digit Verification Code <span className="text-emerald-600">*</span>
+                    </label>
+                    <div className="relative group">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                        <KeyRound className="w-4.5 h-4.5" />
+                      </span>
+                      <input
+                        type="text"
+                        required
+                        maxLength={6}
+                        value={forgotPin}
+                        onChange={(e) => setForgotPin(e.target.value)}
+                        className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-mono font-bold tracking-widest text-slate-800 text-base outline-none placeholder:text-slate-400 placeholder:font-sans placeholder:tracking-normal placeholder:text-xs"
+                        placeholder="Enter 6-digit code"
+                        disabled={loading}
+                      />
+                    </div>
+                  </motion.div>
+
+                  {/* New Password */}
+                  <motion.div variants={formItemVariants}>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                      New Password <span className="text-emerald-600">*</span>
+                    </label>
+                    <div className="relative group">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                        <Lock className="w-4.5 h-4.5" />
+                      </span>
+                      <input
+                        type={showForgotPassToggle ? 'text' : 'password'}
+                        required
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        className="w-full pl-11 pr-11 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
+                        placeholder="Enter new password"
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotPassToggle(!showForgotPassToggle)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showForgotPassToggle ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </motion.div>
+
+                  {/* Confirm Password */}
+                  <motion.div variants={formItemVariants}>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                      Confirm New Password <span className="text-emerald-600">*</span>
+                    </label>
+                    <div className="relative group">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                        <Lock className="w-4.5 h-4.5" />
+                      </span>
+                      <input
+                        type={showForgotPassToggle ? 'text' : 'password'}
+                        required
+                        value={forgotConfirmPassword}
+                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                        className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
+                        placeholder="Re-enter new password"
+                        disabled={loading}
+                      />
+                    </div>
+                  </motion.div>
+
+                  <motion.div variants={formItemVariants} className="pt-2">
+                    <motion.button
+                      type="submit"
+                      disabled={loading}
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 disabled:from-emerald-400 disabled:to-emerald-400 text-white font-bold text-sm rounded-2xl shadow-[0_8px_20px_rgba(16,185,129,0.25)] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Resetting Password...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          Reset Password & Sign In
+                        </>
+                      )}
+                    </motion.button>
+                  </motion.div>
+
+                  <motion.div variants={formItemVariants} className="pt-1 flex items-center justify-between text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setForgotStep(1)}
+                      className="text-slate-500 hover:text-slate-700 hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Request New Code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode('login')}
+                      className="text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      Back to Sign In <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </motion.div>
+                </form>
+              )}
+            </motion.div>
           )}
         </AnimatePresence>
       </motion.div>

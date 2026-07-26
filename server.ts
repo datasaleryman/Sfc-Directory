@@ -22,6 +22,8 @@ import {
   updateUserStatus,
   createAdminUser,
   deleteAdminUser,
+  requestPasswordResetPIN,
+  verifyAndResetPassword,
   getSheetsConfig,
   saveSheetsConfig,
   syncWithGoogleSheets,
@@ -135,6 +137,28 @@ export async function getApp() {
       });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Forgot Password - Request Verification PIN
+  app.post('/api/auth/forgot-password/request', async (req: Request, res: Response) => {
+    try {
+      const { emailOrUsername } = req.body;
+      const result = await requestPasswordResetPIN(emailOrUsername);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to request password reset PIN.' });
+    }
+  });
+
+  // Forgot Password - Verify PIN & Reset Password
+  app.post('/api/auth/forgot-password/reset', async (req: Request, res: Response) => {
+    try {
+      const { emailOrUsername, pin, newPassword } = req.body;
+      const result = await verifyAndResetPassword(emailOrUsername, pin, newPassword);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to reset password.' });
     }
   });
 
