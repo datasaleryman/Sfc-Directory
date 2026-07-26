@@ -84,6 +84,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   // Designate Barangay Folder state
   const [userAccounts, setUserAccounts] = useState<Array<{ username: string; email: string; fullName: string; barangay: string; role: string; status: string }>>([]);
   const [designateModalOpen, setDesignateModalOpen] = useState(false);
+  const [sourceDesignateBarangay, setSourceDesignateBarangay] = useState<string>('');
   const [targetDesignateBarangay, setTargetDesignateBarangay] = useState<string>('');
   const [savingDesignation, setSavingDesignation] = useState(false);
 
@@ -106,15 +107,20 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     fetchUserAccounts();
   }, [authToken]);
 
-  const handleOpenDesignateModal = (barangayName?: string) => {
-    const bName = barangayName || (barangayFolders[0]?.barangay || (allAddresses[0] && allAddresses[0] !== 'All Barangays' ? allAddresses[0] : 'Navalan'));
-    setTargetDesignateBarangay(bName);
+  const handleOpenDesignateModal = (sourceName?: string) => {
+    const src = sourceName || activeFolder || (barangayFolders[0]?.barangay || '');
+    setSourceDesignateBarangay(src);
+    
+    // Pick target default from allAddresses that is different from src if possible
+    const availableTargets = allAddresses.filter(a => a && a !== 'All Barangays' && a.trim().toLowerCase() !== src.trim().toLowerCase());
+    const target = availableTargets[0] || (src || 'Navalan');
+    setTargetDesignateBarangay(target);
     setDesignateModalOpen(true);
   };
 
   const handleSaveDesignation = async () => {
     if (!targetDesignateBarangay.trim()) {
-      showToast('Please select or enter a Barangay name.', 'warning');
+      showToast('Please select or enter a target Barangay name.', 'warning');
       return;
     }
 
@@ -127,6 +133,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify({
+          sourceBarangay: sourceDesignateBarangay.trim(),
           barangay: targetDesignateBarangay.trim()
         })
       });
@@ -138,8 +145,16 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
       showToast(data.message || `Barangay "${targetDesignateBarangay}" folder designated successfully!`, 'success');
       setDesignateModalOpen(false);
+      
+      // Refresh user accounts and contact list
       fetchUserAccounts();
       fetchContacts();
+
+      // If active folder was transferred, switch active folder view to target folder
+      if (activeFolder && sourceDesignateBarangay && activeFolder.trim().toLowerCase() === sourceDesignateBarangay.trim().toLowerCase()) {
+        setActiveFolder(targetDesignateBarangay.trim());
+        setAddressFilter(targetDesignateBarangay.trim());
+      }
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -1406,7 +1421,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Modal: Designate Barangay Folder to Accounts */}
+      {/* Modal: Designate Barangay Folder to Accounts & Automatic Data Transfer */}
       <AnimatePresence>
         {designateModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
@@ -1424,7 +1439,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   </div>
                   <div>
                     <h3 className="text-base font-extrabold text-slate-800 font-display">Designate Barangay Folder</h3>
-                    <p className="text-xs text-slate-400 font-medium">Assign folder access to user accounts</p>
+                    <p className="text-xs text-slate-400 font-medium">Transfer folder data & assign account access</p>
                   </div>
                 </div>
                 <button
@@ -1436,17 +1451,39 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               </div>
 
               <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-left">
-                {/* Select/Enter Barangay */}
+                {/* 1. Source / Previous Barangay Folder */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Select Barangay to Designate
+                    Previous / Source Barangay Folder (To Transfer From)
+                  </label>
+                  <select
+                    value={sourceDesignateBarangay}
+                    onChange={(e) => setSourceDesignateBarangay(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-emerald-500 transition-all cursor-pointer"
+                  >
+                    <option value="">None (Do not transfer records from previous folder)</option>
+                    {barangayFolders.map(f => (
+                      <option key={f.barangay} value={f.barangay}>
+                        {f.barangay} ({f.count} Households)
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">
+                    Select the existing folder whose data will automatically be transferred.
+                  </p>
+                </div>
+
+                {/* 2. Target Designated Barangay Folder */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Selected / Target Designated Folder (Destination)
                   </label>
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={targetDesignateBarangay}
                       onChange={(e) => setTargetDesignateBarangay(e.target.value)}
-                      placeholder="e.g. Navalan, Dampalan, SAN JOSE..."
+                      placeholder="e.g. Dampalan, Navalan, SAN JOSE..."
                       className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 focus:bg-white transition-all"
                     />
                     <select
@@ -1463,22 +1500,44 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     </select>
                   </div>
                   <p className="text-[11px] text-slate-400 font-medium mt-1">
-                    Select any Barangay name to make its folder available in Clinic Directory.
+                    Enter or choose the designated Barangay name from Google Sheet database where all data will be moved.
                   </p>
                 </div>
 
-                {/* Info panel showing accounts whose assigned barangay matches targetDesignateBarangay */}
+                {/* Data Transfer Notice Card */}
+                {sourceDesignateBarangay && targetDesignateBarangay && sourceDesignateBarangay.trim().toLowerCase() !== targetDesignateBarangay.trim().toLowerCase() && (() => {
+                  const srcFolder = barangayFolders.find(f => f.barangay.trim().toLowerCase() === sourceDesignateBarangay.trim().toLowerCase());
+                  const recCount = srcFolder ? srcFolder.count : 0;
+
+                  return (
+                    <div className="p-3.5 bg-amber-50 border border-amber-200/90 rounded-2xl text-left space-y-1.5">
+                      <div className="flex items-center gap-2 font-extrabold text-amber-900 text-xs">
+                        <FolderOpen className="w-4 h-4 text-amber-700 shrink-0" />
+                        <span>Automatic Data Transfer & Folder Removal</span>
+                      </div>
+                      <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                        All <strong className="text-amber-950 font-extrabold">{recCount} household record(s)</strong> inside previous folder <strong className="text-amber-950">"{sourceDesignateBarangay}"</strong> will automatically be transferred to <strong className="text-emerald-900 font-extrabold">"{targetDesignateBarangay}"</strong>.
+                      </p>
+                      <div className="pt-1.5 border-t border-amber-200/70 text-[11px] text-amber-900 font-bold flex items-center gap-1.5">
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        <span>The previous folder "{sourceDesignateBarangay}" will be emptied and automatically removed from Clinic Directory.</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 3. Info panel showing accounts assigned to targetDesignateBarangay */}
                 {(() => {
                   const matchingAccounts = userAccounts.filter(
                     u => u.barangay && u.barangay.trim().toLowerCase() === targetDesignateBarangay.trim().toLowerCase()
                   );
 
                   return (
-                    <div className="mt-4 p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
+                    <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
                       <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
                           <UserCheck className="w-4 h-4 text-emerald-700" />
-                          Accounts Assigned to {targetDesignateBarangay || 'this Barangay'} ({matchingAccounts.length})
+                          Accounts Assigned to {targetDesignateBarangay || 'Selected Barangay'} ({matchingAccounts.length})
                         </label>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                           Automatic Access
@@ -1486,7 +1545,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       </div>
 
                       {matchingAccounts.length > 0 ? (
-                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                           {matchingAccounts.map((account) => (
                             <div
                               key={account.username}
@@ -1509,7 +1568,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       )}
 
                       <div className="mt-2.5 pt-2 border-t border-emerald-200/60 text-[11px] font-medium text-emerald-800">
-                        ✓ All user accounts with Barangay equal to <strong>"{targetDesignateBarangay || 'Selected Barangay'}"</strong> will automatically see and view this folder.
+                        ✓ User accounts assigned to <strong>"{targetDesignateBarangay || 'Selected Barangay'}"</strong> will automatically view this folder and its contents.
                       </div>
                     </div>
                   );
@@ -1532,7 +1591,13 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   disabled={savingDesignation}
                   className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px]"
                 >
-                  {savingDesignation ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Designated Folder'}
+                  {savingDesignation ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : sourceDesignateBarangay && sourceDesignateBarangay.trim().toLowerCase() !== targetDesignateBarangay.trim().toLowerCase() ? (
+                    'Transfer Data & Designate Folder'
+                  ) : (
+                    'Save Designated Folder'
+                  )}
                 </button>
               </div>
             </motion.div>

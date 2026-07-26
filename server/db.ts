@@ -1358,37 +1358,97 @@ export async function editUserAccount(
   };
 }
 
-export async function designateBarangayForUsers(barangay: string, usernames?: string[], actorUsername?: string) {
+export async function designateBarangayForUsers(
+  barangay: string,
+  sourceBarangay?: string,
+  usernames?: string[],
+  actorUsername?: string
+) {
   if (!barangay || !barangay.trim()) {
     throw new Error('Designated Barangay name is required.');
   }
-  const trimmedBarangay = barangay.trim();
+  const trimmedTarget = barangay.trim();
+  const trimmedSource = sourceBarangay ? sourceBarangay.trim() : '';
 
-  let updatedCount = 0;
+  let transferredCount = 0;
+
+  // Transfer all records inside previous/source folder to selected target folder
+  if (trimmedSource && trimmedSource.toLowerCase() !== trimmedTarget.toLowerCase()) {
+    const matchingContacts = contactsCache.filter(c => !c.deleted_at && isBarangayMatch(c.barangay, trimmedSource));
+    transferredCount = matchingContacts.length;
+
+    if (transferredCount > 0) {
+      matchingContacts.forEach(c => {
+        c.barangay = trimmedTarget;
+        c.updated_at = new Date().toISOString();
+      });
+      await saveContacts();
+
+      // Trigger Google Sheets sync if connected
+      if (sheetsConfig.syncEnabled) {
+        rewriteAllContactsToGoogleSheets().catch(err =>
+          console.error('[Google Sheets] Error syncing contacts after folder transfer:', err.message || err)
+        );
+      }
+    }
+
+    // Also update any user accounts currently assigned to sourceBarangay to targetBarangay
+    let updatedUsersCount = 0;
+    usersCache.forEach(u => {
+      if (u.barangay && isBarangayMatch(u.barangay, trimmedSource)) {
+        u.barangay = trimmedTarget;
+        u.updatedAt = new Date().toISOString();
+        updatedUsersCount++;
+      }
+    });
+
+    if (updatedUsersCount > 0) {
+      await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+      syncAdminsToGoogleSheets().catch(err =>
+        console.error('Failed to sync updated designated barangays to Sheets:', err)
+      );
+    }
+  }
+
+  // Update specific user accounts if explicitly requested
   if (Array.isArray(usernames) && usernames.length > 0) {
+    let updatedSpecific = 0;
     for (const uname of usernames) {
       const user = usersCache.find(u => u.username.toLowerCase() === uname.toLowerCase());
       if (user && user.username.toLowerCase() !== 'admin') {
-        user.barangay = trimmedBarangay;
+        user.barangay = trimmedTarget;
         user.updatedAt = new Date().toISOString();
-        updatedCount++;
+        updatedSpecific++;
       }
     }
-    await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-    syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync updated designated barangays to Sheets:', err));
+    if (updatedSpecific > 0) {
+      await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+      syncAdminsToGoogleSheets().catch(err =>
+        console.error('Failed to sync updated designated barangays to Sheets:', err)
+      );
+    }
   }
 
-  // Count how many accounts are currently assigned to this barangay
-  const matchingAccounts = usersCache.filter(u => u.barangay && u.barangay.trim().toLowerCase() === trimmedBarangay.toLowerCase());
+  // Count matching accounts for target barangay
+  const matchingAccounts = usersCache.filter(u => u.barangay && isBarangayMatch(u.barangay, trimmedTarget));
 
-  await addActivity(actorUsername || 'admin', `Designated Barangay folder "${trimmedBarangay}". Available to ${matchingAccounts.length} account(s) assigned to this barangay.`);
+  const activityMsg = transferredCount > 0
+    ? `Transferred ${transferredCount} household record(s) from folder "${trimmedSource}" to designated folder "${trimmedTarget}". Previous folder "${trimmedSource}" automatically removed.`
+    : `Designated Barangay folder "${trimmedTarget}". Available to ${matchingAccounts.length} account(s).`;
+
+  await addActivity(actorUsername || 'admin', activityMsg);
 
   return {
     success: true,
-    message: `Barangay "${trimmedBarangay}" folder designated successfully! Available to ${matchingAccounts.length} account(s) assigned to ${trimmedBarangay}.`,
+    message: transferredCount > 0
+      ? `Successfully transferred ${transferredCount} household record(s) from "${trimmedSource}" to "${trimmedTarget}". Previous folder "${trimmedSource}" automatically removed!`
+      : `Barangay "${trimmedTarget}" folder designated successfully! Available to ${matchingAccounts.length} account(s).`,
+    transferredCount,
+    sourceBarangay: trimmedSource,
+    targetBarangay: trimmedTarget,
     matchingAccountCount: matchingAccounts.length,
     matchingAccounts: matchingAccounts.map(u => ({ username: u.username, fullName: u.fullName || u.username, role: u.role })),
-    barangay: trimmedBarangay
+    barangay: trimmedTarget
   };
 }
 

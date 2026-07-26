@@ -304,8 +304,8 @@ export async function getApp() {
         return res.status(403).json({ error: 'Only administrators can designate barangay folders to accounts.' });
       }
 
-      const { barangay, usernames } = req.body;
-      const result = await designateBarangayForUsers(barangay, usernames, req.user!.username);
+      const { barangay, sourceBarangay, usernames } = req.body;
+      const result = await designateBarangayForUsers(barangay, sourceBarangay, usernames, req.user!.username);
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message || 'Failed to designate barangay folder to accounts.' });
