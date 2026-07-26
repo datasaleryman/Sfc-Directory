@@ -33,6 +33,7 @@ import {
   pullSiteSettingsOnce,
   pullSiteSettingsFromGoogleSheets,
   pullAdminsFromGoogleSheets,
+  pullBarangaysFromGoogleSheets,
   updateUserProfile,
   syncBase44Contacts,
   getBase44Roles,
@@ -313,12 +314,12 @@ export async function getApp() {
   });
 
   // Get contacts list (paginated, sorted, searched, filtered)
-  app.get('/api/contacts', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/contacts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userObj = req.user ? findUser(req.user.username) : null;
       const userRole = (userObj?.role || req.user?.role || '').toUpperCase();
       const userBarangay = userObj?.barangay || '';
-      const isAdminRole = userRole === 'ADMINISTRATOR' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || req.user?.username.toLowerCase() === 'admin';
+      const isAdminRole = userRole === 'ADMINISTRATOR' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || req.user?.username.toLowerCase() === 'admin' || userRole === 'IT';
 
       let address = req.query.address as string | undefined;
       // For non-admin accounts assigned to a barangay, restrict/default address filter to their designated barangay
@@ -334,15 +335,17 @@ export async function getApp() {
       const sortOrder = req.query.sortOrder as 'asc' | 'desc' | undefined;
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+      const forceSync = req.query.sync === 'true' || req.query.refresh === 'true';
 
-      const results = getContacts({
+      const results = await getContacts({
         search,
         barangay: address, // Map legacy address filter parameter to barangay
         purok,
         sortBy,
         sortOrder,
         page,
-        limit
+        limit,
+        forceSync
       });
 
       // If non-admin user with assigned barangay, filter returned folders so their designated barangay folder is available
@@ -507,8 +510,12 @@ export async function getApp() {
       const barangay = req.params.barangay;
       const username = req.user?.username || 'Admin';
 
+      const userObj = req.user ? findUser(req.user.username) : null;
+      const userRole = (userObj?.role || req.user?.role || '').toUpperCase();
+      const isAdminRole = userRole === 'ADMINISTRATOR' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || req.user?.username.toLowerCase() === 'admin' || userRole === 'IT';
+
       // Check permission - only Administrators are allowed to delete whole folders
-      if (req.user?.role !== 'Administrator') {
+      if (!isAdminRole) {
         return res.status(403).json({ error: 'Permission denied. Only Administrators can delete folders.' });
       }
 
@@ -684,6 +691,12 @@ export async function getApp() {
         await pullAdminsFromGoogleSheets();
       } catch (err: any) {
         console.error('Failed to pull administrators on manual force sync:', err.message);
+      }
+
+      try {
+        await pullBarangaysFromGoogleSheets();
+      } catch (err: any) {
+        console.error('Failed to pull barangays on manual force sync:', err.message);
       }
 
       const result = await syncWithGoogleSheets(username);

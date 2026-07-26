@@ -133,11 +133,11 @@ export const DEFAULT_BARANGAYS: string[] = [
   'Navalan',
   'Kalingayan',
   'Dampalan',
-  'SAN JOSE',
-  'SAN FRANCISCO',
-  'SANTA MARIA',
+  'San Jose',
+  'San Francisco',
+  'Santa Maria',
   'Dumalinao',
-  'NAPOLAN',
+  'Napolan',
   'Balangasan',
   'Tuburan',
   'Lumbia',
@@ -153,9 +153,8 @@ export const DEFAULT_BARANGAYS: string[] = [
   'Tiguma',
   'White Beach',
   'Dao',
-  'SAN PEDRO',
-  'Buenavista',
-  'SFC'
+  'San Pedro',
+  'Buenavista'
 ];
 
 let barangaysCache: string[] = [...DEFAULT_BARANGAYS];
@@ -780,12 +779,42 @@ function normalizeBarangayName(bName: string): string {
   if (bUpper.includes('MURICAY')) return 'Muricay';
   if (bUpper.includes('SANTO NIÑO') || bUpper.includes('SANTO NINO')) return 'Santo Niño';
 
-  // Clean up "TEAM X" strings
-  const cleaned = bUpper.replace(/\bTEAM\s+[A-Z0-9]+\b/gi, '').trim();
+  // Clean up prefixes like "BARANGAY " or "BRGY. " and "TEAM X" strings
+  let cleaned = bUpper.replace(/^(BARANGAY|BRGY\.?)\s+/gi, '').trim();
+  cleaned = cleaned.replace(/\bTEAM\s+[A-Z0-9]+\b/gi, '').trim();
   if (cleaned && cleaned !== 'UNKNOWN' && cleaned !== 'N/A' && cleaned !== 'NONE') {
     return capitalizeWords(cleaned);
   }
   return 'Barangay Central';
+}
+
+// Utility to normalize and deduplicate any list of barangay names (merging "San Jose", "SAN JOSE", "BRGY SAN JOSE", etc.)
+export function normalizeAndDeduplicateBarangays(list: string[]): string[] {
+  const map = new Map<string, string>(); // lower key -> proper title-cased name
+
+  if (!Array.isArray(list)) return [];
+
+  for (const item of list) {
+    if (!item || typeof item !== 'string') continue;
+    const normalized = normalizeBarangayName(item);
+    if (!normalized) continue;
+    const upper = normalized.toUpperCase().trim();
+    if (upper === 'UNKNOWN' || upper === 'N/A' || upper === 'NONE') continue;
+
+    let foundKey: string | null = null;
+    for (const [key, val] of map.entries()) {
+      if (key === normalized.toLowerCase() || isBarangayMatch(val, normalized)) {
+        foundKey = key;
+        break;
+      }
+    }
+
+    if (!foundKey) {
+      map.set(normalized.toLowerCase(), normalized);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
 }
 
 // Cache for Base44 barangays
@@ -1106,9 +1135,9 @@ export function isRealBarangay(name: string): boolean {
 
 export function getBarangayList(): string[] {
   if (Array.isArray(barangaysCache) && barangaysCache.length > 0) {
-    return barangaysCache;
+    return normalizeAndDeduplicateBarangays(barangaysCache);
   }
-  return [...DEFAULT_BARANGAYS];
+  return normalizeAndDeduplicateBarangays(DEFAULT_BARANGAYS);
 }
 
 export async function getBase44Roles(): Promise<string[]> {
@@ -1383,9 +1412,31 @@ export async function designateBarangayForUsers(
         c.updated_at = new Date().toISOString();
       });
       await saveContacts();
+    }
 
-      // Trigger Google Sheets sync if connected
-      if (sheetsConfig.syncEnabled) {
+    // Automatically remove previous/source folder from barangaysCache
+    barangaysCache = barangaysCache.filter(b => 
+      !isBarangayMatch(b, trimmedSource) && 
+      normalizeBarangayName(b).toLowerCase() !== normalizeBarangayName(trimmedSource).toLowerCase()
+    );
+
+    // Ensure target folder is present in barangaysCache
+    const existsTarget = barangaysCache.some(b => 
+      isBarangayMatch(b, trimmedTarget) || 
+      normalizeBarangayName(b).toLowerCase() === normalizeBarangayName(trimmedTarget).toLowerCase()
+    );
+    if (!existsTarget) {
+      barangaysCache.push(trimmedTarget);
+      barangaysCache.sort((a, b) => a.localeCompare(b));
+    }
+    await saveBarangays();
+
+    // Trigger Google Sheets sync if connected
+    if (sheetsConfig.syncEnabled) {
+      syncBarangaysToGoogleSheets().catch(err =>
+        console.error('[Google Sheets] Error syncing barangays after folder transfer:', err.message || err)
+      );
+      if (transferredCount > 0) {
         rewriteAllContactsToGoogleSheets().catch(err =>
           console.error('[Google Sheets] Error syncing contacts after folder transfer:', err.message || err)
         );
@@ -1407,6 +1458,22 @@ export async function designateBarangayForUsers(
       syncAdminsToGoogleSheets().catch(err =>
         console.error('Failed to sync updated designated barangays to Sheets:', err)
       );
+    }
+  } else {
+    // If no trimmedSource or same as target, ensure target is in barangaysCache
+    const existsTarget = barangaysCache.some(b => 
+      isBarangayMatch(b, trimmedTarget) || 
+      normalizeBarangayName(b).toLowerCase() === normalizeBarangayName(trimmedTarget).toLowerCase()
+    );
+    if (!existsTarget) {
+      barangaysCache.push(trimmedTarget);
+      barangaysCache.sort((a, b) => a.localeCompare(b));
+      await saveBarangays();
+      if (sheetsConfig.syncEnabled) {
+        syncBarangaysToGoogleSheets().catch(err =>
+          console.error('[Google Sheets] Error syncing barangays after folder designation:', err.message || err)
+        );
+      }
     }
   }
 
@@ -1769,7 +1836,7 @@ export function isBarangayMatch(b1?: string, b2?: string): boolean {
 }
 
 // Get contacts with flexible pagination, sorting, searching, and filtering
-export function getContacts(params: {
+export async function getContacts(params: {
   search?: string;
   barangay?: string;
   address?: string;
@@ -1778,26 +1845,32 @@ export function getContacts(params: {
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+  forceSync?: boolean;
 }) {
-  const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
+  const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10, forceSync = false } = params;
+
+  if (sheetsConfig.syncEnabled) {
+    try {
+      await ensureContactsSynced(forceSync);
+    } catch (err: any) {
+      console.error('[Sync] Failed to ensure contacts synced in getContacts:', err.message || err);
+    }
+  }
+
   const filterBarangay = barangay || address;
 
   // Only query active (non-soft-deleted) contacts that have NOT yet uploaded a PCU file
   let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
 
   // Get ALL unique barangays from Google Sheet database (getBarangayList) + contactsCache
-  const allBarangaysSet = new Set<string>();
+  const rawBarangaysList: string[] = [];
 
   // 1. Fetch barangay list from Google Sheet database cache/file
   const sheetBarangays = getBarangayList();
   if (Array.isArray(sheetBarangays)) {
     sheetBarangays.forEach(bg => {
       if (bg && typeof bg === 'string' && bg.trim()) {
-        const trimmed = bg.trim();
-        const upper = trimmed.toUpperCase();
-        if (upper !== 'UNKNOWN' && upper !== 'N/A' && upper !== 'NONE') {
-          allBarangaysSet.add(trimmed);
-        }
+        rawBarangaysList.push(bg.trim());
       }
     });
   }
@@ -1805,14 +1878,11 @@ export function getContacts(params: {
   // 2. Add any barangay from active contacts in contactsCache
   contactsCache.forEach(c => {
     if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
-      const bUpper = c.barangay.trim().toUpperCase();
-      if (bUpper !== 'UNKNOWN' && bUpper !== 'N/A' && bUpper !== 'NONE') {
-        allBarangaysSet.add(c.barangay.trim());
-      }
+      rawBarangaysList.push(c.barangay.trim());
     }
   });
 
-  const allBarangays = Array.from(allBarangaysSet).filter(b => b.toUpperCase() !== 'UNKNOWN' && b.toUpperCase() !== 'N/A').sort((a, b) => a.localeCompare(b));
+  const allBarangays = normalizeAndDeduplicateBarangays(rawBarangaysList);
 
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
@@ -2093,7 +2163,7 @@ export async function deleteContact(id: number, username: string) {
   return true;
 }
 
-// Delete an entire Barangay folder (Update all membership statuses in the folder to false)
+// Delete an entire Barangay folder (Update all membership statuses in the folder to false and remove folder from barangays list)
 export async function deleteBarangayFolderContacts(barangay: string, username: string) {
   if (!barangay) throw new Error('Barangay name is required.');
   const target = barangay.trim().toLowerCase();
@@ -2101,22 +2171,36 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
   let count = 0;
   for (let i = 0; i < contactsCache.length; i++) {
     const c = contactsCache[i];
-    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(target).toLowerCase()) {
+    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && (isBarangayMatch(c.barangay, barangay) || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(target).toLowerCase())) {
       contactsCache[i].added_from_print_list = false;
       contactsCache[i].updated_at = new Date().toISOString();
       count++;
     }
   }
 
-  if (count > 0) {
-    await saveContacts();
-    await addActivity(username, `Removed entire Barangay folder "${barangay}" containing ${count} households from Clinic Directory.`);
-    if (sheetsConfig.syncEnabled) {
+  // Remove barangay from barangaysCache so empty or deleted folder does not remain in directory
+  barangaysCache = barangaysCache.filter(b => 
+    !isBarangayMatch(b, barangay) && 
+    normalizeBarangayName(b).toLowerCase() !== normalizeBarangayName(target).toLowerCase()
+  );
+
+  await saveContacts();
+  await saveBarangays();
+
+  await addActivity(username, `Removed Barangay folder "${barangay}" (${count} households) from Clinic Directory.`);
+
+  if (sheetsConfig.syncEnabled) {
+    try {
+      await syncBarangaysToGoogleSheets();
+    } catch (err: any) {
+      console.error('Failed to sync updated Barangays list to Google Sheets:', err.message || err);
+    }
+    if (count > 0) {
       rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
     }
   }
 
-  return { success: true, count };
+  return { success: true, count, message: `Barangay folder "${barangay}" deleted successfully.` };
 }
 
 // Overwrite Google Sheets with all active (non-soft-deleted) contacts
@@ -3178,7 +3262,7 @@ export let contactsLoadedFromSheets = false;
 let contactsSyncPromise: Promise<any> | null = null;
 let lastContactsSyncTime = 0;
 
-export async function ensureContactsSynced(): Promise<boolean> {
+export async function ensureContactsSynced(force: boolean = false): Promise<boolean> {
   if (!sheetsConfig.syncEnabled) {
     return true;
   }
@@ -3187,8 +3271,8 @@ export async function ensureContactsSynced(): Promise<boolean> {
     return true;
   }
 
-  // If we synced very recently (within 5 minutes), use cache to prevent hitting Google Sheets API rate limits
-  if (contactsLoadedFromSheets && (Date.now() - lastContactsSyncTime < 300000)) {
+  // If we synced very recently (within 5 minutes) and force is false, use cache
+  if (!force && contactsLoadedFromSheets && (Date.now() - lastContactsSyncTime < 300000)) {
     return true;
   }
 
@@ -3199,8 +3283,8 @@ export async function ensureContactsSynced(): Promise<boolean> {
 
   contactsSyncPromise = (async () => {
     try {
-      console.log('[Sync] Lazy-syncing contacts from Google Sheets...');
-      const result = await syncWithGoogleSheets('Lazy Load/Sync');
+      console.log('[Sync] Syncing contacts and barangays live from Google Sheets...');
+      const result = await syncWithGoogleSheets('Live Load/Sync');
       if (result && result.success) {
         contactsLoadedFromSheets = true;
         lastContactsSyncTime = Date.now();
@@ -3229,6 +3313,14 @@ export function normalizeCompareName(name1: string, name2: string): boolean {
 
 export async function syncWithGoogleSheets(username: string): Promise<{ success: boolean; message: string; count?: number }> {
   lastSyncStatus.lastAttempt = new Date().toISOString();
+
+  // 1. Pull latest Barangays list from Google Sheets first if available
+  try {
+    await pullBarangaysFromGoogleSheets();
+  } catch (err: any) {
+    console.warn('[Sync] Failed to pull Barangays in syncWithGoogleSheets:', err.message || err);
+  }
+
   let rows: string[][] = [];
 
   const sheets = getSheetsClient();
@@ -3483,6 +3575,26 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
 
   contactsCache = mergedContacts;
   await saveContacts();
+
+  // Aggregate all unique active barangays from both pulled barangaysCache and active contactsCache
+  const rawSyncBarangays: string[] = [];
+  if (Array.isArray(barangaysCache)) {
+    barangaysCache.forEach(b => {
+      if (b && typeof b === 'string' && b.trim()) {
+        rawSyncBarangays.push(b.trim());
+      }
+    });
+  }
+
+  contactsCache.forEach(c => {
+    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && c.barangay.trim()) {
+      rawSyncBarangays.push(c.barangay.trim());
+    }
+  });
+
+  barangaysCache = normalizeAndDeduplicateBarangays(rawSyncBarangays);
+  await saveBarangays();
+
   syncBarangaysToGoogleSheets().catch(err => console.error('Failed to sync Barangays in syncWithGoogleSheets:', err));
   await addActivity(username, `Synchronized ${newContacts.length} contacts from Google Sheet.`);
 
@@ -3683,9 +3795,9 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
     }
 
     if (pulled.length > 0) {
-      barangaysCache = pulled;
+      barangaysCache = normalizeAndDeduplicateBarangays(pulled);
       await saveBarangays();
-      console.log('[Google Sheets] Successfully pulled Barangays from Google Sheets. Total count:', pulled.length);
+      console.log('[Google Sheets] Successfully pulled Barangays from Google Sheets. Total count:', barangaysCache.length);
       return true;
     }
   } catch (err: any) {

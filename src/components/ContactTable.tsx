@@ -164,6 +164,29 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   // Syncing Base44 state
   const [syncing, setSyncing] = useState(false);
+  const [syncingSheets, setSyncingSheets] = useState(false);
+
+  const handleSyncSheets = async () => {
+    setSyncingSheets(true);
+    try {
+      const res = await fetch('/api/sheets/sync', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to sync with Google Sheets Database.');
+      }
+      showToast(data.message || 'Google Sheets Database synchronized live!', 'success');
+      fetchContacts(true);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setSyncingSheets(false);
+    }
+  };
 
   const [imageUploading, setImageUploading] = useState(false);
   const [pcuUploading, setPcuUploading] = useState(false);
@@ -277,7 +300,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   };
 
   // Fetch paginated database contacts list
-  const fetchContacts = async () => {
+  const fetchContacts = async (forceSync: boolean = false) => {
     setLoading(true);
     try {
       let currentBarangay = activeFolder ? activeFolder : (addressFilter === 'All Barangays' ? 'All Addresses' : addressFilter);
@@ -292,7 +315,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         sortBy,
         sortOrder,
         page: page.toString(),
-        limit: limit.toString()
+        limit: limit.toString(),
+        sync: forceSync ? 'true' : 'false'
       });
 
       const res = await fetch(`/api/contacts?${queryParams}`, {
@@ -620,7 +644,17 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         </div>
 
         {/* Global Auto Sync Badge & Controls */}
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+          <button
+            onClick={handleSyncSheets}
+            disabled={syncingSheets || loading}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
+            title="Refresh and sync live data from Google Sheets Database"
+          >
+            {syncingSheets ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 text-emerald-200" />}
+            {syncingSheets ? 'Refreshing Sheets...' : 'Sync Google Sheets ↻'}
+          </button>
+
           <button
             onClick={handleSyncBase44}
             disabled={syncing || loading}
