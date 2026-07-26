@@ -113,6 +113,7 @@ export interface User {
   role: string;
   status?: 'Active' | 'Pending' | 'Suspended';
   createdAt?: string;
+  updatedAt?: string;
   displayName?: string;
   avatarDataUrl?: string;
   passwordPlain?: string;
@@ -286,8 +287,8 @@ export interface SiteSettings {
 const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
 
 let siteSettings: SiteSettings = {
-  title: 'SFC Uploader',
-  faviconTitle: 'SFC Uploader',
+  title: 'SFC HOUSEHOLD DATA LIST',
+  faviconTitle: 'SFC HOUSEHOLD DATA LIST',
   logoDataUrl: DEFAULT_SITE_LOGO,
   faviconDataUrl: DEFAULT_SITE_LOGO,
   navDashboard: 'Dashboard',
@@ -1337,9 +1338,14 @@ export async function editUserAccount(
     user.passwordPlain = trimmedPass;
   }
 
+  user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Edited user account details for "@${targetUsername}" (${user.fullName || targetUsername})`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync users to Sheets:', err);
+  }
 
   return {
     username: user.username,
@@ -1364,6 +1370,7 @@ export async function designateBarangayForUsers(barangay: string, usernames?: st
       const user = usersCache.find(u => u.username.toLowerCase() === uname.toLowerCase());
       if (user && user.username.toLowerCase() !== 'admin') {
         user.barangay = trimmedBarangay;
+        user.updatedAt = new Date().toISOString();
         updatedCount++;
       }
     }
@@ -1415,11 +1422,24 @@ export async function updateUserProfile(
   }
 
   if (updates.displayName !== undefined) {
-    user.displayName = updates.displayName.trim();
+    const trimmedDisplay = updates.displayName.trim();
+    user.displayName = trimmedDisplay;
+    user.fullName = trimmedDisplay;
   }
 
   if (updates.avatarDataUrl !== undefined) {
-    user.avatarDataUrl = updates.avatarDataUrl;
+    let newAvatar = updates.avatarDataUrl;
+    if (newAvatar && newAvatar.startsWith('data:image/')) {
+      try {
+        const uploadedUrl = await uploadFileToBase44(newAvatar, `avatar_${finalUsername}_${Date.now()}.png`);
+        if (uploadedUrl) {
+          newAvatar = uploadedUrl;
+        }
+      } catch (err: any) {
+        console.warn('[Avatar Upload Warning] Could not upload avatar image to CDN, storing image data locally:', err.message || err);
+      }
+    }
+    user.avatarDataUrl = newAvatar;
   }
 
   if (updates.barangay !== undefined) {
@@ -1435,16 +1455,26 @@ export async function updateUserProfile(
     user.passwordPlain = trimmedPass;
   }
 
+  user.updatedAt = new Date().toISOString();
+
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(finalUsername, `Updated admin profile settings (Username: @${finalUsername}, Name: ${user.displayName || 'not set'}).`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
+
+  // Synchronize immediately to Google Sheets
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync updated admin profile to Sheets:', err.message || err);
+  }
 
   return {
     username: user.username,
     role: user.role,
-    displayName: user.displayName || '',
+    displayName: user.displayName || user.fullName || '',
     avatarDataUrl: user.avatarDataUrl || '',
-    barangay: user.barangay || ''
+    barangay: user.barangay || '',
+    email: user.email || '',
+    status: user.status || 'Active'
   };
 }
 
@@ -3368,7 +3398,7 @@ export async function syncAdminsToGoogleSheets() {
     });
 
     // Write headers and data
-    const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At', 'Plain Password'];
+    const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At', 'Plain Password', 'Updated At'];
     const rowsToPut = [
       headers,
       ...usersCache.map(u => [
@@ -3376,12 +3406,13 @@ export async function syncAdminsToGoogleSheets() {
         u.passwordHash,
         u.role,
         u.displayName || u.fullName || '',
-        u.avatarDataUrl || '',
+        u.avatarDataUrl && u.avatarDataUrl.length > 45000 ? u.avatarDataUrl.substring(0, 45000) : (u.avatarDataUrl || ''),
         u.email || '',
         u.barangay || '',
         u.status || 'Active',
         u.createdAt || '',
-        u.passwordPlain || ''
+        u.passwordPlain || '',
+        u.updatedAt || ''
       ])
     ];
 
@@ -3733,7 +3764,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${adminSheetName}!A:J`
+      range: `${adminSheetName}!A:K`
     });
 
     const rows = res.data.values || [];
@@ -3755,6 +3786,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const status = row[7]?.trim() || 'Active';
       const createdAt = row[8]?.trim() || new Date().toISOString();
       const passwordPlain = row[9]?.trim() || '';
+      const updatedAt = row[10]?.trim() || '';
 
       if (!username || !passwordHash || !role) continue;
 
@@ -3769,33 +3801,73 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         barangay: barangay || 'Central',
         status: (status as any) || 'Active',
         createdAt,
-        passwordPlain
+        passwordPlain,
+        updatedAt
       });
     }
 
     if (remoteUsers.length > 0) {
-      const hasMasterAdmin = remoteUsers.some(u => u.username.toLowerCase() === 'admin');
-      if (!hasMasterAdmin) {
-        const localMaster = usersCache.find(u => u.username.toLowerCase() === 'admin');
-        if (localMaster) {
-          remoteUsers.unshift(localMaster);
+      const mergedUsers: User[] = [];
+
+      for (const remote of remoteUsers) {
+        const local = usersCache.find(u => u.username.toLowerCase() === remote.username.toLowerCase());
+        if (!local) {
+          mergedUsers.push(remote);
+        } else {
+          const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+          const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+
+          if (localTime > remoteTime) {
+            // Local user is newer! Retain local user's fields, or fill from remote if local is blank
+            mergedUsers.push({
+              ...remote,
+              ...local,
+              displayName: local.displayName || remote.displayName,
+              avatarDataUrl: local.avatarDataUrl || remote.avatarDataUrl,
+              barangay: local.barangay || remote.barangay,
+              passwordHash: local.passwordHash || remote.passwordHash,
+              passwordPlain: local.passwordPlain || remote.passwordPlain,
+              email: local.email || remote.email,
+              status: local.status || remote.status,
+              role: local.role || remote.role,
+              updatedAt: local.updatedAt
+            });
+          } else {
+            // Remote user is equal or newer! But retain local avatarDataUrl or displayName if remote is blank
+            mergedUsers.push({
+              ...local,
+              ...remote,
+              displayName: remote.displayName || local.displayName,
+              avatarDataUrl: remote.avatarDataUrl || local.avatarDataUrl,
+              barangay: remote.barangay || local.barangay,
+              passwordHash: remote.passwordHash || local.passwordHash,
+              passwordPlain: remote.passwordPlain || local.passwordPlain,
+              email: remote.email || local.email
+            });
+          }
         }
       }
 
-      // Merge: Keep all remote users. For any local user not present in remoteUsers,
-      // preserve them so they are not lost.
-      const mergedUsers = [...remoteUsers];
+      // Preserve any local users not present in remote sheet
       for (const localUser of usersCache) {
-        const existsInRemote = remoteUsers.some(
+        const existsInMerged = mergedUsers.some(
           u => u.username.toLowerCase() === localUser.username.toLowerCase()
         );
-        if (!existsInRemote) {
+        if (!existsInMerged) {
           mergedUsers.push(localUser);
         }
       }
 
+      const hasMasterAdmin = mergedUsers.some(u => u.username.toLowerCase() === 'admin');
+      if (!hasMasterAdmin) {
+        const localMaster = usersCache.find(u => u.username.toLowerCase() === 'admin');
+        if (localMaster) {
+          mergedUsers.unshift(localMaster);
+        }
+      }
+
       usersCache = mergedUsers;
-      fs.writeFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+      safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
       console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total count:', usersCache.length);
       return true;
     }

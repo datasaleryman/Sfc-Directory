@@ -77,8 +77,8 @@ export default function App() {
     navSettings?: string;
     rolePermissions?: Record<string, string[]>;
   }>({
-    title: 'SFC Uploader',
-    faviconTitle: 'SFC Uploader',
+    title: 'SFC HOUSEHOLD DATA LIST',
+    faviconTitle: 'SFC HOUSEHOLD DATA LIST',
     logoDataUrl: DEFAULT_SITE_LOGO,
     faviconDataUrl: DEFAULT_SITE_LOGO,
     navDashboard: 'Dashboard',
