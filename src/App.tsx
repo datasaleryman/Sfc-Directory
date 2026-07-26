@@ -33,6 +33,8 @@ import { ProfileModal } from './components/ProfileModal.js';
 import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
 
+export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
+
 export default function App() {
   // Authentication & Session States
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('dir_auth_token'));
@@ -77,8 +79,8 @@ export default function App() {
   }>({
     title: 'SFC Uploader',
     faviconTitle: 'SFC Uploader',
-    logoDataUrl: '',
-    faviconDataUrl: '',
+    logoDataUrl: DEFAULT_SITE_LOGO,
+    faviconDataUrl: DEFAULT_SITE_LOGO,
     navDashboard: 'Dashboard',
     navMap: 'Clinic Map',
     navDirectory: 'Clinic Directory',
@@ -129,7 +131,13 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data) {
-          setSiteSettings(data);
+          const logo = data.logoDataUrl || DEFAULT_SITE_LOGO;
+          const favicon = data.faviconDataUrl || DEFAULT_SITE_LOGO;
+          setSiteSettings({
+            ...data,
+            logoDataUrl: logo,
+            faviconDataUrl: favicon
+          });
           if (data.title) {
             document.title = data.title;
           }
@@ -140,9 +148,7 @@ export default function App() {
             link.rel = 'icon';
             document.getElementsByTagName('head')[0].appendChild(link);
           }
-          if (data.faviconDataUrl) {
-            link.href = data.faviconDataUrl;
-          }
+          link.href = favicon;
         }
       })
       .catch(err => {
@@ -430,18 +436,12 @@ export default function App() {
       `}>
         <div className="p-6 border-b border-emerald-900/40 bg-gradient-to-r from-emerald-900/40 via-emerald-800/20 to-transparent flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {siteSettings.logoDataUrl ? (
-              <img 
-                src={siteSettings.logoDataUrl} 
-                alt="Logo" 
-                className="w-9 h-9 rounded-xl object-contain bg-white border border-emerald-800/40 shadow-sm" 
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/30">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-            )}
+            <img 
+              src={siteSettings.logoDataUrl || DEFAULT_SITE_LOGO} 
+              alt="Logo" 
+              className="w-9 h-9 rounded-xl object-contain bg-white border border-emerald-800/40 shadow-sm" 
+              referrerPolicy="no-referrer"
+            />
             <div>
               <h1 className="font-bold text-white font-display text-sm tracking-wide leading-tight">
                 {siteSettings.faviconTitle || 'Saint Francis Clinic'}
@@ -545,14 +545,12 @@ export default function App() {
             >
               <Menu className="w-5 h-5" />
             </button>
-            {siteSettings.logoDataUrl ? (
-              <img 
-                src={siteSettings.logoDataUrl} 
-                alt="Logo" 
-                className="md:hidden w-8 h-8 rounded-lg object-contain bg-white border border-emerald-800/30 shrink-0" 
-                referrerPolicy="no-referrer"
-              />
-            ) : null}
+            <img 
+              src={siteSettings.logoDataUrl || DEFAULT_SITE_LOGO} 
+              alt="Logo" 
+              className="md:hidden w-8 h-8 rounded-lg object-contain bg-white border border-emerald-800/30 shrink-0" 
+              referrerPolicy="no-referrer"
+            />
             <div className="min-w-0">
               <h2 className="text-sm sm:text-lg md:text-xl font-bold text-white font-display capitalize truncate">
                 {activeTab === 'bulk' 

@@ -42,7 +42,8 @@ import {
   getPCUUpdates,
   getRecentUploads,
   removePCUFileFromContact,
-  ensureContactsSynced
+  ensureContactsSynced,
+  resetGoogleSheetsCooldown
 } from './server/db.js';
 import {
   createToken,
@@ -610,6 +611,7 @@ export async function getApp() {
   app.post('/api/sheets/sync', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const username = req.user?.username || 'admin';
+      resetGoogleSheetsCooldown();
       
       // Pull latest site settings and administrators from Google Sheets if integration is connected
       try {

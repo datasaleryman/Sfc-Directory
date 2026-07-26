@@ -272,18 +272,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
           <div className="absolute inset-0 bg-gradient-to-tr from-emerald-50/25 to-teal-50/20 opacity-60 pointer-events-none" />
           
           <motion.div variants={formItemVariants} className="relative z-10">
-            {siteSettings.logoDataUrl ? (
-              <img 
-                src={siteSettings.logoDataUrl} 
-                alt="Logo" 
-                className="mx-auto h-16 w-auto object-contain mb-3 rounded-xl p-1 bg-white border border-slate-200/40 shadow-xs"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="mx-auto w-14 h-14 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 mb-3 border border-emerald-400/20">
-                <Activity className="w-7 h-7 drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.15)]" />
-              </div>
-            )}
+            <img 
+              src={siteSettings.logoDataUrl || 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png'} 
+              alt="Logo" 
+              className="mx-auto h-16 w-auto object-contain mb-3 rounded-xl p-1 bg-white border border-slate-200/40 shadow-xs"
+              referrerPolicy="no-referrer"
+            />
           </motion.div>
           
           <motion.h2 variants={formItemVariants} className="text-xl sm:text-2xl font-extrabold font-display text-slate-800 tracking-tight relative z-10">

@@ -17,6 +17,7 @@ import {
   Menu
 } from 'lucide-react';
 import { SheetsStatus } from '../types.js';
+import { DEFAULT_SITE_LOGO } from '../App.js';
 
 interface SettingsPageProps {
   authToken: string | null;
@@ -492,11 +493,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </span>
                     
                     <div className="w-20 h-20 bg-white border border-slate-200 rounded-xl flex items-center justify-center p-2 mb-4 shadow-xs">
-                      {logoDataUrl ? (
-                        <img src={logoDataUrl} alt="Logo preview" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="text-xs text-slate-400 font-mono">No Logo</span>
-                      )}
+                      <img src={logoDataUrl || DEFAULT_SITE_LOGO} alt="Logo preview" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
                     </div>
 
                     <input
@@ -515,13 +512,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <Upload className="w-3.5 h-3.5" />
                       Upload Logo
                     </button>
-                    {logoDataUrl && (
+                    {logoDataUrl && logoDataUrl !== DEFAULT_SITE_LOGO && (
                       <button
                         type="button"
-                        onClick={() => setLogoDataUrl('')}
+                        onClick={() => setLogoDataUrl(DEFAULT_SITE_LOGO)}
                         className="text-[10px] text-rose-500 hover:underline mt-2 font-semibold cursor-pointer"
                       >
-                        Remove custom logo
+                        Reset to default logo
                       </button>
                     )}
                   </div>
@@ -533,11 +530,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </span>
 
                     <div className="w-20 h-20 bg-white border border-slate-200 rounded-xl flex items-center justify-center p-2 mb-4 shadow-xs">
-                      {faviconDataUrl ? (
-                        <img src={faviconDataUrl} alt="Favicon preview" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="text-xs text-slate-400 font-mono">No Icon</span>
-                      )}
+                      <img src={faviconDataUrl || DEFAULT_SITE_LOGO} alt="Favicon preview" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
                     </div>
 
                     <input
@@ -556,13 +549,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <Upload className="w-3.5 h-3.5" />
                       Upload Favicon
                     </button>
-                    {faviconDataUrl && (
+                    {faviconDataUrl && faviconDataUrl !== DEFAULT_SITE_LOGO && (
                       <button
                         type="button"
-                        onClick={() => setFaviconDataUrl('')}
+                        onClick={() => setFaviconDataUrl(DEFAULT_SITE_LOGO)}
                         className="text-[10px] text-rose-500 hover:underline mt-2 font-semibold cursor-pointer"
                       >
-                        Remove custom favicon
+                        Reset to default favicon
                       </button>
                     )}
                   </div>

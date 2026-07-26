@@ -669,29 +669,29 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
       {/* VIEW MODE 2: INDIVIDUAL BARANGAY FOLDER HOUSEHOLD RECORDS TABLE */}
       {activeFolder && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Search & Purok Filters Bar */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col lg:flex-row gap-3 sm:gap-4 items-stretch lg:items-center justify-between">
             {/* Search Input */}
-            <div className="relative w-full md:max-w-md">
+            <div className="relative w-full lg:max-w-md">
               <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-800 text-sm font-medium outline-none placeholder:text-slate-400"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-800 text-sm font-medium outline-none placeholder:text-slate-400 min-h-[42px]"
                 placeholder={`Search inside ${activeFolder}...`}
               />
             </div>
 
             {/* Filter Dropdown + Export buttons */}
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full lg:w-auto">
               {/* Purok Dropdown */}
-              <div className="relative w-full sm:w-auto min-w-[150px]">
+              <div className="relative w-full sm:w-auto min-w-[140px]">
                 <select
                   value={purokFilter}
                   onChange={(e) => setPurokFilter(e.target.value)}
-                  className="w-full appearance-none pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-sm outline-none cursor-pointer"
+                  className="w-full appearance-none pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-xs sm:text-sm outline-none cursor-pointer min-h-[42px]"
                 >
                   <option value="All Puroks">All Puroks</option>
                   {(allPuroks || []).map((p) => (
@@ -706,11 +706,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               </div>
 
               {/* Export Controls for this specific folder */}
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => handleExportExcel(activeFolder)}
                   disabled={exporting !== null || loading}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px]"
                   title="Export this folder to Excel"
                 >
                   <ArrowDownToLine className="w-3.5 h-3.5 text-emerald-600" /> Excel
@@ -718,7 +718,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 <button
                   onClick={() => handleExportPDF(activeFolder)}
                   disabled={exporting !== null || loading}
-                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                  className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px]"
                   title="Export formatted report to PDF document"
                 >
                   {exporting?.startsWith('PDF') ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
@@ -727,7 +727,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 {isAdmin && (
                   <button
                     onClick={() => setDeleteFolderTarget(activeFolder)}
-                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                    className="col-span-2 sm:col-span-1 px-3.5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px]"
                     title={`Delete folder "${activeFolder}" & all its households`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1059,15 +1059,15 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       {/* Modal: View Contact Details */}
       <AnimatePresence>
         {viewContact && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative"
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-100 relative max-h-[90vh] overflow-y-auto my-auto"
             >
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xl overflow-hidden border border-emerald-200/60 shadow-inner shrink-0">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xl overflow-hidden border border-emerald-200/60 shadow-inner shrink-0">
                   {viewContact.photo_url ? (
                     <img src={viewContact.photo_url} alt={viewContact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
@@ -1075,7 +1075,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   )}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800 font-display">{viewContact.full_name}</h3>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-800 font-display">{viewContact.full_name}</h3>
                   <p className="text-xs text-slate-400">Directory Household Record Details</p>
                 </div>
               </div>
@@ -1083,11 +1083,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               <div className="space-y-3 text-sm">
                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400 uppercase">Barangay</span>
-                  <span className="font-bold text-slate-800">{viewContact.barangay}</span>
+                  <span className="font-bold text-slate-800 text-right">{viewContact.barangay}</span>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400 uppercase">Purok</span>
-                  <span className="font-bold text-slate-800">{viewContact.purok || 'Not specified'}</span>
+                  <span className="font-bold text-slate-800 text-right">{viewContact.purok || 'Not specified'}</span>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400 uppercase">Contact Number</span>
@@ -1098,8 +1098,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   <span className="font-bold text-emerald-600">{viewContact.geotagged ? 'Yes' : 'No'}</span>
                 </div>
                 {viewContact.pcu_file_url && (
-                  <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between">
-                    <span className="text-xs font-bold text-blue-600 uppercase flex items-center gap-1">
+                  <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-blue-600 uppercase flex items-center gap-1 shrink-0">
                       <Check className="w-3.5 h-3.5 text-blue-600 animate-pulse" /> PCU File Saved
                     </span>
                     {viewContact.pcu_file_url.startsWith('http') ? (
@@ -1107,14 +1107,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         href={viewContact.pcu_file_url} 
                         target="_blank" 
                         rel="noreferrer" 
-                        className="font-bold text-blue-700 hover:underline text-xs truncate max-w-[200px] flex items-center gap-1 cursor-pointer"
+                        className="font-bold text-blue-700 hover:underline text-xs truncate max-w-[150px] sm:max-w-[200px] flex items-center gap-1 cursor-pointer"
                         title="Click to view file"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <FileText className="w-3.5 h-3.5" /> View File
+                        <FileText className="w-3.5 h-3.5 shrink-0" /> View File
                       </a>
                     ) : (
-                      <span className="font-semibold text-blue-900 text-xs truncate max-w-[200px]" title={viewContact.pcu_file_url}>{viewContact.pcu_file_url}</span>
+                      <span className="font-semibold text-blue-900 text-xs truncate max-w-[150px] sm:max-w-[200px]" title={viewContact.pcu_file_url}>{viewContact.pcu_file_url}</span>
                     )}
                   </div>
                 )}
@@ -1126,7 +1126,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 
                 <div>
                   {/* Upload PCU Section */}
-                  <label className="flex flex-col items-center justify-center p-5 border border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/10 rounded-2xl cursor-pointer transition-all text-center group w-full">
+                  <label className="flex flex-col items-center justify-center p-4 sm:p-5 border border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/10 rounded-2xl cursor-pointer transition-all text-center group w-full">
                     <input 
                       type="file" 
                       onChange={handlePCUUpload} 
@@ -1147,7 +1147,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               <div className="pt-5">
                 <button
                   onClick={() => setViewContact(null)}
-                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
                 >
                   Close
                 </button>
@@ -1160,12 +1160,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       {/* Modal: Delete Confirmation */}
       <AnimatePresence>
         {deleteTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border border-slate-100"
+              className="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 text-center shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto my-auto"
             >
               <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
                 <Trash2 className="w-6 h-6" />
@@ -1179,14 +1179,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               <div className="pt-6 flex gap-3">
                 <button
                   onClick={() => setDeleteTarget(null)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDeleteConfirm}
                   disabled={deleting}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px]"
                 >
                   {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Record'}
                 </button>
@@ -1199,12 +1199,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       {/* Modal: Delete Folder Confirmation */}
       <AnimatePresence>
         {deleteFolderTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border border-slate-100"
+              className="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 text-center shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto my-auto"
             >
               <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
                 <Trash2 className="w-6 h-6" />
@@ -1221,7 +1221,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               <div className="pt-6 flex gap-3">
                 <button
                   onClick={() => setDeleteFolderTarget(null)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
                   disabled={deletingFolder}
                 >
                   Cancel
@@ -1229,7 +1229,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 <button
                   onClick={handleDeleteFolderConfirm}
                   disabled={deletingFolder}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px]"
                 >
                   {deletingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Folder'}
                 </button>

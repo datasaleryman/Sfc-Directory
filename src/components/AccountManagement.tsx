@@ -437,29 +437,29 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   const adminCount = accounts.filter(a => a.role === 'Administrator').length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Top Banner & Stats */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200/80">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-xs border border-slate-200/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 sm:pb-6 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2 text-emerald-800 text-xs font-bold uppercase tracking-wider mb-1">
-              <Users className="w-4 h-4 text-emerald-600" />
+              <Users className="w-4 h-4 text-emerald-600 shrink-0" />
               Administrative Directory
             </div>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight font-display">Account Management</h2>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight font-display">Account Management</h2>
             <p className="text-xs text-slate-500 mt-1">
               Manage user accounts, edit profiles, assign Base44 roles, approve new registrations, and control access permissions.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <button
               onClick={() => {
                 fetchAccounts();
                 fetchBase44Roles();
               }}
               disabled={loading}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0"
+              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl sm:rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 min-h-[42px]"
               title="Refresh directory"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -468,7 +468,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-2 shrink-0"
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl sm:rounded-2xl text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 min-h-[42px]"
             >
               <UserPlus className="w-4 h-4" />
               Register New Account
@@ -477,42 +477,42 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         </div>
 
         {/* Quick Summary Widgets */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-6">
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 pt-5 sm:pt-6">
+          <div className="bg-slate-50 rounded-2xl p-3.5 sm:p-4 border border-slate-100">
             <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Total Users</div>
-            <div className="text-2xl font-black text-slate-800 mt-1 font-display">{accounts.length}</div>
+            <div className="text-xl sm:text-2xl font-black text-slate-800 mt-1 font-display">{accounts.length}</div>
           </div>
 
-          <div className="bg-emerald-50/60 rounded-2xl p-4 border border-emerald-100/60">
+          <div className="bg-emerald-50/60 rounded-2xl p-3.5 sm:p-4 border border-emerald-100/60">
             <div className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-800">Active Accounts</div>
-            <div className="text-2xl font-black text-emerald-800 mt-1 font-display">{activeCount}</div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-800 mt-1 font-display">{activeCount}</div>
           </div>
 
-          <div className={`rounded-2xl p-4 border transition-all ${pendingCount > 0 ? 'bg-amber-50 border-amber-200 shadow-xs' : 'bg-slate-50 border-slate-100'}`}>
+          <div className={`rounded-2xl p-3.5 sm:p-4 border transition-all ${pendingCount > 0 ? 'bg-amber-50 border-amber-200 shadow-xs' : 'bg-slate-50 border-slate-100'}`}>
             <div className={`text-[10px] font-extrabold uppercase tracking-widest ${pendingCount > 0 ? 'text-amber-800 flex items-center gap-1' : 'text-slate-400'}`}>
-              {pendingCount > 0 && <Clock className="w-3 h-3 text-amber-600 animate-pulse" />}
-              Pending Approval
+              {pendingCount > 0 && <Clock className="w-3 h-3 text-amber-600 animate-pulse shrink-0" />}
+              <span className="truncate">Pending Approval</span>
             </div>
-            <div className={`text-2xl font-black mt-1 font-display ${pendingCount > 0 ? 'text-amber-900' : 'text-slate-800'}`}>{pendingCount}</div>
+            <div className={`text-xl sm:text-2xl font-black mt-1 font-display ${pendingCount > 0 ? 'text-amber-900' : 'text-slate-800'}`}>{pendingCount}</div>
           </div>
 
-          <div className="bg-purple-50/60 rounded-2xl p-4 border border-purple-100/60">
+          <div className="bg-purple-50/60 rounded-2xl p-3.5 sm:p-4 border border-purple-100/60">
             <div className="text-[10px] font-extrabold uppercase tracking-widest text-purple-800">Administrators</div>
-            <div className="text-2xl font-black text-purple-800 mt-1 font-display">{adminCount}</div>
+            <div className="text-xl sm:text-2xl font-black text-purple-800 mt-1 font-display">{adminCount}</div>
           </div>
         </div>
       </div>
 
       {/* Pending Account Requests Approval Banner */}
       {pendingAccounts.length > 0 && (
-        <div className="bg-amber-50/90 border border-amber-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300/60 text-amber-800 flex items-center justify-center font-bold shrink-0">
                 <Clock className="w-5 h-5 text-amber-700 animate-pulse" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-amber-950 font-display">
+                <h3 className="text-sm sm:text-base font-extrabold text-amber-950 font-display">
                   Pending Registration Approvals ({pendingAccounts.length})
                 </h3>
                 <p className="text-xs text-amber-800 font-medium">
@@ -536,21 +536,21 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5 truncate">@{acc.username} • {acc.email || `${acc.username}@clinic.gov.ph`}</div>
                   <div className="text-xs font-semibold text-teal-700 mt-2 flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-teal-600" /> {acc.barangay || 'Central'} • {acc.role || 'Staff'}
+                    <MapPin className="w-3 h-3 text-teal-600 shrink-0" /> {acc.barangay || 'Central'} • {acc.role || 'Staff'}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => handleApproveAccount(acc.username)}
-                    className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-xs"
+                    className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-xs min-h-[38px]"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Approve
                   </button>
                   <button
                     onClick={() => setDeleteTarget(acc)}
-                    className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                    className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 min-h-[38px]"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Reject
@@ -563,8 +563,8 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       )}
 
       {/* Account Table Controls */}
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/80 space-y-4">
-        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs border border-slate-200/80 space-y-4">
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
           {/* Search Box */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -573,19 +573,19 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, username, or email address..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all"
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl text-xs font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all min-h-[42px]"
             />
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
             {/* Status Filter */}
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-600">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl text-xs font-bold text-slate-600 min-h-[42px]">
+              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer pr-1"
+                className="bg-transparent outline-none cursor-pointer w-full text-xs"
               >
                 <option value="All Statuses">All Statuses</option>
                 <option value="Active">Active</option>
@@ -595,12 +595,12 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             </div>
 
             {/* Barangay Filter */}
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-600">
-              <MapPin className="w-3.5 h-3.5 text-slate-400" />
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl text-xs font-bold text-slate-600 min-h-[42px]">
+              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <select
                 value={barangayFilter}
                 onChange={(e) => setBarangayFilter(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer pr-1"
+                className="bg-transparent outline-none cursor-pointer w-full text-xs"
               >
                 <option value="All Barangays">All Barangays</option>
                 {uniqueBarangaysInAccounts.map(b => (
@@ -610,12 +610,12 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             </div>
 
             {/* Role Filter */}
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-600">
-              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl text-xs font-bold text-slate-600 min-h-[42px]">
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer pr-1"
+                className="bg-transparent outline-none cursor-pointer w-full text-xs"
               >
                 <option value="All Roles">All Roles</option>
                 {base44Roles.map(r => (
@@ -832,34 +832,34 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
               const isMasterAdmin = acc.username.toLowerCase() === 'admin';
               const isCurrent = acc.username.toLowerCase() === currentUsername.toLowerCase();
               return (
-                <div key={acc.username} className="p-4 space-y-3 hover:bg-slate-50/40 transition-colors">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
+                <div key={acc.username} className="p-3.5 sm:p-4 space-y-3 hover:bg-slate-50/40 transition-colors min-w-0">
+                  <div className="flex items-start justify-between gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center border border-emerald-200 shrink-0">
                         {acc.fullName ? acc.fullName.charAt(0).toUpperCase() : acc.username.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <div className="font-bold text-slate-800 text-sm flex flex-wrap items-center gap-1.5">
-                          {acc.fullName || acc.displayName || `@${acc.username}`}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-slate-800 text-sm flex flex-wrap items-center gap-1.5 leading-tight">
+                          <span className="truncate">{acc.fullName || acc.displayName || `@${acc.username}`}</span>
                           {isMasterAdmin && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase shrink-0">
                               Master Admin
                             </span>
                           )}
                           {isCurrent && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-extrabold uppercase">
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-extrabold uppercase shrink-0">
                               You
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-slate-400 font-medium">@{acc.username}</div>
+                        <div className="text-xs text-slate-400 font-medium truncate">@{acc.username}</div>
                       </div>
                     </div>
 
                     <button
                       onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, acc.status || 'Active')}
                       disabled={isMasterAdmin}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all ${
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all shrink-0 ${
                         acc.status === 'Active'
                           ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                           : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
@@ -869,23 +869,23 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     </button>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-50 border border-teal-200/60 text-teal-800 font-bold">
-                      <MapPin className="w-3 h-3 text-teal-600" />
-                      {acc.barangay || 'Central'}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-50 border border-teal-200/60 text-teal-800 font-bold">
+                      <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
+                      <span className="truncate max-w-[120px]">{acc.barangay || 'Central'}</span>
                     </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
-                      <Shield className="w-3 h-3 text-slate-500" />
-                      {acc.role}
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
+                      <Shield className="w-3 h-3 text-slate-500 shrink-0" />
+                      <span>{acc.role}</span>
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                       <span className="font-mono text-[11px]">
                         PW: {visiblePasswords[acc.username] ? (acc.passwordPlain || '••••••••') : '••••••••'}
                       </span>
                       <button
                         type="button"
                         onClick={() => togglePasswordVisibility(acc.username)}
-                        className="text-slate-400 hover:text-slate-600 focus:outline-hidden cursor-pointer"
+                        className="text-slate-400 hover:text-slate-600 focus:outline-hidden cursor-pointer shrink-0"
                       >
                         {visiblePasswords[acc.username] ? (
                           <EyeOff className="w-3 h-3" />
@@ -896,28 +896,28 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                    <span className="font-mono text-xs text-slate-500 flex items-center gap-1.5">
-                      <Mail className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span className="truncate max-w-[150px]">{acc.email || `${acc.username}@clinic.gov.ph`}</span>
-                    </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 min-w-0">
+                    <div className="text-slate-500 text-xs flex items-center gap-1.5 min-w-0 flex-1">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate font-medium">{acc.email || `${acc.username}@clinic.gov.ph`}</span>
+                    </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0 border-t sm:border-0 border-slate-50">
                       <button
                         onClick={() => openEditModal(acc)}
-                        className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold"
+                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold border border-emerald-200/60 shrink-0"
                       >
                         <Edit3 className="w-3.5 h-3.5" /> Edit
                       </button>
                       {!isMasterAdmin && !isCurrent ? (
                         <button
                           onClick={() => setDeleteTarget(acc)}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold"
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold border border-rose-200/60 shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> Delete
                         </button>
                       ) : (
-                        <span className="text-[10px] text-slate-300 font-semibold italic pl-1">Protected</span>
+                        <span className="text-[10px] text-slate-400 font-semibold italic px-2 py-1 bg-slate-100 rounded-lg shrink-0">Protected</span>
                       )}
                     </div>
                   </div>
@@ -932,22 +932,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       {/* Modal: Register New Account */}
       <AnimatePresence>
         {isAddModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative"
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-8 shadow-2xl border border-slate-100 relative max-h-[90vh] overflow-y-auto my-auto"
             >
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                className="absolute top-4 right-4 sm:top-5 sm:right-5 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
 
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <div className="flex items-center gap-3 mb-5 sm:mb-6">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                   <UserPlus className="w-5 h-5" />
                 </div>
                 <div>
@@ -1081,22 +1081,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       {/* Modal: Edit Account Details */}
       <AnimatePresence>
         {editTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative"
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-8 shadow-2xl border border-slate-100 relative max-h-[90vh] overflow-y-auto my-auto"
             >
               <button
                 onClick={() => setEditTarget(null)}
-                className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                className="absolute top-4 right-4 sm:top-5 sm:right-5 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
 
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <div className="flex items-center gap-3 mb-5 sm:mb-6">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                   <Edit3 className="w-5 h-5" />
                 </div>
                 <div>

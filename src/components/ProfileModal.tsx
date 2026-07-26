@@ -6,9 +6,39 @@ import {
   Upload, 
   Loader2, 
   Save,
-  MapPin
+  MapPin,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const DEFAULT_BARANGAYS = [
+  'Navalan',
+  'Kalingayan',
+  'Dampalan',
+  'SAN JOSE',
+  'SAN FRANCISCO',
+  'SANTA MARIA',
+  'Dumalinao',
+  'NAPOLAN',
+  'Balangasan',
+  'Tuburan',
+  'Lumbia',
+  'Banale',
+  'Bulatok',
+  'Dumagoc',
+  'Kawit',
+  'Muricay',
+  'Santiago',
+  'Santo Niño',
+  'Sta. Lucia',
+  'Tawagan Sur',
+  'Tiguma',
+  'White Beach',
+  'Dao',
+  'SAN PEDRO',
+  'Buenavista',
+  'SFC'
+];
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -30,10 +60,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [profileUsername, setProfileUsername] = useState('');
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [profileBarangay, setProfileBarangay] = useState('');
+  const [barangayList, setBarangayList] = useState<string[]>(DEFAULT_BARANGAYS);
   const [avatarDataUrl, setAvatarDataUrl] = useState('');
   const [profilePassword, setProfilePassword] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch('/api/public/barangays')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.barangays) && data.barangays.length > 0) {
+          const unique = Array.from(new Set([...data.barangays, ...DEFAULT_BARANGAYS])).filter(Boolean);
+          setBarangayList(unique);
+        }
+      })
+      .catch((err) => console.warn('Failed to load barangays:', err));
+  }, []);
 
   useEffect(() => {
     if (adminUser) {
@@ -214,22 +257,32 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </div>
               </div>
 
-              {/* Barangay Input */}
+              {/* Barangay Address Selection Dropdown */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                   Barangay Address
                 </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none z-10">
                     <MapPin className="w-3.5 h-3.5" />
                   </span>
-                  <input
-                    type="text"
+                  <select
                     value={profileBarangay}
                     onChange={(e) => setProfileBarangay(e.target.value)}
-                    placeholder="e.g. Barangay San Jose"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 rounded-xl transition-all text-xs outline-none text-slate-700 font-medium"
-                  />
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 rounded-xl transition-all text-xs outline-none text-slate-700 font-medium appearance-none cursor-pointer"
+                  >
+                    <option value="">-- Select Barangay Address --</option>
+                    {Array.from(
+                      new Set([...barangayList, ...(profileBarangay ? [profileBarangay] : [])].filter(Boolean))
+                    ).map((bg) => (
+                      <option key={bg} value={bg}>
+                        {bg}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 pointer-events-none">
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </span>
                 </div>
               </div>
 

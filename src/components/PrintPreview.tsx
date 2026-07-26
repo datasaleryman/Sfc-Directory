@@ -421,18 +421,12 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
           {/* Print Letterhead Header */}
           <div className="border-b-4 border-emerald-700 pb-5 mb-6 flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
             <div className="flex items-center gap-4.5">
-              {siteSettings.logoDataUrl ? (
-                <img 
-                  src={siteSettings.logoDataUrl} 
-                  alt="Clinic Logo" 
-                  className="w-16 h-16 object-contain rounded-xl bg-white border border-slate-200/50 p-1 shrink-0"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-16 h-16 bg-gradient-to-br from-emerald-600 to-emerald-700 text-white rounded-2xl flex items-center justify-center shadow-md shadow-emerald-900/10 shrink-0 border border-emerald-500/20">
-                  <Activity className="w-8 h-8 drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.2)]" />
-                </div>
-              )}
+              <img 
+                src={siteSettings.logoDataUrl || 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png'} 
+                alt="Clinic Logo" 
+                className="w-16 h-16 object-contain rounded-xl bg-white border border-slate-200/50 p-1 shrink-0"
+                referrerPolicy="no-referrer"
+              />
               <div className="text-center md:text-left">
                 <h1 className="text-xl md:text-2xl font-extrabold uppercase tracking-wide text-slate-900 font-display">
                   {siteSettings.title ? siteSettings.title.toUpperCase() : 'SAINT FRANCIS CLINIC DIRECTORY'}
