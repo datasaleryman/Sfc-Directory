@@ -844,6 +844,12 @@ export async function getApp() {
     }
   });
 
+  // --- Serve Static Uploads Directory ---
+  const publicUploads = path.join(process.cwd(), 'public', 'uploads');
+  const distUploads = path.join(process.cwd(), 'dist', 'uploads');
+  app.use('/uploads', express.static(publicUploads));
+  app.use('/uploads', express.static(distUploads));
+
   // --- Serve Frontend Application ---
 
   if (process.env.NODE_ENV !== 'production' && process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {

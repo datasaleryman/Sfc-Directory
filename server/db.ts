@@ -1392,6 +1392,56 @@ export async function designateBarangayForUsers(barangay: string, usernames?: st
   };
 }
 
+function saveAvatarFile(base64Data: string, username: string): string {
+  try {
+    const matches = base64Data.match(/^data:image\/([a-zA-Z0-9-+.]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return base64Data;
+    }
+    const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const imageBuffer = Buffer.from(matches[2], 'base64');
+
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars');
+    safeMkdirSync(uploadsDir, { recursive: true });
+
+    const distUploadsDir = path.join(process.cwd(), 'dist', 'uploads', 'avatars');
+    safeMkdirSync(distUploadsDir, { recursive: true });
+
+    const cleanUser = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const fileName = `avatar_${cleanUser}.${ext}`;
+    const filePath = path.join(uploadsDir, fileName);
+    const distFilePath = path.join(distUploadsDir, fileName);
+
+    safeWriteFileSync(filePath, imageBuffer as any);
+    safeWriteFileSync(distFilePath, imageBuffer as any);
+
+    return `/uploads/avatars/${fileName}?t=${Date.now()}`;
+  } catch (err: any) {
+    console.warn('Failed to save avatar image file to disk:', err.message || err);
+    return base64Data;
+  }
+}
+
+function chooseBestAvatar(localAvatar?: string, remoteAvatar?: string): string {
+  if (!remoteAvatar || remoteAvatar.trim() === '') return localAvatar || '';
+  if (!localAvatar || localAvatar.trim() === '') return remoteAvatar || '';
+
+  // If remoteAvatar is truncated (starts with data:image/ and length >= 44000), keep localAvatar
+  if (remoteAvatar.startsWith('data:image/') && remoteAvatar.length >= 44000) {
+    return localAvatar;
+  }
+
+  // If localAvatar is a static upload URL (/uploads/...), prioritize it
+  if (localAvatar.startsWith('/uploads/')) {
+    if (remoteAvatar.startsWith('/uploads/')) {
+      return remoteAvatar;
+    }
+    return localAvatar;
+  }
+
+  return remoteAvatar;
+}
+
 export async function updateUserProfile(
   currentUsername: string,
   updates: { username?: string; displayName?: string; avatarDataUrl?: string; password?: string; barangay?: string }
@@ -1430,14 +1480,7 @@ export async function updateUserProfile(
   if (updates.avatarDataUrl !== undefined) {
     let newAvatar = updates.avatarDataUrl;
     if (newAvatar && newAvatar.startsWith('data:image/')) {
-      try {
-        const uploadedUrl = await uploadFileToBase44(newAvatar, `avatar_${finalUsername}_${Date.now()}.png`);
-        if (uploadedUrl) {
-          newAvatar = uploadedUrl;
-        }
-      } catch (err: any) {
-        console.warn('[Avatar Upload Warning] Could not upload avatar image to CDN, storing image data locally:', err.message || err);
-      }
+      newAvatar = saveAvatarFile(newAvatar, finalUsername);
     }
     user.avatarDataUrl = newAvatar;
   }
@@ -3823,7 +3866,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
               ...remote,
               ...local,
               displayName: local.displayName || remote.displayName,
-              avatarDataUrl: local.avatarDataUrl || remote.avatarDataUrl,
+              avatarDataUrl: chooseBestAvatar(local.avatarDataUrl, remote.avatarDataUrl),
               barangay: local.barangay || remote.barangay,
               passwordHash: local.passwordHash || remote.passwordHash,
               passwordPlain: local.passwordPlain || remote.passwordPlain,
@@ -3838,7 +3881,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
               ...local,
               ...remote,
               displayName: remote.displayName || local.displayName,
-              avatarDataUrl: remote.avatarDataUrl || local.avatarDataUrl,
+              avatarDataUrl: chooseBestAvatar(local.avatarDataUrl, remote.avatarDataUrl),
               barangay: remote.barangay || local.barangay,
               passwordHash: remote.passwordHash || local.passwordHash,
               passwordPlain: remote.passwordPlain || local.passwordPlain,
