@@ -639,9 +639,36 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             </div>
 
             <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              {/* Barangay Quick Select Dropdown fetched from Google Sheet database */}
+              <div className="relative min-w-[170px]">
+                <select
+                  value={addressFilter === 'All Addresses' ? 'All Barangays' : addressFilter}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    if (selected === 'All Barangays') {
+                      setActiveFolder(null);
+                      setAddressFilter('All Barangays');
+                    } else {
+                      openFolder(selected);
+                    }
+                  }}
+                  className="w-full appearance-none pl-3.5 pr-9 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-xs outline-none cursor-pointer"
+                >
+                  <option value="All Barangays">All Barangays (Sheet)</option>
+                  {(allAddresses || []).map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
               <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600" />
-                <span>{filteredFolders.length} Folders Available</span>
+                <span>{filteredFolders.length} Folders</span>
               </div>
 
               {isAdmin && (
@@ -799,6 +826,33 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
             {/* Filter Dropdown + Export buttons */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full lg:w-auto">
+              {/* Barangay Dropdown */}
+              <div className="relative w-full sm:w-auto min-w-[160px]">
+                <select
+                  value={addressFilter === 'All Addresses' ? 'All Barangays' : addressFilter}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    if (selected === 'All Barangays') {
+                      setActiveFolder(null);
+                      setAddressFilter('All Barangays');
+                    } else {
+                      openFolder(selected);
+                    }
+                  }}
+                  className="w-full appearance-none pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-xs sm:text-sm outline-none cursor-pointer min-h-[42px]"
+                >
+                  <option value="All Barangays">All Barangays</option>
+                  {(allAddresses || []).map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-500">
+                  <ChevronDown className="w-4 h-4" />
+                </div>
+              </div>
+
               {/* Purok Dropdown */}
               <div className="relative w-full sm:w-auto min-w-[140px]">
                 <select

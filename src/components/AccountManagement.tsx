@@ -52,6 +52,39 @@ function isRealBarangay(name: string): boolean {
   return true;
 }
 
+const UserAvatar: React.FC<{ user: UserAccount; size?: string; className?: string }> = ({
+  user,
+  size = "w-9 h-9",
+  className = ""
+}) => {
+  const [imgError, setImgError] = useState(false);
+  const avatarUrl = user.avatarDataUrl;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [avatarUrl]);
+
+  const displayName = user.fullName || user.displayName || user.username || '?';
+  const initial = displayName.trim().charAt(0).toUpperCase() || '?';
+
+  if (avatarUrl && !imgError) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={displayName}
+        onError={() => setImgError(true)}
+        className={`${size} rounded-full object-cover border border-emerald-300/80 shadow-2xs shrink-0 ${className}`}
+      />
+    );
+  }
+
+  return (
+    <div className={`${size} rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center border border-emerald-200 shrink-0 uppercase ${className}`}>
+      {initial}
+    </div>
+  );
+};
+
 export const AccountManagement: React.FC<AccountManagementProps> = ({
   authToken,
   currentUsername,
@@ -526,15 +559,20 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             {pendingAccounts.map((acc) => (
               <div key={acc.username} className="bg-white rounded-2xl p-4 border border-amber-200/60 shadow-xs flex flex-col justify-between space-y-3">
                 <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-extrabold text-slate-800 text-sm truncate">
-                      {acc.fullName || acc.displayName || `@${acc.username}`}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 text-[10px] font-extrabold border border-amber-200/80 shrink-0">
-                      Pending
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <UserAvatar user={acc} size="w-10 h-10" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-extrabold text-slate-800 text-sm truncate">
+                          {acc.fullName || acc.displayName || `@${acc.username}`}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 text-[10px] font-extrabold border border-amber-200/80 shrink-0">
+                          Pending
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5 truncate">@{acc.username} • {acc.email || `${acc.username}@clinic.gov.ph`}</div>
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5 truncate">@{acc.username} • {acc.email || `${acc.username}@clinic.gov.ph`}</div>
                   <div className="text-xs font-semibold text-teal-700 mt-2 flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-teal-600 shrink-0" /> {acc.barangay || 'Central'} • {acc.role || 'Staff'}
                   </div>
@@ -664,9 +702,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       {/* Name & Avatar */}
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center border border-emerald-200 shrink-0">
-                            {acc.fullName ? acc.fullName.charAt(0).toUpperCase() : acc.username.charAt(0).toUpperCase()}
-                          </div>
+                          <UserAvatar user={acc} size="w-9 h-9" />
                           <div>
                             <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                               {acc.fullName || acc.displayName || `@${acc.username}`}
@@ -835,9 +871,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                 <div key={acc.username} className="p-3.5 sm:p-4 space-y-3 hover:bg-slate-50/40 transition-colors min-w-0">
                   <div className="flex items-start justify-between gap-2.5 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center border border-emerald-200 shrink-0">
-                        {acc.fullName ? acc.fullName.charAt(0).toUpperCase() : acc.username.charAt(0).toUpperCase()}
-                      </div>
+                      <UserAvatar user={acc} size="w-9 h-9" />
                       <div className="min-w-0 flex-1">
                         <div className="font-bold text-slate-800 text-sm flex flex-wrap items-center gap-1.5 leading-tight">
                           <span className="truncate">{acc.fullName || acc.displayName || `@${acc.username}`}</span>
@@ -1096,9 +1130,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
               </button>
 
               <div className="flex items-center gap-3 mb-5 sm:mb-6">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <Edit3 className="w-5 h-5" />
-                </div>
+                <UserAvatar user={editTarget} size="w-11 h-11" />
                 <div>
                   <h3 className="text-lg font-bold text-slate-800 font-display">Edit User Account</h3>
                   <p className="text-xs text-slate-400">Update account for @{editTarget.username}</p>

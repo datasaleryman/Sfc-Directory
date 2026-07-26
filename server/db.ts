@@ -1688,6 +1688,26 @@ function capitalizeWords(str: string): string {
     .join(' ');
 }
 
+// Flexible Barangay comparison function
+export function isBarangayMatch(b1?: string, b2?: string): boolean {
+  if (!b1 || !b2) return false;
+  const c1 = b1.trim().toLowerCase();
+  const c2 = b2.trim().toLowerCase();
+  if (c1 === c2) return true;
+
+  // Clean prefixes like "barangay ", "brgy. ", "brgy "
+  const clean1 = c1.replace(/^(barangay|brgy\.?)\s+/i, '').trim();
+  const clean2 = c2.replace(/^(barangay|brgy\.?)\s+/i, '').trim();
+  if (clean1 === clean2 && clean1.length > 0) return true;
+
+  // Compare normalized versions
+  const norm1 = normalizeBarangayName(b1).toLowerCase();
+  const norm2 = normalizeBarangayName(b2).toLowerCase();
+  if (norm1 === norm2 && norm1.length > 0) return true;
+
+  return false;
+}
+
 // Get contacts with flexible pagination, sorting, searching, and filtering
 export function getContacts(params: {
   search?: string;
@@ -1705,8 +1725,24 @@ export function getContacts(params: {
   // Only query active (non-soft-deleted) contacts that have NOT yet uploaded a PCU file
   let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
 
-  // Get ALL unique barangays for filtering sidebar/dropdown before search filters are applied
+  // Get ALL unique barangays from Google Sheet database (getBarangayList) + contactsCache
   const allBarangaysSet = new Set<string>();
+
+  // 1. Fetch barangay list from Google Sheet database cache/file
+  const sheetBarangays = getBarangayList();
+  if (Array.isArray(sheetBarangays)) {
+    sheetBarangays.forEach(bg => {
+      if (bg && typeof bg === 'string' && bg.trim()) {
+        const trimmed = bg.trim();
+        const upper = trimmed.toUpperCase();
+        if (upper !== 'UNKNOWN' && upper !== 'N/A' && upper !== 'NONE') {
+          allBarangaysSet.add(trimmed);
+        }
+      }
+    });
+  }
+
+  // 2. Add any barangay from active contacts in contactsCache
   contactsCache.forEach(c => {
     if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
       const bUpper = c.barangay.trim().toUpperCase();
@@ -1715,6 +1751,7 @@ export function getContacts(params: {
       }
     }
   });
+
   const allBarangays = Array.from(allBarangaysSet).filter(b => b.toUpperCase() !== 'UNKNOWN' && b.toUpperCase() !== 'N/A').sort((a, b) => a.localeCompare(b));
 
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
@@ -1726,9 +1763,9 @@ export function getContacts(params: {
   });
   const allPuroks = Array.from(allPuroksSet).sort((a, b) => a.localeCompare(b));
 
-  // Apply Barangay Filter
+  // Apply Barangay Filter with flexible matching
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
-    filtered = filtered.filter(c => c.barangay.toLowerCase() === filterBarangay.toLowerCase());
+    filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
   }
 
   // Apply Purok Filter
@@ -1772,7 +1809,7 @@ export function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay.toLowerCase() === bg.toLowerCase());
+    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -1812,7 +1849,7 @@ export function getAllFilteredContacts(params: {
   let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
-    filtered = filtered.filter(c => c.barangay.toLowerCase() === filterBarangay.toLowerCase());
+    filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
   }
 
   if (purok && purok !== 'All Puroks') {
@@ -4200,7 +4237,7 @@ export function getRecentUploads(params: {
   const allPuroks = Array.from(allPuroksSet).sort((a, b) => a.localeCompare(b));
 
   if (barangay && barangay !== 'All Addresses' && barangay !== 'All Barangays') {
-    filtered = filtered.filter(c => c.barangay.toLowerCase() === barangay.toLowerCase());
+    filtered = filtered.filter(c => isBarangayMatch(c.barangay, barangay));
   }
 
   if (purok && purok !== 'All Puroks') {
