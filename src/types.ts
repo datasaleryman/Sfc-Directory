@@ -70,6 +70,24 @@ export interface DashboardStats {
   base44SyncStatus?: Base44SyncStatus;
 }
 
+export interface ExistingAccountItem {
+  id: string;
+  full_name: string;
+  barangay: string;
+  purok: string;
+  contact_number: string;
+  created_at: string;
+  latitude?: number;
+  longitude?: number;
+  geotagged?: boolean;
+  existingAcc: boolean;
+  existingAccVerified: boolean;
+  existingAccVisited: boolean;
+  status: string;
+  submittedBy: string;
+  pin?: string;
+}
+
 export interface ParseResult {
   raw: string;
   full_name: string;

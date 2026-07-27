@@ -256,14 +256,14 @@ export function getSheetsStatus() {
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
-  'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-  'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-  'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-  'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-  'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
-  'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
-  'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
-  'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print']
+  'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account'],
+  'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account'],
+  'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account'],
+  'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account']
 };
 
 export interface SiteSettings {
@@ -497,8 +497,8 @@ export async function initDb() {
         if (updated) migrated = true;
         return anyC as Contact;
       });
-      // Filter out auto-synced base44 items; only keep contacts added locally/manually, from Print List, or soft-deleted
-      contactsCache = contactsCache.filter(c => c && (c.added_locally || c.id >= 100000 || (c.deleted_at !== null && c.deleted_at !== undefined)));
+      // Filter out auto-synced base44 items; only keep contacts added locally/manually, from Print List, soft-deleted, or containing PCUs
+      contactsCache = contactsCache.filter(c => c && (c.added_locally || c.id >= 100000 || c.pcu_file_url || (c.deleted_at !== null && c.deleted_at !== undefined)));
       safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
     }
 
@@ -546,6 +546,11 @@ export async function initDb() {
         pcuUpdatesCache = [];
       }
     }
+
+    // Restore PCU statuses onto contacts in contactsCache if we have PCU update records
+    syncPCUFieldsToCache();
+    console.log(`[Init] Restored PCU statuses for contacts from local PCU updates cache.`);
+    safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
 
     // Init Barangays
     if (fs.existsSync(BARANGAYS_FILE)) {
@@ -619,8 +624,8 @@ export async function initDb() {
         }
 
         siteSettings = {
-          title: unescapeHtml(parsed.title || 'SFC Uploader'),
-          faviconTitle: unescapeHtml(parsed.faviconTitle || 'SFC Uploader'),
+          title: unescapeHtml(parsed.title || 'PCU Uploader'),
+          faviconTitle: unescapeHtml(parsed.faviconTitle || 'PCU Uploader'),
           logoDataUrl,
           faviconDataUrl,
           navDashboard: unescapeHtml(parsed.navDashboard || 'Dashboard'),
@@ -715,6 +720,7 @@ export async function initDb() {
         try {
           console.log('[Startup] Performing background contacts table synchronization and match validation...');
           await syncWithGoogleSheets('System Background Sync');
+          await syncPCUUpdatesFromBase44(true);
         } catch (err: any) {
           console.error('Background Google Sheets Sync failed on startup:', err.message || err);
         }
@@ -946,6 +952,66 @@ export async function fetchHouseholdSubmissionsFromBase44() {
   }
 
   return [...directoryHouseholds, ...uniqueBase44Households];
+}
+
+// Fetch all Household Submissions from Base44 that are marked as existing accounts
+export async function fetchExistingAccountsFromBase44() {
+  const existingAccounts: any[] = [];
+  try {
+    const submissions = await base44.entities.HouseholdSubmission.list(undefined, 5000);
+    if (submissions && Array.isArray(submissions)) {
+      const filtered = submissions.filter((sub: any) => 
+        sub.existingAcc === true || 
+        sub.existingAcc === 'true' || 
+        sub.existingAccVerified === true ||
+        sub.existingAccVerified === 'true'
+      );
+      
+      filtered.forEach((sub: any, idx: number) => {
+        let name = sub.memberName || '';
+        if (!name && sub.fpe && sub.fpe.fullName) {
+          name = sub.fpe.fullName;
+        }
+        if (!name && sub.pmrf_front) {
+          name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
+        }
+        if (!name) {
+          name = 'Unnamed Household';
+        }
+
+        const contact_number = sub.pcsf?.contact || 
+                               sub.fpe?.mobile || 
+                               sub.pmrf_front?.mobile || 
+                               '';
+
+        const barangay = getExactBarangay(sub);
+        const purok = sub.purok || (sub.pcsf?.purok || '');
+
+        const hasGeo = sub.geoLocation && typeof sub.geoLocation.latitude === 'number' && typeof sub.geoLocation.longitude === 'number';
+
+        existingAccounts.push({
+          id: sub.id || `ext_${idx + 1}`,
+          full_name: name,
+          barangay: barangay,
+          purok: purok,
+          contact_number: contact_number,
+          created_at: sub.created_date || new Date().toISOString(),
+          latitude: hasGeo ? sub.geoLocation.latitude : undefined,
+          longitude: hasGeo ? sub.geoLocation.longitude : undefined,
+          geotagged: hasGeo,
+          existingAcc: sub.existingAcc === true || sub.existingAcc === 'true',
+          existingAccVerified: sub.existingAccVerified === true || sub.existingAccVerified === 'true',
+          existingAccVisited: sub.existingAccVisited === true || sub.existingAccVisited === 'true',
+          status: sub.status || 'pending',
+          submittedBy: sub.submittedBy || 'Unknown',
+          pin: sub.fpe?.pin || sub.pcsf?.pin || ''
+        });
+      });
+    }
+  } catch (err: any) {
+    console.error('[Base44] Failed to fetch existing accounts:', err.message);
+  }
+  return existingAccounts;
 }
 
 // Add a specific Household Submission to the Saint Francis Clinic Directory
@@ -1857,6 +1923,9 @@ export async function getContacts(params: {
     }
   }
 
+  // Ensure all PCU statuses are fully restored on any contacts before querying/filtering
+  syncPCUFieldsToCache();
+
   const filterBarangay = barangay || address;
 
   // Only query active (non-soft-deleted) contacts that have NOT yet uploaded a PCU file
@@ -1975,8 +2044,12 @@ export function getAllFilteredContacts(params: {
   sortOrder?: 'asc' | 'desc';
 }) {
   const { search, barangay, address, purok, sortBy = 'date', sortOrder = 'desc' } = params;
+  
+  // Ensure all PCU statuses are fully restored on any contacts before querying/filtering
+  syncPCUFieldsToCache();
+
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
+  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
@@ -3263,6 +3336,9 @@ let contactsSyncPromise: Promise<any> | null = null;
 let lastContactsSyncTime = 0;
 
 export async function ensureContactsSynced(force: boolean = false): Promise<boolean> {
+  // Sync live PCU updates from Base44 DB as well!
+  await syncPCUUpdatesFromBase44(force);
+
   if (!sheetsConfig.syncEnabled) {
     return true;
   }
@@ -3308,7 +3384,111 @@ export async function ensureContactsSynced(force: boolean = false): Promise<bool
 export function normalizeCompareName(name1: string, name2: string): boolean {
   const clean1 = (name1 || '').trim().replace(/\s+/g, ' ').toLowerCase();
   const clean2 = (name2 || '').trim().replace(/\s+/g, ' ').toLowerCase();
-  return clean1 === clean2 && clean1.length > 0;
+  if (clean1 === clean2 && clean1.length > 0) return true;
+
+  // Word-based order-insensitive comparison for names like "Asutilla, Hannah Balios" vs "Balios, Asutilla, Hannah"
+  const w1 = clean1.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+  const w2 = clean2.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+  if (w1.length === 0 || w2.length === 0) return false;
+
+  const s1 = [...w1].sort().join(' ');
+  const s2 = [...w2].sort().join(' ');
+  return s1 === s2;
+}
+
+export let lastPCUSyncTime = 0;
+
+export async function syncPCUUpdatesFromBase44(force: boolean = false): Promise<boolean> {
+  if (!force && (Date.now() - lastPCUSyncTime < 60000)) { // 1-minute throttle
+    return false;
+  }
+  lastPCUSyncTime = Date.now();
+
+  try {
+    const pcuEntity = (base44.entities as any).PCUUpdate;
+    if (!pcuEntity || typeof pcuEntity.list !== 'function') {
+      return false;
+    }
+
+    console.log('[Sync] Pulling live PCUUpdate records from Base44 database...');
+    const records = await pcuEntity.list(undefined, 5000);
+    if (!records || !Array.isArray(records)) {
+      return false;
+    }
+
+    let updatedAny = false;
+    records.forEach((rec: any) => {
+      // Reconstruct full name from firstName and lastName
+      const firstName = (rec.firstName || '').trim();
+      const lastName = (rec.lastName || '').trim();
+      let fullName = '';
+      if (firstName && lastName && lastName !== 'Unknown') {
+        fullName = `${lastName}, ${firstName}`;
+      } else {
+        fullName = firstName || lastName || 'Unknown Contact';
+      }
+
+      // Check if this update is already in our local cache by ID or combination of fullName and fileName
+      const existing = pcuUpdatesCache.find(p => 
+        (p.id && rec.id && p.id.toString() === rec.id.toString()) || 
+        (normalizeCompareName(p.fullName, fullName) && p.fileName === rec.fileName)
+      );
+
+      if (!existing) {
+        // Find matching contact in contactsCache by full name and optionally barangay
+        const matchedContact = contactsCache.find(c => 
+          normalizeCompareName(c.full_name, fullName) && 
+          (!rec.barangay || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(rec.barangay).toLowerCase())
+        );
+
+        const newUpdate: PCUUpdate = {
+          id: rec.id || crypto.randomBytes(8).toString('hex'),
+          contactId: matchedContact ? matchedContact.id : (rec.contactId ? parseInt(rec.contactId, 10) : 0),
+          fullName,
+          barangay: rec.barangay || (matchedContact ? matchedContact.barangay : ''),
+          purok: rec.purok || (matchedContact ? matchedContact.purok : ''),
+          fileName: rec.fileName || 'PCU_File.pdf',
+          fileData: rec.fileUrl || '',
+          uploadedAt: rec.uploadDate || rec.uploadedAt || new Date().toISOString(),
+          uploadedBy: rec.uploadedBy || 'Leader'
+        };
+        pcuUpdatesCache.push(newUpdate);
+        updatedAny = true;
+      }
+    });
+
+    if (updatedAny) {
+      pcuUpdatesCache.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+      await savePCUUpdates();
+      syncPCUFieldsToCache();
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('[Sync Warning] Failed to sync PCU updates from Base44 DB:', err.message || err);
+    return false;
+  }
+}
+
+export function syncPCUFieldsToCache() {
+  if (!Array.isArray(contactsCache) || !Array.isArray(pcuUpdatesCache)) return;
+
+  pcuUpdatesCache.forEach(update => {
+    if (!update) return;
+
+    const contact = contactsCache.find(c =>
+      (c.id && update.contactId && c.id.toString() === update.contactId.toString()) ||
+      (normalizeCompareName(c.full_name, update.fullName) &&
+       (!update.barangay || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(update.barangay).toLowerCase()))
+    );
+
+    if (contact) {
+      if (!contact.pcu_file_url) {
+        contact.pcu_file_url = update.fileData || `Uploaded: ${update.fileName}`;
+        contact.pcu_uploaded_by = update.uploadedBy;
+        contact.pcu_uploaded_at = update.uploadedAt;
+      }
+    }
+  });
 }
 
 export async function syncWithGoogleSheets(username: string): Promise<{ success: boolean; message: string; count?: number }> {
@@ -3514,6 +3694,11 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       addedFromPrintList = true;
     }
 
+    const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === id || (existingLocal && p.contactId === existingLocal.id) || normalizeCompareName(p.fullName, rawName));
+    const pcuFileUrl = (existingLocal && existingLocal.pcu_file_url) || (matchedUpdate && (matchedUpdate.fileData || `Uploaded: ${matchedUpdate.fileName}`));
+    const pcuUploadedBy = (existingLocal && existingLocal.pcu_uploaded_by) || (matchedUpdate && matchedUpdate.uploadedBy);
+    const pcuUploadedAt = (existingLocal && existingLocal.pcu_uploaded_at) || (matchedUpdate && matchedUpdate.uploadedAt);
+
     newContacts.push({
       id,
       full_name: formattedName,
@@ -3527,9 +3712,9 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       longitude: existingLocal ? existingLocal.longitude : undefined,
       geotagged: existingLocal ? existingLocal.geotagged : false,
       photo_url: existingLocal ? existingLocal.photo_url : undefined,
-      pcu_file_url: existingLocal ? existingLocal.pcu_file_url : undefined,
-      pcu_uploaded_by: existingLocal ? existingLocal.pcu_uploaded_by : undefined,
-      pcu_uploaded_at: existingLocal ? existingLocal.pcu_uploaded_at : undefined,
+      pcu_file_url: pcuFileUrl || undefined,
+      pcu_uploaded_by: pcuUploadedBy || undefined,
+      pcu_uploaded_at: pcuUploadedAt || undefined,
       added_locally: existingLocal ? existingLocal.added_locally : true,
       added_from_print_list: addedFromPrintList
     });
@@ -3574,6 +3759,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   }
 
   contactsCache = mergedContacts;
+  syncPCUFieldsToCache();
   await saveContacts();
 
   // Aggregate all unique active barangays from both pulled barangaysCache and active contactsCache
@@ -4377,6 +4563,9 @@ export function getRecentUploads(params: {
 }) {
   const { username, search, barangay, purok, sortBy = 'date', sortOrder = 'desc', page = 1, limit = 10 } = params;
 
+  // Ensure all PCU statuses are fully restored on any contacts before querying/filtering
+  syncPCUFieldsToCache();
+
   let filtered = contactsCache.filter(c => {
     if (c.deleted_at) return false;
     if (!c.pcu_file_url) return false;
@@ -4506,7 +4695,10 @@ export async function removePCUFileFromContact(contactId: number, username: stri
   }
 
   // Remove matching updates from local cache
-  pcuUpdatesCache = pcuUpdatesCache.filter(p => p.contactId !== contactId);
+  pcuUpdatesCache = pcuUpdatesCache.filter(p => 
+    p.contactId.toString() !== contactId.toString() && 
+    !normalizeCompareName(p.fullName, contact.full_name)
+  );
   await savePCUUpdates();
 
   delete contact.pcu_file_url;

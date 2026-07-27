@@ -62,6 +62,7 @@ const APP_PAGES = [
   { id: 'accounts', name: 'Account Management', desc: 'User accounts & roles' },
   { id: 'bulk', name: 'Bulk Entry', desc: 'CSV & batch patient imports' },
   { id: 'print', name: 'Print List', desc: 'Formatted printable directory' },
+  { id: 'existing-account', name: 'Existing Account', desc: 'Directory of patient records flagged as existing accounts' },
   { id: 'settings', name: 'Website Settings', desc: 'Branding & access rules' }
 ];
 

@@ -15,7 +15,8 @@ import {
   Settings,
   ChevronDown,
   User,
-  UploadCloud
+  UploadCloud,
+  UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, DashboardStats } from './types.js';
@@ -32,6 +33,7 @@ import { SettingsPage } from './components/SettingsPage.js';
 import { ProfileModal } from './components/ProfileModal.js';
 import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
+import { ExistingAccount } from './components/ExistingAccount.js';
 
 export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
 
@@ -44,7 +46,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -55,7 +57,7 @@ export default function App() {
   // Profile Modal State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -77,8 +79,8 @@ export default function App() {
     navSettings?: string;
     rolePermissions?: Record<string, string[]>;
   }>({
-    title: 'SFC HOUSEHOLD DATA LIST',
-    faviconTitle: 'SFC HOUSEHOLD DATA LIST',
+    title: 'PCU Uploader',
+    faviconTitle: 'PCU Uploader',
     logoDataUrl: DEFAULT_SITE_LOGO,
     faviconDataUrl: DEFAULT_SITE_LOGO,
     navDashboard: 'Dashboard',
@@ -181,7 +183,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print'];
+      const allTabs = ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -471,6 +473,7 @@ export default function App() {
             { id: 'accounts', label: siteSettings.navAccounts || 'Account Management', icon: ShieldCheck },
             { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
             { id: 'print', label: siteSettings.navPrint || 'Print List', icon: Printer },
+            { id: 'existing-account', label: 'Existing Account', icon: UserCheck },
           ] as const)
             .filter((item) => hasTabPermission(item.id))
             .map((item) => {
@@ -558,11 +561,13 @@ export default function App() {
                   : activeTab === 'print' 
                     ? (siteSettings.navPrint || 'Formatted Print Directory') 
                     : activeTab === 'directory' 
-                      ? (siteSettings.navDirectory || 'Clinic Directory') 
+                      ? 'PCU / Barangay' 
                       : activeTab === 'recent-upload'
                         ? (siteSettings.navRecentUpload || 'Recent Upload')
                         : activeTab === 'accounts'
                           ? (siteSettings.navAccounts || 'Account Management')
+                          : activeTab === 'existing-account'
+                            ? 'Existing Account Directory'
                           : activeTab === 'admins' 
                             ? (siteSettings.navAdmins || 'Admin Credentials') 
                             : activeTab === 'settings'
@@ -791,6 +796,13 @@ export default function App() {
                   onClose={() => setActiveTab('dashboard')}
                   showToast={showToast}
                   siteSettings={siteSettings}
+                />
+              )}
+
+              {activeTab === 'existing-account' && (
+                <ExistingAccount
+                  authToken={authToken}
+                  showToast={showToast}
                 />
               )}
 

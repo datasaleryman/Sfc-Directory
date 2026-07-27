@@ -39,6 +39,7 @@ import {
   getBase44Roles,
   editUserAccount,
   fetchHouseholdSubmissionsFromBase44,
+  fetchExistingAccountsFromBase44,
   addHouseholdToDirectory,
   clearAllDirectoryContacts,
   uploadContactPhoto,
@@ -47,6 +48,7 @@ import {
   getRecentUploads,
   removePCUFileFromContact,
   ensureContactsSynced,
+  syncPCUUpdatesFromBase44,
   resetGoogleSheetsCooldown
 } from './server/db.js';
 import {
@@ -416,6 +418,16 @@ export async function getApp() {
     }
   });
 
+  // Get Base44 Household Submissions marked as existing accounts
+  app.get('/api/base44/existing-accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const existing = await fetchExistingAccountsFromBase44();
+      res.json(existing);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Add household from Print List to Saint Francis Clinic Directory
   app.post('/api/contacts/add-from-household', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -563,8 +575,9 @@ export async function getApp() {
   });
 
   // Get all PCU Updates
-  app.get('/api/contacts/pcu-updates', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/contacts/pcu-updates', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      await syncPCUUpdatesFromBase44(true);
       const updates = getPCUUpdates();
       res.json(updates);
     } catch (err: any) {
@@ -573,8 +586,9 @@ export async function getApp() {
   });
 
   // Get Recent Uploads for current uploader
-  app.get('/api/contacts/recent-uploads', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/contacts/recent-uploads', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      await syncPCUUpdatesFromBase44(true);
       const username = req.user?.username || 'Admin';
       const { search, barangay, purok, sortBy, sortOrder, page, limit } = req.query;
       const data = getRecentUploads({
