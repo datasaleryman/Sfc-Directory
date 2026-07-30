@@ -190,6 +190,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   const [imageUploading, setImageUploading] = useState(false);
   const [pcuUploading, setPcuUploading] = useState(false);
+  const [stagedPcuFiles, setStagedPcuFiles] = useState<{ fileName: string; fileData: string; size: number }[]>([]);
+
+  useEffect(() => {
+    setStagedPcuFiles([]);
+  }, [viewContact]);
 
   const convertFileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -237,13 +242,44 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     }
   };
 
-  const handlePCUUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !viewContact) return;
+  const handlePCUFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const filesArray = Array.from(e.target.files) as File[];
+    
+    const newStagedFiles: { fileName: string; fileData: string; size: number }[] = [];
+    for (const file of filesArray) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast(`File "${file.name}" exceeds the 5MB size limit.`, 'error');
+        continue;
+      }
+      try {
+        const base64Data = await convertFileToBase64(file);
+        newStagedFiles.push({
+          fileName: file.name,
+          fileData: base64Data,
+          size: file.size
+        });
+      } catch (err) {
+        console.error(err);
+        showToast(`Failed to read file "${file.name}".`, 'error');
+      }
+    }
+    
+    if (newStagedFiles.length > 0) {
+      setStagedPcuFiles(prev => [...prev, ...newStagedFiles]);
+    }
+    e.target.value = '';
+  };
+
+  const removeStagedPcuFile = (index: number) => {
+    setStagedPcuFiles(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handlePCUSubmit = async () => {
+    if (!viewContact || stagedPcuFiles.length === 0) return;
 
     setPcuUploading(true);
     try {
-      const base64Data = await convertFileToBase64(file);
       const res = await fetch(`/api/contacts/${viewContact.id}/pcu`, {
         method: 'POST',
         headers: {
@@ -252,24 +288,19 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         },
         body: JSON.stringify({
           fullName: viewContact.full_name,
-          fileName: file.name,
-          fileData: base64Data
+          files: stagedPcuFiles.map(f => ({ fileName: f.fileName, fileData: f.fileData }))
         })
       });
       
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to upload PCU file.');
+        throw new Error(data.error || 'Failed to upload files.');
       }
 
-      const uploadResult = await res.json();
-      const updatedContact = {
-        ...viewContact,
-        pcu_file_url: uploadResult.fileData || `Uploaded: ${file.name}`
-      };
       setViewContact(null);
+      setStagedPcuFiles([]);
       fetchContacts();
-      showToast(`PCU File "${file.name}" uploaded successfully! Household "${viewContact.full_name}" has been transferred to Recent Upload.`, 'success');
+      showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s)! Household "${viewContact.full_name}" has been transferred to Recent Upload.`, 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -1345,7 +1376,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   <label className="flex flex-col items-center justify-center p-4 sm:p-5 border border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/10 rounded-2xl cursor-pointer transition-all text-center group w-full">
                     <input 
                       type="file" 
-                      onChange={handlePCUUpload} 
+                      multiple
+                      onChange={handlePCUFileChange} 
                       disabled={pcuUploading} 
                       className="hidden" 
                     />
@@ -1354,10 +1386,65 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     ) : (
                       <Upload className="w-5 h-5 text-slate-400 mb-1.5 group-hover:text-blue-600 transition-colors" />
                     )}
-                    <span className="text-xs font-bold text-slate-700">Upload PCU</span>
-                    <span className="text-[10px] text-slate-400 mt-0.5">Save to Base44 DB</span>
+                    <span className="text-xs font-bold text-slate-700">Select PCU Files</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">Supports multiple files selection</span>
                   </label>
                 </div>
+
+                {/* Staged Files List */}
+                {stagedPcuFiles.length > 0 && (
+                  <div className="space-y-2 mt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
+                        Staged for Upload ({stagedPcuFiles.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setStagedPcuFiles([])}
+                        className="text-[10px] font-bold text-red-500 hover:underline cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                      {stagedPcuFiles.map((f, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-100 rounded-xl text-xs">
+                          <span className="font-medium text-emerald-900 truncate max-w-[180px] font-mono" title={f.fileName}>
+                            {f.fileName}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-emerald-700">
+                              {(f.size / 1024).toFixed(1)} KB
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeStagedPcuFile(idx)}
+                              className="text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-all cursor-pointer"
+                              title="Remove file"
+                            >
+                              &times;
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handlePCUSubmit}
+                      disabled={pcuUploading}
+                      className="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px] flex items-center justify-center gap-2 shadow-sm font-display"
+                    >
+                      {pcuUploading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> Saving to Base44 DB...
+                        </>
+                      ) : (
+                        'Submit'
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-5">

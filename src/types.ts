@@ -1,5 +1,5 @@
 export interface Contact {
-  id: number;
+  id: number | string;
   full_name: string;
   barangay: string;
   purok: string;
@@ -15,6 +15,8 @@ export interface Contact {
   pcu_uploaded_by?: string;
   pcu_uploaded_at?: string;
   added_from_print_list?: boolean;
+  isExistingAccount?: boolean;
+  uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
 }
 
 export interface PCUUpdate {
@@ -86,6 +88,9 @@ export interface ExistingAccountItem {
   status: string;
   submittedBy: string;
   pin?: string;
+  addedToFiles?: boolean;
+  uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
+  facebookLink?: string;
 }
 
 export interface ParseResult {

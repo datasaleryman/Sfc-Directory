@@ -40,13 +40,21 @@ import {
   editUserAccount,
   fetchHouseholdSubmissionsFromBase44,
   fetchExistingAccountsFromBase44,
+  getLocalExistingAccounts,
+  addLocalExistingAccount,
+  addLocalExistingAccountsBulk,
+  updateLocalExistingAccount,
+  uploadFilesForExistingAccount,
   addHouseholdToDirectory,
   clearAllDirectoryContacts,
   uploadContactPhoto,
   addPCUUpdate,
+  addPCUUpdatesMultiple,
   getPCUUpdates,
   getRecentUploads,
   removePCUFileFromContact,
+  restoreExistingAccountFiles,
+  deleteExistingAccountFolder,
   ensureContactsSynced,
   syncPCUUpdatesFromBase44,
   resetGoogleSheetsCooldown
@@ -418,13 +426,96 @@ export async function getApp() {
     }
   });
 
-  // Get Base44 Household Submissions marked as existing accounts
+  // Get Household Submissions marked as existing accounts (Local directory)
   app.get('/api/base44/existing-accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const existing = await fetchExistingAccountsFromBase44();
+      const existing = getLocalExistingAccounts();
       res.json(existing);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get Existing Accounts (Redesigned local offline-first database)
+  app.get('/api/existing-accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const existing = getLocalExistingAccounts();
+      res.json(existing);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Add manually registered Existing Account
+  app.post('/api/existing-accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const newAccount = await addLocalExistingAccount(req.body, username);
+      res.status(201).json(newAccount);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Bulk add manually registered Existing Accounts
+  app.post('/api/existing-accounts/bulk', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const accounts = req.body.accounts;
+      if (!Array.isArray(accounts)) {
+        return res.status(400).json({ error: 'Invalid payload: accounts must be an array' });
+      }
+      const newAccounts = await addLocalExistingAccountsBulk(accounts, username);
+      res.status(201).json({ success: true, count: newAccounts.length, data: newAccounts });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Update a manually registered Existing Account
+  app.put('/api/existing-accounts/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const id = req.params.id;
+      const updated = await updateLocalExistingAccount(id, req.body, username);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Delete/Clear a specific Barangay folder (requires admin role)
+  app.delete('/api/existing-accounts/folder/:barangay', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const role = (req.user?.role || '').toUpperCase().trim();
+      
+      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({ error: 'Permission denied: Only administrators can delete Barangay folders.' });
+      }
+
+      const barangay = req.params.barangay;
+      const updatedAccounts = await deleteExistingAccountFolder(barangay, username);
+      res.json({ success: true, message: `Barangay folder "${barangay}" has been deleted.`, data: updatedAccounts });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Upload multiple files for an Existing Account
+  app.post('/api/existing-accounts/:id/files', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const id = req.params.id;
+      const { files, facebookLink } = req.body;
+      if (files !== undefined && !Array.isArray(files)) {
+        return res.status(400).json({ error: 'files must be an array of objects with fileName and fileData' });
+      }
+      const updated = await uploadFilesForExistingAccount(id, files || [], facebookLink, username);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   });
 
@@ -556,15 +647,20 @@ export async function getApp() {
     }
   });
 
-  // Upload PCU File for contact
+  // Upload PCU File for contact (supports single or multiple files)
   app.post('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const { fullName, fileName, fileData } = req.body;
+      const { fullName, fileName, fileData, files } = req.body;
       const username = req.user?.username || 'Admin';
 
+      if (files && Array.isArray(files) && files.length > 0) {
+        const contact = await addPCUUpdatesMultiple(id, fullName || 'Unknown Contact', files, username);
+        return res.json(contact);
+      }
+
       if (!fileName || !fileData) {
-        return res.status(400).json({ error: 'fileName and fileData are required.' });
+        return res.status(400).json({ error: 'fileName and fileData are required (or a non-empty files array).' });
       }
 
       const update = await addPCUUpdate(id, fullName || 'Unknown Contact', fileName, fileData, username);
@@ -610,10 +706,18 @@ export async function getApp() {
   // Delete/Remove PCU File from contact (restores household to Saint Francis Clinic Directory)
   app.delete('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const idStr = req.params.id;
       const username = req.user?.username || 'Admin';
-      const updatedContact = await removePCUFileFromContact(id, username);
-      res.json(updatedContact);
+      
+      const isExt = idStr.startsWith('ext_') || isNaN(Number(idStr));
+      if (isExt) {
+        const updated = await restoreExistingAccountFiles(idStr, username);
+        res.json(updated);
+      } else {
+        const id = parseInt(idStr, 10);
+        const updatedContact = await removePCUFileFromContact(id, username);
+        res.json(updatedContact);
+      }
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

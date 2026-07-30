@@ -46,7 +46,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -57,7 +57,7 @@ export default function App() {
   // Profile Modal State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -98,6 +98,7 @@ export default function App() {
   const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'Administrator', 'Master Admin'].includes(userRole);
 
   const hasTabPermission = (tabId: string) => {
+    const targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
     // Safety check: Prevent lockouts for administrative roles
     const usernameLower = adminUser?.username?.toLowerCase() || '';
     const roleUpper = userRole.toUpperCase();
@@ -105,7 +106,7 @@ export default function App() {
                            roleUpper === 'MASTER ADMIN' || 
                            roleUpper === 'ADMINISTRATOR';
 
-    if (isAdminAccount && (tabId === 'settings' || tabId === 'accounts')) {
+    if (isAdminAccount && (targetTabId === 'settings' || targetTabId === 'accounts')) {
       return true;
     }
 
@@ -117,14 +118,14 @@ export default function App() {
       if (matchingKey) {
         const rolePerms = siteSettings.rolePermissions[matchingKey];
         if (Array.isArray(rolePerms)) {
-          return rolePerms.includes(tabId);
+          return rolePerms.includes(targetTabId);
         }
       }
     }
 
     // Default fallbacks if no customized permissions are configured
     if (isSuperUser) return true;
-    if (tabId === 'settings' || tabId === 'accounts') return false;
+    if (targetTabId === 'settings' || targetTabId === 'accounts') return false;
     return true;
   };
 
@@ -183,7 +184,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
+      const allTabs = ['dashboard', 'map', 'directory', 'exist-acc-files', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -469,6 +470,7 @@ export default function App() {
             { id: 'dashboard', label: siteSettings.navDashboard || 'Dashboard', icon: LayoutDashboard },
             { id: 'map', label: siteSettings.navMap || 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
+            { id: 'exist-acc-files', label: 'Exist. Acc. Files', icon: UserCheck },
             { id: 'recent-upload', label: siteSettings.navRecentUpload || 'Recent Upload', icon: UploadCloud },
             { id: 'accounts', label: siteSettings.navAccounts || 'Account Management', icon: ShieldCheck },
             { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
@@ -568,6 +570,8 @@ export default function App() {
                           ? (siteSettings.navAccounts || 'Account Management')
                           : activeTab === 'existing-account'
                             ? 'Existing Account Directory'
+                          : activeTab === 'exist-acc-files'
+                            ? 'Exist. Acc. Files'
                           : activeTab === 'admins' 
                             ? (siteSettings.navAdmins || 'Admin Credentials') 
                             : activeTab === 'settings'
@@ -799,10 +803,12 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'existing-account' && (
+              {(activeTab === 'existing-account' || activeTab === 'exist-acc-files') && (
                 <ExistingAccount
                   authToken={authToken}
                   showToast={showToast}
+                  activeTab={activeTab}
+                  currentUser={adminUser}
                 />
               )}
 
