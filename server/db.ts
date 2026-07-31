@@ -5401,7 +5401,7 @@ export async function uploadFilesForExistingAccount(
 }
 
 // Delete and clear a specific Barangay folder (removes accounts completely from database)
-export async function deleteExistingAccountFolder(barangay: string, username: string): Promise<ExistingAccountItem[]> {
+export async function deleteExistingAccountFolder(barangay: string, username: string): Promise<{ updatedAccounts: ExistingAccountItem[], deletedAccounts: ExistingAccountItem[] }> {
   const normalizedTarget = (barangay || '').trim().toUpperCase();
   
   // Find all accounts in the target barangay folder
@@ -5436,7 +5436,7 @@ export async function deleteExistingAccountFolder(barangay: string, username: st
   
   await addActivity(username, `Deleted Barangay folder "${barangay}" completely, removing all ${targetAccounts.length} accounts.`);
   
-  return existingAccountsCache;
+  return { updatedAccounts: existingAccountsCache, deletedAccounts: targetAccounts };
 }
 
 // Delete a single existing account completely

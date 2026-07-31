@@ -491,7 +491,7 @@ export async function getApp() {
       const username = req.user?.username || 'Admin';
       const role = (req.user?.role || '').toUpperCase().trim();
       
-      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'];
+      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT', 'LEADER', 'ENCODER', 'USER', 'STAFF', 'CLERK', 'MEMBER'];
       if (!allowedRoles.includes(role)) {
         return res.status(403).json({ error: 'Permission denied: Only administrators can delete records.' });
       }
@@ -510,14 +510,14 @@ export async function getApp() {
       const username = req.user?.username || 'Admin';
       const role = (req.user?.role || '').toUpperCase().trim();
       
-      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'];
+      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT', 'LEADER', 'ENCODER', 'USER', 'STAFF', 'CLERK', 'MEMBER'];
       if (!allowedRoles.includes(role)) {
         return res.status(403).json({ error: 'Permission denied: Only administrators can delete Barangay folders.' });
       }
 
       const barangay = req.params.barangay;
-      const updatedAccounts = await deleteExistingAccountFolder(barangay, username);
-      res.json({ success: true, message: `Barangay folder "${barangay}" has been deleted.`, data: updatedAccounts });
+      const { updatedAccounts, deletedAccounts } = await deleteExistingAccountFolder(barangay, username);
+      res.json({ success: true, message: `Barangay folder "${barangay}" has been deleted.`, data: updatedAccounts, deletedAccounts: deletedAccounts });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

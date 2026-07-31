@@ -765,7 +765,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                         <div className="flex items-center gap-1.5">
                           <span className="text-slate-600 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg max-w-[120px] truncate block font-bold">
                             {visiblePasswords[acc.username] 
-                              ? (acc.passwordPlain || '••••••••') 
+                              ? (acc.passwordPlain || '(Encrypted)') 
                               : '••••••••'}
                           </span>
                           <button
@@ -914,7 +914,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     </span>
                     <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                       <span className="font-mono text-[11px]">
-                        PW: {visiblePasswords[acc.username] ? (acc.passwordPlain || '••••••••') : '••••••••'}
+                        PW: {visiblePasswords[acc.username] ? (acc.passwordPlain || '(Encrypted)') : '••••••••'}
                       </span>
                       <button
                         type="button"
@@ -1225,28 +1225,26 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                   </div>
                 </div>
 
-                {editTarget.passwordPlain && (
-                  <div className="bg-emerald-50 border border-emerald-100/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <span className="font-extrabold text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">Current Account Password</span>
-                      <span className="font-mono font-black text-emerald-800 text-sm tracking-wide">
-                        {visiblePasswords[editTarget.username + '_edit'] ? editTarget.passwordPlain : '••••••••'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => togglePasswordVisibility(editTarget.username + '_edit')}
-                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-white rounded-xl border border-slate-100 transition-all cursor-pointer shadow-xs shrink-0"
-                      title={visiblePasswords[editTarget.username + '_edit'] ? "Hide password" : "Show password"}
-                    >
-                      {visiblePasswords[editTarget.username + '_edit'] ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </button>
+                <div className="bg-emerald-50 border border-emerald-100/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="font-extrabold text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">Current Account Password</span>
+                    <span className="font-mono font-black text-emerald-800 text-sm tracking-wide">
+                      {visiblePasswords[editTarget.username + '_edit'] ? (editTarget.passwordPlain || '(Encrypted)') : '••••••••'}
+                    </span>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => togglePasswordVisibility(editTarget.username + '_edit')}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-white rounded-xl border border-slate-100 transition-all cursor-pointer shadow-xs shrink-0"
+                    title={visiblePasswords[editTarget.username + '_edit'] ? "Hide password" : "Show password"}
+                  >
+                    {visiblePasswords[editTarget.username + '_edit'] ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
 
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">

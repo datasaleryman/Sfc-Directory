@@ -66,6 +66,8 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [generatedPinDisplay, setGeneratedPinDisplay] = useState<string | null>(null);
   const [showForgotPassToggle, setShowForgotPassToggle] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
 
   // Barangays database list
   const DEFAULT_BARANGAYS = [
@@ -490,13 +492,24 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                     <KeyRound className="w-4.5 h-4.5" />
                   </span>
                   <input
-                    type="password"
+                    type={showLoginPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
+                    className="w-full pl-11 pr-11 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
                     placeholder="Enter secure password"
                     disabled={loading}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="w-4.5 h-4.5" />
+                    ) : (
+                      <Eye className="w-4.5 h-4.5" />
+                    )}
+                  </button>
                 </div>
               </motion.div>
 
@@ -603,14 +616,25 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, showToast, siteSet
                     <KeyRound className="w-4.5 h-4.5" />
                   </span>
                   <input
-                    type="password"
+                    type={showRegPassword ? "text" : "password"}
                     required
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
+                    className="w-full pl-11 pr-11 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-2xl transition-all font-semibold text-slate-700 text-sm outline-none placeholder:text-slate-400"
                     placeholder="Create a password"
                     disabled={loading}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  >
+                    {showRegPassword ? (
+                      <EyeOff className="w-4.5 h-4.5" />
+                    ) : (
+                      <Eye className="w-4.5 h-4.5" />
+                    )}
+                  </button>
                 </div>
               </motion.div>
 
