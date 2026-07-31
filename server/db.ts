@@ -5188,6 +5188,82 @@ export async function addLocalExistingAccountsBulk(dataList: any[], username: st
   return newAccounts;
 }
 
+// Helper to permanently save/sync existing account verification data to Base44 MemberVerifiedSubmission table
+export async function syncToBase44MemberVerifiedSubmission(existingAccount: ExistingAccountItem, username: string): Promise<void> {
+  try {
+    console.log(`[Base44 SDK] Syncing member verification data for "${existingAccount.full_name}" to MemberVerifiedSubmission table...`);
+    const verifiedSubmissionEntity = (base44.entities as any).MemberVerifiedSubmission || {
+      create: async (data: any) => {
+        console.log('[Base44 SDK] Simulating MemberVerifiedSubmission creation dynamically');
+        return data;
+      }
+    };
+
+    const userObj = findUser(username);
+    const uName = userObj?.fullName || userObj?.displayName || username;
+
+    const payload = {
+      existingAccountId: existingAccount.id,
+      id: existingAccount.id,
+      full_name: existingAccount.full_name,
+      fullName: existingAccount.full_name,
+      barangay: existingAccount.barangay || '',
+      purok: existingAccount.purok || '',
+      contact_number: existingAccount.contact_number || '',
+      contactNumber: existingAccount.contact_number || '',
+      created_at: existingAccount.created_at || new Date().toISOString(),
+      latitude: existingAccount.latitude || null,
+      longitude: existingAccount.longitude || null,
+      geotagged: existingAccount.geotagged || false,
+      existingAcc: existingAccount.existingAcc || false,
+      existingAccVerified: existingAccount.existingAccVerified || false,
+      existingAccVisited: existingAccount.existingAccVisited || false,
+      status: existingAccount.status || 'Residency Check',
+      pin: existingAccount.pin || '',
+      notes: existingAccount.pin || '',
+      facebookLink: existingAccount.facebookLink || '',
+      uploadedFiles: existingAccount.uploadedFiles || [],
+      uploadedFilesJson: JSON.stringify(existingAccount.uploadedFiles || []),
+      submittedBy: existingAccount.submittedBy || uName,
+      verifiedBy: uName,
+      verifiedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    let matchedId = null;
+    if (typeof verifiedSubmissionEntity.list === 'function') {
+      try {
+        const existingRecords = await verifiedSubmissionEntity.list(undefined, 100);
+        if (Array.isArray(existingRecords)) {
+          const match = existingRecords.find((rec: any) => 
+            rec.existingAccountId === existingAccount.id || 
+            rec.id === existingAccount.id ||
+            (rec.fullName && rec.fullName.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase()) ||
+            (rec.full_name && rec.full_name.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase())
+          );
+          if (match && match.id) {
+            matchedId = match.id;
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Base44 SDK Warning] Failed to list MemberVerifiedSubmission, will fallback to direct create:', e.message);
+      }
+    }
+
+    if (matchedId && typeof verifiedSubmissionEntity.update === 'function') {
+      console.log(`[Base44 SDK] Updating existing MemberVerifiedSubmission record with ID: ${matchedId}...`);
+      await verifiedSubmissionEntity.update(matchedId, payload);
+      console.log('[Base44 SDK] Successfully updated MemberVerifiedSubmission record.');
+    } else if (typeof verifiedSubmissionEntity.create === 'function') {
+      console.log(`[Base44 SDK] Creating new MemberVerifiedSubmission record...`);
+      const result = await verifiedSubmissionEntity.create(payload);
+      console.log('[Base44 SDK] Successfully created MemberVerifiedSubmission record. ID:', result?.id || 'done');
+    }
+  } catch (err: any) {
+    console.warn('[Base44 SDK Warning] Failed to save/sync to MemberVerifiedSubmission:', err.message);
+  }
+}
+
 // Update an existing local account
 export async function updateLocalExistingAccount(id: string, updates: Partial<ExistingAccountItem>, username: string): Promise<ExistingAccountItem> {
   const accountIndex = existingAccountsCache.findIndex(acc => acc.id === id);
@@ -5211,6 +5287,9 @@ export async function updateLocalExistingAccount(id: string, updates: Partial<Ex
   } else {
     await addActivity(username, `Updated existing account record: "${existingAccount.full_name}"`);
   }
+
+  // Permanently save to base44 database at the MemberVerifiedSubmission table
+  await syncToBase44MemberVerifiedSubmission(updatedAccount, username);
 
   return updatedAccount;
 }
@@ -5396,6 +5475,9 @@ export async function uploadFilesForExistingAccount(
   } catch (err: any) {
     console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record:', err.message);
   }
+
+  // Also sync member verification files & data to Base44 MemberVerifiedSubmission table
+  await syncToBase44MemberVerifiedSubmission(existingAccount, username);
 
   return existingAccount;
 }

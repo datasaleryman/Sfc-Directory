@@ -48,6 +48,8 @@ export const VerificationEntry: React.FC<VerificationEntryProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [bulkInputText, setBulkInputText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [draftToDelete, setDraftToDelete] = useState<DraftMember | null>(null);
+  const [isClearingAllDrafts, setIsClearingAllDrafts] = useState(false);
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -141,19 +143,33 @@ export const VerificationEntry: React.FC<VerificationEntryProps> = ({
     showToast(`Successfully added ${newDrafts.length} members to the Draft List below!`, 'success');
   };
 
-  // Delete a draft from the list
+  // Delete a draft from the list (triggers confirmation modal)
   const handleDeleteDraft = (id: string) => {
-    const updatedDrafts = drafts.filter(item => item.id !== id);
-    saveDraftsToStorage(updatedDrafts);
-    showToast('Member draft removed.', 'info');
+    const draft = drafts.find(item => item.id === id);
+    if (draft) {
+      setDraftToDelete(draft);
+    }
   };
 
-  // Clear all drafts
+  const handleConfirmDeleteDraft = () => {
+    if (!draftToDelete) return;
+    const updatedDrafts = drafts.filter(item => item.id !== draftToDelete.id);
+    saveDraftsToStorage(updatedDrafts);
+    showToast('Member draft removed.', 'info');
+    setDraftToDelete(null);
+  };
+
+  // Clear all drafts (triggers confirmation modal)
   const handleClearAllDrafts = () => {
-    if (window.confirm('Are you sure you want to clear all drafts from this list?')) {
-      saveDraftsToStorage([]);
-      showToast('Draft list cleared.', 'info');
+    if (drafts.length > 0) {
+      setIsClearingAllDrafts(true);
     }
+  };
+
+  const handleConfirmClearAllDrafts = () => {
+    saveDraftsToStorage([]);
+    showToast('Draft list cleared.', 'info');
+    setIsClearingAllDrafts(false);
   };
 
   // Add individual draft to Member Verification database via POST API
@@ -642,6 +658,128 @@ export const VerificationEntry: React.FC<VerificationEntryProps> = ({
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   Load to Draft List
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Draft Confirmation Modal */}
+      <AnimatePresence>
+        {draftToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDraftToDelete(null)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 z-10 space-y-6"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 leading-none">
+                    Remove Member Draft?
+                  </h3>
+                  <p className="text-[11px] text-rose-600 font-bold mt-1 uppercase tracking-wider">
+                    Delete Draft Confirmation
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3.5">
+                <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+                  Are you sure you want to remove the draft for <span className="font-extrabold text-slate-950 uppercase">{draftToDelete.full_name}</span>?
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  This will permanently clear this draft from the local workspace.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => setDraftToDelete(null)}
+                  className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDeleteDraft}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl shadow-md shadow-rose-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remove Draft
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Clear All Drafts Confirmation Modal */}
+      <AnimatePresence>
+        {isClearingAllDrafts && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsClearingAllDrafts(false)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 z-10 space-y-6"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 leading-none">
+                    Clear Draft List?
+                  </h3>
+                  <p className="text-[11px] text-rose-600 font-bold mt-1 uppercase tracking-wider">
+                    Delete All Confirmation
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3.5">
+                <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+                  Are you sure you want to clear <span className="font-extrabold text-slate-950 uppercase">{drafts.length} drafts</span> from the list?
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  This action cannot be undone and will empty your current workspace list.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => setIsClearingAllDrafts(false)}
+                  className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmClearAllDrafts}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl shadow-md shadow-rose-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear All
                 </button>
               </div>
             </motion.div>

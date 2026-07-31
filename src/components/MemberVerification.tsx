@@ -23,7 +23,9 @@ import {
   ArrowLeft,
   ChevronRight,
   Sparkles,
-  Trash2
+  Trash2,
+  Upload,
+  Paperclip
 } from 'lucide-react';
 import { ExistingAccountItem } from '../types.js';
 
@@ -57,6 +59,8 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
   const [verificationCategory, setVerificationCategory] = useState('Residency Check');
   const [verificationNotes, setVerificationNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   // Fetch Existing Accounts data
   const fetchAccounts = async () => {
@@ -179,6 +183,97 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
       showToast(err.message, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Upload PCU/Case document
+  const handleFileUpload = async (file: File) => {
+    if (!selectedItem) return;
+    
+    // Check file size limit (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('File is too large. Maximum size is 10MB.', 'error');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const reader = new FileReader();
+      
+      const fileUploadPromise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file.'));
+        reader.readAsDataURL(file);
+      });
+
+      const base64DataUrl = await fileUploadPromise;
+
+      const payload = {
+        files: [
+          {
+            fileName: file.name,
+            fileData: base64DataUrl
+          }
+        ]
+      };
+
+      const res = await fetch(`/api/existing-accounts/${selectedItem.id}/files`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to upload document.');
+      }
+
+      const updatedAccount = await res.json();
+      
+      // Sync local states
+      setItems(prev => prev.map(item => item.id === selectedItem.id ? updatedAccount : item));
+      setSelectedItem(updatedAccount);
+      showToast(`Document "${file.name}" uploaded successfully!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to upload document.', 'error');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  // Delete attached document
+  const handleDeleteFile = async (indexToDelete: number) => {
+    if (!selectedItem) return;
+    try {
+      const remainingFiles = (selectedItem.uploadedFiles || []).filter((_, idx) => idx !== indexToDelete);
+      
+      const updatePayload = {
+        ...selectedItem,
+        uploadedFiles: remainingFiles
+      };
+
+      const res = await fetch(`/api/existing-accounts/${selectedItem.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(updatePayload)
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update files list.');
+      }
+
+      const updatedData = await res.json();
+      setItems(prev => prev.map(item => item.id === selectedItem.id ? updatedData : item));
+      setSelectedItem(updatedData);
+      showToast('Document deleted successfully.', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete document.', 'error');
     }
   };
 
@@ -483,15 +578,15 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-bold text-slate-950 font-display">Barangay Verification Folders</h3>
-                  <p className="text-xs text-slate-500 mt-1">Select a folder to view and verify patients in that specific Barangay directory.</p>
+                  <h3 className="text-base font-bold text-slate-950 font-display">Member Verification Folders</h3>
+                  <p className="text-xs text-slate-500 mt-1">Select a folder to view and verify members in that specific directory.</p>
                 </div>
 
                 <div className="relative min-w-[240px]">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search Barangay folders..."
+                    placeholder="Search Member folders..."
                     value={folderSearchQuery}
                     onChange={(e) => setFolderSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
@@ -510,17 +605,17 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
               {loading ? (
                 <div className="py-24 flex flex-col items-center justify-center text-slate-400 space-y-3">
                   <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
-                  <p className="text-xs font-semibold">Loading Barangay directory folder structures...</p>
+                  <p className="text-xs font-semibold">Loading Member directory folder structures...</p>
                 </div>
               ) : filteredFolders.length === 0 ? (
                 <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-xl max-w-md mx-auto p-6 space-y-3">
                   <Folder className="w-10 h-10 text-slate-300 mx-auto" />
                   <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-slate-800">No Barangay Folders Found</h4>
+                    <h4 className="text-sm font-bold text-slate-800">No Member Folders Found</h4>
                     <p className="text-xs text-slate-500">
                       {folderSearchQuery 
-                        ? 'Adjust your keyword to look for other barangay names.'
-                        : 'No member data has been registered to create barangay directories. Add members via Verification Entry first!'
+                        ? 'Adjust your keyword to look for other folder names.'
+                        : 'No member data has been registered to create member directories. Add members via Verification Entry first!'
                       }
                     </p>
                   </div>
@@ -605,13 +700,13 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                 <button
                   onClick={() => setActiveBarangayFolder(null)}
                   className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl text-slate-500 hover:text-slate-800 transition-all flex items-center justify-center cursor-pointer"
-                  title="Go back to Barangay folders"
+                  title="Go back to Member folders"
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
                 <div>
                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                    <span>Barangays</span>
+                    <span>Members</span>
                     <span>/</span>
                     <span className="text-teal-600">Folder</span>
                   </div>
@@ -933,6 +1028,59 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
                               Uploaded Case / PCU Documents
                             </h4>
+                            
+                            {/* File Drag and Drop / Input Upload Zone */}
+                            <div className="mb-4">
+                              <label
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  setDragActive(true);
+                                }}
+                                onDragLeave={() => setDragActive(false)}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  setDragActive(false);
+                                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                    await handleFileUpload(e.dataTransfer.files[0]);
+                                  }
+                                }}
+                                className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl transition-all cursor-pointer text-center ${
+                                  dragActive
+                                    ? 'border-teal-500 bg-teal-50/40 scale-[1.01]'
+                                    : 'border-slate-200 hover:border-teal-400 bg-slate-50/40 hover:bg-slate-50'
+                                }`}
+                              >
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      await handleFileUpload(e.target.files[0]);
+                                    }
+                                  }}
+                                  disabled={uploadingFile}
+                                />
+                                {uploadingFile ? (
+                                  <div className="flex flex-col items-center space-y-2">
+                                    <Loader2 className="w-6 h-6 text-teal-600 animate-spin" />
+                                    <span className="text-[11px] font-bold text-slate-500">Uploading Document...</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col items-center space-y-1">
+                                    <div className="p-1.5 bg-white shadow-xs rounded-lg border border-slate-100 text-slate-400">
+                                      <Upload className="w-5 h-5 text-teal-600" />
+                                    </div>
+                                    <p className="text-[11px] font-bold text-slate-700">
+                                      Click or drag to upload PCU Document
+                                    </p>
+                                    <p className="text-[9px] text-slate-400">
+                                      Supports PDF, Images up to 10MB
+                                    </p>
+                                  </div>
+                                )}
+                              </label>
+                            </div>
+
                             {selectedItem.uploadedFiles && selectedItem.uploadedFiles.length > 0 ? (
                               <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                                 {selectedItem.uploadedFiles.map((file, idx) => (
@@ -941,20 +1089,37 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                                     className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-lg hover:border-teal-200 hover:bg-teal-50/20 transition-all text-xs"
                                   >
                                     <div className="flex items-center gap-2 truncate mr-2">
-                                      <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                                      <span className="font-bold text-slate-700 truncate" title={file.name}>
-                                        {file.name}
-                                      </span>
+                                      <FileText className="w-4 h-4 text-teal-600 shrink-0" />
+                                      <div className="truncate text-left">
+                                        <span className="font-bold text-slate-700 block truncate" title={file.name}>
+                                          {file.name}
+                                        </span>
+                                        {file.uploadedAt && (
+                                          <span className="text-[9px] text-slate-400 block">
+                                            {new Date(file.uploadedAt).toLocaleDateString()}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <a
-                                      href={file.url}
-                                      download
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 hover:text-teal-700 font-bold rounded-md transition-colors shrink-0"
-                                    >
-                                      View File
-                                    </a>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <a
+                                        href={file.url}
+                                        download
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 hover:text-teal-700 font-bold rounded-md transition-colors"
+                                      >
+                                        View
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteFile(idx)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                                        title="Delete file"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -962,7 +1127,7 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                               <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400">
                                 <FileText className="w-7 h-7 mx-auto mb-1.5 text-slate-300" />
                                 <p className="text-[11px] font-bold text-slate-500">No attached files or PCU logs</p>
-                                <p className="text-[10px] text-slate-400">Files can be attached during initial entry mapping</p>
+                                <p className="text-[10px] text-slate-400">Use the upload box above to attach files</p>
                               </div>
                             )}
                           </div>
