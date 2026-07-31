@@ -94,6 +94,23 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [deletingFolder, setDeletingFolder] = useState(false);
 
+  // Delete Single Account state
+  const [accountToDelete, setAccountToDelete] = useState<ExistingAccountItem | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Pagination states
+  const [unifiedPage, setUnifiedPage] = useState(1);
+  const [folderPage, setFolderPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setUnifiedPage(1);
+  }, [searchQuery, selectedBarangay, selectedVerification]);
+
+  useEffect(() => {
+    setFolderPage(1);
+  }, [searchQuery, activeFolder]);
+
   const handleConfirmDeleteFolder = async (barangay: string) => {
     setDeletingFolder(true);
     try {
@@ -114,6 +131,29 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       showToast(err.message, 'error');
     } finally {
       setDeletingFolder(false);
+    }
+  };
+
+  const handleConfirmDeleteAccount = async (id: string | number) => {
+    setDeletingAccount(true);
+    try {
+      const res = await fetch(`/api/existing-accounts/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete record.');
+      }
+      showToast('Patient record has been successfully deleted.', 'success');
+      await fetchExistingAccounts();
+      setAccountToDelete(null);
+    } catch (err: any) {
+      showToast(err.message || 'Error deleting account.', 'error');
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -300,6 +340,22 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       (acc.pin || '').toLowerCase().includes(lowerQuery)
     );
   }, [barangayFolders, activeFolder, searchQuery]);
+
+  // Paginated Unified Accounts
+  const paginatedUnifiedAccounts = useMemo(() => {
+    const start = (unifiedPage - 1) * itemsPerPage;
+    return filteredAccounts.slice(start, start + itemsPerPage);
+  }, [filteredAccounts, unifiedPage]);
+
+  const totalUnifiedPages = Math.ceil(filteredAccounts.length / itemsPerPage);
+
+  // Paginated Folder Accounts
+  const paginatedFolderAccounts = useMemo(() => {
+    const start = (folderPage - 1) * itemsPerPage;
+    return filteredAccountsInFolder.slice(start, start + itemsPerPage);
+  }, [filteredAccountsInFolder, folderPage]);
+
+  const totalFolderPages = Math.ceil(filteredAccountsInFolder.length / itemsPerPage);
 
   // Handle adding/removing from files list
   const toggleAddToList = async (item: ExistingAccountItem) => {
@@ -553,50 +609,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         </div>
       </div>
 
-      {/* Analytics widgets */}
-      {activeTab !== 'exist-acc-files' && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 border border-slate-200/50 animate-fade-in">
-              <UserIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Accounts</span>
-              <span className="text-xl font-black text-slate-800 font-display mt-0.5 block">{stats.total}</span>
-            </div>
-          </div>
 
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Verified</span>
-              <span className="text-xl font-black text-slate-800 font-display mt-0.5 block">{stats.verified}</span>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-100">
-              <Clock className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pending</span>
-              <span className="text-xl font-black text-slate-800 font-display mt-0.5 block">{stats.pending}</span>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-100">
-              <MapPin className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Geotagged</span>
-              <span className="text-xl font-black text-slate-800 font-display mt-0.5 block">{stats.geotagged}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {loading && existingAccounts.length === 0 ? (
         <div className="bg-white border border-slate-200/60 rounded-3xl p-16 text-center shadow-xs">
@@ -730,62 +743,107 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                     <p className="text-slate-700 font-extrabold text-base font-display">No patient records found in this folder</p>
                     <p className="text-slate-400 text-xs mt-1">Try resetting search filters or add more patient profiles to this Barangay folder.</p>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-left">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-wider bg-slate-50/40">
-                          <th className="py-4 px-6">Patient Name</th>
-                          <th className="py-4 px-4">Purok</th>
-                          <th className="py-4 px-4">Mobile</th>
-                          <th className="py-4 px-4">PIN Code</th>
-                          <th className="py-4 px-6 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-600 text-xs font-semibold">
-                        {filteredAccountsInFolder.map((item) => (
-                          <tr 
-                            key={item.id} 
-                            onClick={() => setSelectedItem(item)}
-                            className="hover:bg-slate-100/60 transition-colors cursor-pointer group"
-                          >
-                            <td className="py-4 px-6 font-extrabold text-slate-800">
-                              <div className="flex items-center gap-2">
-                                <span className="capitalize group-hover:text-emerald-700 transition-colors">{item.full_name.toLowerCase()}</span>
-                                {item.geotagged && (
-                                  <span className="px-1.5 py-0.5 text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200/40 rounded-sm">
-                                    Geotagged
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-4 px-4 text-slate-500 capitalize">
-                              {item.purok ? item.purok.toLowerCase() : <span className="text-slate-300 font-normal">—</span>}
-                            </td>
-                            <td className="py-4 px-4 font-mono font-semibold">
-                              {item.contact_number || <span className="text-slate-300 font-normal">—</span>}
-                            </td>
-                            <td className="py-4 px-4 font-mono text-slate-500 font-semibold">
-                              {item.pin || <span className="text-slate-300 font-normal">—</span>}
-                            </td>
-                            <td className="py-4 px-6 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedItem(item);
-                                  }}
-                                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1"
-                                >
-                                  <Eye className="w-3.5 h-3.5" /> Details
-                                </button>
-                              </div>
-                            </td>
+                                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-wider bg-slate-50/40">
+                            <th className="py-4 px-6">Patient Name</th>
+                            <th className="py-4 px-4">Purok</th>
+                            <th className="py-4 px-4">Mobile</th>
+                            <th className="py-4 px-4">PIN Code</th>
+                            <th className="py-4 px-6 text-right">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-600 text-xs font-semibold">
+                          {paginatedFolderAccounts.map((item) => (
+                            <tr 
+                              key={item.id} 
+                              onClick={() => setSelectedItem(item)}
+                              className="hover:bg-slate-100/60 transition-colors cursor-pointer group"
+                            >
+                              <td className="py-4 px-6 font-extrabold text-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <span className="capitalize group-hover:text-emerald-700 transition-colors">{item.full_name.toLowerCase()}</span>
+                                  {item.geotagged && (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200/40 rounded-sm">
+                                      Geotagged
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-4 px-4 text-slate-500 capitalize">
+                                {item.purok ? item.purok.toLowerCase() : <span className="text-slate-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-4 px-4 font-mono font-semibold">
+                                {item.contact_number || <span className="text-slate-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-4 px-4 font-mono text-slate-500 font-semibold">
+                                {item.pin || <span className="text-slate-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedItem(item);
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" /> Details
+                                  </button>
+                                  {isMasterAdmin && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setAccountToDelete(item);
+                                      }}
+                                      className="p-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200/60 hover:border-red-100 text-slate-500 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+                                      title="Delete Patient Record"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Folder Patient Directory Pagination bar */}
+                    {totalFolderPages > 1 && (
+                      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-500">
+                        <div>
+                          Showing page <span className="text-slate-800 font-extrabold">{folderPage}</span> of <span className="text-slate-800 font-extrabold">{totalFolderPages}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderPage(p => Math.max(1, p - 1));
+                            }}
+                            disabled={folderPage === 1}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg transition-all font-extrabold cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderPage(p => Math.min(totalFolderPages, p + 1));
+                            }}
+                            disabled={folderPage === totalFolderPages}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg transition-all font-extrabold cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )
@@ -859,78 +917,114 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                     <p className="text-slate-400 text-xs mt-1">Try resetting the search filters or bulk register some accounts.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-left">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-wider bg-slate-50/40">
-                          <th className="py-4 px-6">Patient Name</th>
-                          <th className="py-4 px-4">Barangay</th>
-                          <th className="py-4 px-4">Purok</th>
-                          <th className="py-4 px-4">Mobile</th>
-                          <th className="py-4 px-4">PIN Code</th>
-                          <th className="py-4 px-6 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-600 text-xs font-semibold">
-                        {filteredAccounts.map((item) => (
-                          <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="py-4 px-6 font-extrabold text-slate-800">
-                              <div className="flex items-center gap-2">
-                                <span className="capitalize">{item.full_name.toLowerCase()}</span>
-                                {item.geotagged && (
-                                  <span className="px-1.5 py-0.5 text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200/40 rounded-sm">
-                                    Geotagged
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <span className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase tracking-wide whitespace-nowrap">
-                                {item.barangay ? item.barangay.toUpperCase() : 'UNKNOWN'}
-                              </span>
-                            </td>
-                            <td className="py-4 px-4 text-slate-500 capitalize">
-                              {item.purok ? item.purok.toLowerCase() : <span className="text-slate-300 font-normal">—</span>}
-                            </td>
-                            <td className="py-4 px-4 font-mono font-semibold">
-                              {item.contact_number || <span className="text-slate-300 font-normal">—</span>}
-                            </td>
-                            <td className="py-4 px-4 font-mono text-slate-500 font-semibold">
-                              {item.pin || <span className="text-slate-300 font-normal">—</span>}
-                            </td>
-                            <td className="py-4 px-6 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => toggleAddToList(item)}
-                                  disabled={addingToFilesMap[item.id]}
-                                  className={`px-3 py-1.5 border rounded-xl text-[11px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1 ${
-                                    item.addedToFiles
-                                      ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-500 hover:border-emerald-600 text-white shadow-xs'
-                                      : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
-                                  }`}
-                                >
-                                  {addingToFilesMap[item.id] ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : item.addedToFiles ? (
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                                  ) : (
-                                    <Plus className="w-3.5 h-3.5 text-slate-500" />
-                                  )}
-                                  <span>{item.addedToFiles ? 'Added' : 'Add List'}</span>
-                                </button>
-                                <button
-                                  onClick={() => setSelectedItem(item)}
-                                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-700 border border-slate-200/60 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1.5"
-                                >
-                                  <Eye className="w-3.5 h-3.5" /> View Details
-                                </button>
-                              </div>
-                            </td>
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-wider bg-slate-50/40">
+                            <th className="py-4 px-6">Patient Name</th>
+                            <th className="py-4 px-4">Barangay</th>
+                            <th className="py-4 px-4">Purok</th>
+                            <th className="py-4 px-4">Mobile</th>
+                            <th className="py-4 px-4">PIN Code</th>
+                            <th className="py-4 px-6 text-right">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-600 text-xs font-semibold">
+                          {paginatedUnifiedAccounts.map((item) => (
+                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="py-4 px-6 font-extrabold text-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <span className="capitalize">{item.full_name.toLowerCase()}</span>
+                                  {item.geotagged && (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200/40 rounded-sm">
+                                      Geotagged
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-4 px-4">
+                                <span className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase tracking-wide whitespace-nowrap">
+                                  {item.barangay ? item.barangay.toUpperCase() : 'UNKNOWN'}
+                                </span>
+                              </td>
+                              <td className="py-4 px-4 text-slate-500 capitalize">
+                                {item.purok ? item.purok.toLowerCase() : <span className="text-slate-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-4 px-4 font-mono font-semibold">
+                                {item.contact_number || <span className="text-slate-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-4 px-4 font-mono text-slate-500 font-semibold">
+                                {item.pin || <span className="text-slate-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => toggleAddToList(item)}
+                                    disabled={addingToFilesMap[item.id]}
+                                    className={`px-3 py-1.5 border rounded-xl text-[11px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1 ${
+                                      item.addedToFiles
+                                        ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-500 hover:border-emerald-600 text-white shadow-xs'
+                                        : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                                    }`}
+                                  >
+                                    {addingToFilesMap[item.id] ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : item.addedToFiles ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                                    ) : (
+                                      <Plus className="w-3.5 h-3.5 text-slate-500" />
+                                    )}
+                                    <span>{item.addedToFiles ? 'Added' : 'Add List'}</span>
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedItem(item)}
+                                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-700 border border-slate-200/60 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" /> View Details
+                                  </button>
+                                  {isMasterAdmin && (
+                                    <button
+                                      onClick={() => setAccountToDelete(item)}
+                                      className="p-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200/60 hover:border-red-100 text-slate-500 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+                                      title="Delete Patient Record"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Unified Directory Pagination bar */}
+                    {totalUnifiedPages > 1 && (
+                      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-500">
+                        <div>
+                          Showing page <span className="text-slate-800 font-extrabold">{unifiedPage}</span> of <span className="text-slate-800 font-extrabold">{totalUnifiedPages}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setUnifiedPage(p => Math.max(1, p - 1))}
+                            disabled={unifiedPage === 1}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg transition-all font-extrabold cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            onClick={() => setUnifiedPage(p => Math.min(totalUnifiedPages, p + 1))}
+                            disabled={unifiedPage === totalUnifiedPages}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg transition-all font-extrabold cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </>
@@ -1499,6 +1593,86 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   )}
                   <span>
                     {deletingFolder ? 'Deleting Folder...' : 'Confirm Delete & Restore'}
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DELETE ACCOUNT DIALOG MODAL */}
+      <AnimatePresence>
+        {accountToDelete && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 flex flex-col"
+            >
+              <div className="bg-gradient-to-r from-red-900 to-slate-950 px-6 py-5 flex items-center justify-between text-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 border border-red-500/30">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base font-display">
+                      Delete Patient Profile
+                    </h3>
+                    <p className="text-xs text-red-300 font-medium">
+                      This action will permanently delete this record
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAccountToDelete(null)}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-white transition-colors cursor-pointer"
+                  title="Close Dialog"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-slate-600 font-medium leading-relaxed">
+                  Are you sure you want to permanently delete <span className="font-black text-slate-800 capitalize">"{accountToDelete.full_name.toLowerCase()}"</span>'s profile from the database?
+                </p>
+
+                <div className="p-4 bg-red-50/50 rounded-2xl border border-red-100 text-xs font-semibold text-red-800 space-y-2">
+                  <p className="font-bold flex items-center gap-1.5 text-red-950 text-sm">
+                    ⚠️ Warning: This action is permanent
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1 text-red-900">
+                    <li>This record will be permanently deleted from the local database.</li>
+                    <li>If synchronized, the corresponding record on the Base44 database will be removed.</li>
+                    <li>Any associated files, verification status, and history will be permanently lost.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAccountToDelete(null)}
+                  disabled={deletingAccount}
+                  className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer focus:outline-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmDeleteAccount(accountToDelete.id)}
+                  disabled={deletingAccount}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 focus:outline-none"
+                >
+                  {deletingAccount ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {deletingAccount ? 'Deleting...' : 'Confirm Permanent Delete'}
                   </span>
                 </button>
               </div>

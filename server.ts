@@ -55,6 +55,7 @@ import {
   removePCUFileFromContact,
   restoreExistingAccountFiles,
   deleteExistingAccountFolder,
+  deleteLocalExistingAccount,
   ensureContactsSynced,
   syncPCUUpdatesFromBase44,
   resetGoogleSheetsCooldown
@@ -479,6 +480,25 @@ export async function getApp() {
       const id = req.params.id;
       const updated = await updateLocalExistingAccount(id, req.body, username);
       res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Delete a single existing account (requires admin/IT role or permission check)
+  app.delete('/api/existing-accounts/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const role = (req.user?.role || '').toUpperCase().trim();
+      
+      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({ error: 'Permission denied: Only administrators can delete records.' });
+      }
+
+      const id = req.params.id;
+      const updatedAccounts = await deleteLocalExistingAccount(id, username);
+      res.json({ success: true, message: 'Record successfully deleted.', data: updatedAccounts });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

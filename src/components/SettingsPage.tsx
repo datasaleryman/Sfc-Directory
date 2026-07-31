@@ -39,6 +39,10 @@ interface SettingsPageProps {
     navPrint?: string;
     navAdmins?: string;
     navSettings?: string;
+    navExistingAccount?: string;
+    navExistAccFiles?: string;
+    navMemberVerification?: string;
+    navVerificationEntry?: string;
     rolePermissions?: Record<string, string[]>;
   };
   onSettingsSaved: (updated: any) => void;
@@ -58,11 +62,15 @@ const APP_PAGES = [
   { id: 'dashboard', name: 'Dashboard', desc: 'Main overview & statistics' },
   { id: 'map', name: 'Clinic Map', desc: 'Geotagged patient map' },
   { id: 'directory', name: 'Clinic Directory', desc: 'Patient records & search' },
+  { id: 'exist-acc-files', name: 'Exist. Acc. Files', desc: 'Patient uploaded archives and records list' },
+  { id: 'member-verification', name: 'Member verification', desc: 'Search and verify clinical or community membership accounts' },
+  { id: 'verification-entry', name: 'Verification Entry', desc: 'Sleek interface to search patients and submit a verification entry record' },
   { id: 'recent-upload', name: 'Recent Upload', desc: 'Private PCU upload archives' },
   { id: 'accounts', name: 'Account Management', desc: 'User accounts & roles' },
   { id: 'bulk', name: 'Bulk Entry', desc: 'CSV & batch patient imports' },
   { id: 'print', name: 'Print List', desc: 'Formatted printable directory' },
   { id: 'existing-account', name: 'Existing Account', desc: 'Directory of patient records flagged as existing accounts' },
+  { id: 'admins', name: 'Admin Credentials', desc: 'Administrator username and credentials management' },
   { id: 'settings', name: 'Website Settings', desc: 'Branding & access rules' }
 ];
 
@@ -93,19 +101,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [navPrint, setNavPrint] = useState(siteSettings.navPrint || 'Print List');
   const [navAdmins, setNavAdmins] = useState(siteSettings.navAdmins || 'Admin Credentials');
   const [navSettings, setNavSettings] = useState(siteSettings.navSettings || 'Website Settings');
+  const [navExistingAccount, setNavExistingAccount] = useState(siteSettings.navExistingAccount || 'Existing Account');
+  const [navExistAccFiles, setNavExistAccFiles] = useState(siteSettings.navExistAccFiles || 'Exist. Acc. Files');
+  const [navMemberVerification, setNavMemberVerification] = useState(siteSettings.navMemberVerification || 'Member verification');
+  const [navVerificationEntry, setNavVerificationEntry] = useState(siteSettings.navVerificationEntry || 'Verification Entry');
 
   // Roles & Permissions States
   const [rolesList, setRolesList] = useState<string[]>(DEFAULT_ROLES);
   const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>(() => {
     return siteSettings.rolePermissions || {
-      'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-      'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-      'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-      'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'settings'],
-      'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
-      'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
-      'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print'],
-      'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print']
+      'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry', 'settings'],
+      'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry', 'settings'],
+      'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry', 'settings'],
+      'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry', 'settings'],
+      'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry'],
+      'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry'],
+      'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry'],
+      'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification', 'verification-entry']
     };
   });
 
@@ -184,6 +196,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setNavPrint(siteSettings.navPrint || 'Print List');
     setNavAdmins(siteSettings.navAdmins || 'Admin Credentials');
     setNavSettings(siteSettings.navSettings || 'Website Settings');
+    setNavExistingAccount(siteSettings.navExistingAccount || 'Existing Account');
+    setNavExistAccFiles(siteSettings.navExistAccFiles || 'Exist. Acc. Files');
+    setNavMemberVerification(siteSettings.navMemberVerification || 'Member verification');
+    setNavVerificationEntry(siteSettings.navVerificationEntry || 'Verification Entry');
     if (siteSettings.rolePermissions) {
       setRolePermissions(siteSettings.rolePermissions);
     }
@@ -344,6 +360,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           navPrint: navPrint.trim() || 'Print List',
           navAdmins: navAdmins.trim() || 'Admin Credentials',
           navSettings: navSettings.trim() || 'Website Settings',
+          navExistingAccount: navExistingAccount.trim() || 'Existing Account',
+          navExistAccFiles: navExistAccFiles.trim() || 'Exist. Acc. Files',
+          navMemberVerification: navMemberVerification.trim() || 'Member verification',
+          navVerificationEntry: navVerificationEntry.trim() || 'Verification Entry',
           rolePermissions
         })
       });
@@ -378,6 +398,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setNavPrint('Print List');
       setNavAdmins('Admin Credentials');
       setNavSettings('Website Settings');
+      setNavExistingAccount('Existing Account');
+      setNavExistAccFiles('Exist. Acc. Files');
+      setNavMemberVerification('Member verification');
+      setNavVerificationEntry('Verification Entry');
       showToast('Form reset to default presets. Make sure to click Save to persist!', 'info');
     }
   };
@@ -847,6 +871,71 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   value={navSettings}
                   onChange={(e) => setNavSettings(e.target.value)}
                   placeholder="e.g. Website Settings"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Existing Account Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navExistingAccount}
+                  onChange={(e) => setNavExistingAccount(e.target.value)}
+                  placeholder="e.g. Existing Account"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Exist. Acc. Files Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navExistAccFiles}
+                  onChange={(e) => setNavExistAccFiles(e.target.value)}
+                  placeholder="e.g. Exist. Acc. Files"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Member Verification Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navMemberVerification}
+                  onChange={(e) => setNavMemberVerification(e.target.value)}
+                  placeholder="e.g. Member verification"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Verification Entry Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navVerificationEntry}
+                  onChange={(e) => setNavVerificationEntry(e.target.value)}
+                  placeholder="e.g. Verification Entry"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Admin Credentials Link Title
+                </label>
+                <input
+                  type="text"
+                  value={navAdmins}
+                  onChange={(e) => setNavAdmins(e.target.value)}
+                  placeholder="e.g. Admin Credentials"
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
                 />
               </div>

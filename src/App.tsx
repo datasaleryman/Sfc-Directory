@@ -16,7 +16,9 @@ import {
   ChevronDown,
   User,
   UploadCloud,
-  UserCheck
+  UserCheck,
+  BadgeCheck,
+  Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, DashboardStats } from './types.js';
@@ -34,6 +36,8 @@ import { ProfileModal } from './components/ProfileModal.js';
 import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
 import { ExistingAccount } from './components/ExistingAccount.js';
+import { MemberVerification } from './components/MemberVerification.js';
+import { VerificationEntry } from './components/VerificationEntry.js';
 
 export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
 
@@ -46,7 +50,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'verification-entry' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -57,7 +61,17 @@ export default function App() {
   // Profile Modal State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings') => {
+  // Data Entry Dropdown State
+  const [isDataEntryOpen, setIsDataEntryOpen] = useState(false);
+
+  // Auto-expand "DATA ENTRY" if a sub-tab is active
+  useEffect(() => {
+    if (['bulk', 'print', 'existing-account', 'verification-entry'].includes(activeTab)) {
+      setIsDataEntryOpen(true);
+    }
+  }, [activeTab]);
+
+  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'verification-entry' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -77,6 +91,10 @@ export default function App() {
     navPrint?: string;
     navAdmins?: string;
     navSettings?: string;
+    navExistingAccount?: string;
+    navExistAccFiles?: string;
+    navMemberVerification?: string;
+    navVerificationEntry?: string;
     rolePermissions?: Record<string, string[]>;
   }>({
     title: 'PCU Uploader',
@@ -91,14 +109,21 @@ export default function App() {
     navBulk: 'Bulk Entry',
     navPrint: 'Print List',
     navAdmins: 'Admin Credentials',
-    navSettings: 'Website Settings'
+    navSettings: 'Website Settings',
+    navExistingAccount: 'Existing Account',
+    navExistAccFiles: 'Exist. Acc. Files',
+    navMemberVerification: 'Member verification',
+    navVerificationEntry: 'Verification Entry'
   });
 
   const userRole = adminUser?.role || 'STAFF';
   const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'Administrator', 'Master Admin'].includes(userRole);
 
   const hasTabPermission = (tabId: string) => {
-    const targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
+    let targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
+    if (targetTabId === 'member-verification' || targetTabId === 'verification-entry') {
+      targetTabId = 'existing-account';
+    }
     // Safety check: Prevent lockouts for administrative roles
     const usernameLower = adminUser?.username?.toLowerCase() || '';
     const roleUpper = userRole.toUpperCase();
@@ -192,7 +217,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'map', 'directory', 'exist-acc-files', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
+      const allTabs = ['dashboard', 'map', 'directory', 'exist-acc-files', 'member-verification', 'verification-entry', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -478,64 +503,147 @@ export default function App() {
             { id: 'dashboard', label: siteSettings.navDashboard || 'Dashboard', icon: LayoutDashboard },
             { id: 'map', label: siteSettings.navMap || 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
-            { id: 'exist-acc-files', label: 'Exist. Acc. Files', icon: UserCheck },
+            { id: 'exist-acc-files', label: siteSettings.navExistAccFiles || 'Exist. Acc. Files', icon: UserCheck },
+            { id: 'member-verification', label: siteSettings.navMemberVerification || 'Member verification', icon: BadgeCheck },
             { id: 'recent-upload', label: siteSettings.navRecentUpload || 'Recent Upload', icon: UploadCloud },
             { id: 'accounts', label: siteSettings.navAccounts || 'Account Management', icon: ShieldCheck },
-            { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
-            { id: 'print', label: siteSettings.navPrint || 'Print List', icon: Printer },
-            { id: 'existing-account', label: 'Existing Account', icon: UserCheck },
           ] as const)
             .filter((item) => hasTabPermission(item.id))
             .map((item) => {
               const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <motion.button
-                key={item.id}
-                onClick={() => handleTabChange(item.id)}
-                whileHover={{ scale: 1.02, x: 4 }}
-                whileTap={{ scale: 0.98 }}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer relative overflow-hidden group focus:outline-none ${
-                  isActive
-                    ? 'text-white'
-                    : 'text-emerald-100/70 hover:text-white hover:bg-emerald-900/30 border border-transparent hover:border-emerald-800/30'
-                }`}
-              >
-                {/* Slidable active tab background capsule */}
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTabGlow"
-                    className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 rounded-xl shadow-[0_4px_20px_rgba(16,185,129,0.35)] -z-10"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  />
-                )}
-
-                {/* Pulsing indicator/border on hover (Framer Motion) */}
-                <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
-                  {isActive ? (
-                    <>
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-100"></span>
-                    </>
-                  ) : (
-                    <span className="h-1 w-1 rounded-full bg-emerald-700/40 group-hover:bg-emerald-400 group-hover:scale-125 transition-all duration-300"></span>
+              const isActive = activeTab === item.id;
+              return (
+                <motion.button
+                  key={item.id}
+                  onClick={() => handleTabChange(item.id)}
+                  whileHover={{ scale: 1.02, x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer relative overflow-hidden group focus:outline-none ${
+                    isActive
+                      ? 'text-white'
+                      : 'text-emerald-100/70 hover:text-white hover:bg-emerald-900/30 border border-transparent hover:border-emerald-800/30'
+                  }`}
+                >
+                  {/* Slidable active tab background capsule */}
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabGlow"
+                      className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 rounded-xl shadow-[0_4px_20px_rgba(16,185,129,0.35)] -z-10"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
                   )}
-                </span>
 
-                <div className="relative flex items-center gap-2.5 min-w-0">
-                  <Icon className={`w-4 h-4 shrink-0 transition-all duration-300 ${
-                    isActive 
-                      ? 'text-white drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.2)]' 
-                      : 'text-emerald-300/60 group-hover:text-emerald-200 group-hover:rotate-6'
+                  {/* Pulsing indicator/border on hover (Framer Motion) */}
+                  <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+                    {isActive ? (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-100"></span>
+                      </>
+                    ) : (
+                      <span className="h-1 w-1 rounded-full bg-emerald-700/40 group-hover:bg-emerald-400 group-hover:scale-125 transition-all duration-300"></span>
+                    )}
+                  </span>
+
+                  <div className="relative flex items-center gap-2.5 min-w-0">
+                    <Icon className={`w-4 h-4 shrink-0 transition-all duration-300 ${
+                      isActive 
+                        ? 'text-white drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.2)]' 
+                        : 'text-emerald-300/60 group-hover:text-emerald-200 group-hover:rotate-6'
+                    }`} />
+                    <span className="truncate tracking-widest">{item.label}</span>
+                  </div>
+
+                  {/* Elegant subtle hover overlay ripple/pulse animation */}
+                  <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                </motion.button>
+              );
+            })}
+
+          {/* Collapsible DATA ENTRY Dropdown */}
+          {(() => {
+            const dataEntryItems = [
+              { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
+              { id: 'print', label: siteSettings.navPrint || 'Patient Data List', icon: Printer },
+              { id: 'existing-account', label: siteSettings.navExistingAccount || 'Existing Account', icon: UserCheck },
+              { id: 'verification-entry', label: siteSettings.navVerificationEntry || 'Verification Entry', icon: BadgeCheck },
+            ] as const;
+
+            const visibleDataEntryItems = dataEntryItems.filter((item) => hasTabPermission(item.id));
+            if (visibleDataEntryItems.length === 0) return null;
+
+            const isSubTabActive = visibleDataEntryItems.some((item) => activeTab === item.id);
+
+            return (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsDataEntryOpen(!isDataEntryOpen)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer relative group focus:outline-none ${
+                    isSubTabActive 
+                      ? 'text-white bg-emerald-950/40 border border-emerald-800/30' 
+                      : 'text-emerald-100/70 hover:text-white hover:bg-emerald-900/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Database className={`w-4 h-4 shrink-0 transition-all duration-300 ${
+                      isSubTabActive ? 'text-emerald-400' : 'text-emerald-300/60 group-hover:text-emerald-200'
+                    }`} />
+                    <span className="truncate tracking-widest">Data Entry</span>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-emerald-300/60 group-hover:text-emerald-200 transition-transform duration-200 ${
+                    isDataEntryOpen ? 'rotate-180' : ''
                   }`} />
-                  <span className="truncate tracking-widest">{item.label}</span>
-                </div>
+                </button>
 
-                {/* Elegant subtle hover overlay ripple/pulse animation */}
-                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-              </motion.button>
+                {isDataEntryOpen && (
+                  <div className="pl-4 ml-3 border-l border-emerald-800/20 space-y-1.5 mt-1">
+                    {visibleDataEntryItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeTab === item.id;
+                      return (
+                        <motion.button
+                          key={item.id}
+                          onClick={() => handleTabChange(item.id)}
+                          whileHover={{ scale: 1.01, x: 2 }}
+                          whileTap={{ scale: 0.99 }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer relative overflow-hidden group focus:outline-none ${
+                            isActive
+                              ? 'text-white font-extrabold'
+                              : 'text-emerald-200/60 hover:text-white hover:bg-emerald-900/20'
+                          }`}
+                        >
+                          {isActive && (
+                            <motion.div
+                              layoutId="activeSubTabGlow"
+                              className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 rounded-lg shadow-[0_2px_10px_rgba(16,185,129,0.25)] -z-10"
+                              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                            />
+                          )}
+
+                          <span className="relative flex h-1.5 w-1.5 shrink-0 items-center justify-center">
+                            {isActive ? (
+                              <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-100"></span>
+                            ) : (
+                              <span className="h-1 w-1 rounded-full bg-emerald-800/40 group-hover:bg-emerald-400 transition-all"></span>
+                            )}
+                          </span>
+
+                          <div className="relative flex items-center gap-2 min-w-0">
+                            <Icon className={`w-3.5 h-3.5 shrink-0 transition-all duration-300 ${
+                              isActive 
+                                ? 'text-white' 
+                                : 'text-emerald-400/50 group-hover:text-emerald-300'
+                            }`} />
+                            <span className="truncate tracking-widest">{item.label}</span>
+                          </div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
-          })}
+          })()}
         </nav>
 
         {/* Sidebar Navigation Footer */}
@@ -577,9 +685,11 @@ export default function App() {
                         : activeTab === 'accounts'
                           ? (siteSettings.navAccounts || 'Account Management')
                           : activeTab === 'existing-account'
-                            ? 'Existing Account Directory'
+                            ? (siteSettings.navExistingAccount || 'Existing Account')
                           : activeTab === 'exist-acc-files'
-                            ? 'Exist. Acc. Files'
+                            ? (siteSettings.navExistAccFiles || 'Exist. Acc. Files')
+                          : activeTab === 'member-verification'
+                            ? (siteSettings.navMemberVerification || 'Member verification')
                           : activeTab === 'admins' 
                             ? (siteSettings.navAdmins || 'Admin Credentials') 
                             : activeTab === 'settings'
@@ -816,6 +926,22 @@ export default function App() {
                   authToken={authToken}
                   showToast={showToast}
                   activeTab={activeTab}
+                  currentUser={adminUser}
+                />
+              )}
+
+              {activeTab === 'member-verification' && (
+                <MemberVerification
+                  authToken={authToken}
+                  showToast={showToast}
+                  currentUser={adminUser}
+                />
+              )}
+
+              {activeTab === 'verification-entry' && (
+                <VerificationEntry
+                  authToken={authToken}
+                  showToast={showToast}
                   currentUser={adminUser}
                 />
               )}
