@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Users,
   MapPin,
@@ -129,7 +129,15 @@ export default function App() {
     return true;
   };
 
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   const fetchSettings = () => {
+    if (activeTabRef.current === 'settings') {
+      return;
+    }
     fetch('/api/site/settings')
       .then(res => res.json())
       .then(data => {
