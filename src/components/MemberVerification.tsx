@@ -415,13 +415,28 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
     }
   };
 
+  const isSuperUser = useMemo(() => {
+    if (!currentUser) return false;
+    const roleUpper = (currentUser.role || '').toUpperCase();
+    return ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(roleUpper) || currentUser.username.toLowerCase() === 'admin';
+  }, [currentUser]);
+
   // Only display the data added from the Add New File button, that has been saved to base44 database.
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       const nameUpper = (item.full_name || '').toUpperCase();
-      return nameUpper.startsWith('VERIFICATION DOC');
+      const isDoc = nameUpper.startsWith('VERIFICATION DOC');
+      if (!isDoc) return false;
+
+      // Filter by account if user is not superadmin
+      if (currentUser && !isSuperUser) {
+        const itemUser = (item.submittedBy || '').toLowerCase();
+        const loggedInUser = currentUser.username.toLowerCase();
+        return itemUser === loggedInUser;
+      }
+      return true;
     });
-  }, [items]);
+  }, [items, currentUser, isSuperUser]);
 
   // Dynamically group items into Barangay Folders
   const barangayFolders = useMemo(() => {

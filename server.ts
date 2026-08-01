@@ -58,7 +58,9 @@ import {
   deleteLocalExistingAccount,
   ensureContactsSynced,
   syncPCUUpdatesFromBase44,
-  resetGoogleSheetsCooldown
+  resetGoogleSheetsCooldown,
+  getCachedSubmissionMessages,
+  createSubmissionMessage
 } from './server/db.js';
 import {
   createToken,
@@ -441,7 +443,69 @@ export async function getApp() {
   app.get('/api/existing-accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const existing = getLocalExistingAccounts();
+      
+      const userRole = (req.user?.role || 'Staff').toUpperCase();
+      const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(userRole) || req.user?.username.toLowerCase() === 'admin';
+      
+      if (!isSuperUser && req.user?.username) {
+        const usernameLower = req.user.username.toLowerCase();
+        const filtered = existing.filter(item => {
+          return (item.submittedBy || '').toLowerCase() === usernameLower;
+        });
+        return res.json(filtered);
+      }
+      
       res.json(existing);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET messages from SubmissionMessage table
+  app.get('/api/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const force = req.query.force === 'true';
+      const messages = await getCachedSubmissionMessages(force);
+      
+      const userRole = (req.user?.role || 'Staff').toUpperCase();
+      const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(userRole) || req.user?.username.toLowerCase() === 'admin';
+      
+      if (!isSuperUser && req.user?.username) {
+        const usernameLower = req.user.username.toLowerCase();
+        const userObj = findUser(req.user.username);
+        const userBarangayLower = (userObj?.barangay || '').toLowerCase().trim();
+
+        const filtered = messages.filter((msg: any) => {
+          const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || '').toLowerCase().trim();
+          const recipientLower = (msg.recipient || msg.to || '').toLowerCase().trim();
+          const msgBarangayLower = (msg.barangay || '').toLowerCase().trim();
+          const submittedByLower = (msg.submittedBy || '').toLowerCase().trim();
+
+          return (
+            senderLower === usernameLower ||
+            submittedByLower === usernameLower ||
+            recipientLower === usernameLower ||
+            (userBarangayLower && msgBarangayLower === userBarangayLower)
+          );
+        });
+        return res.json(filtered);
+      }
+      
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST a new message to SubmissionMessage table
+  app.post('/api/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { sender, message, recipient, barangay } = req.body;
+      if (!sender || !message) {
+        return res.status(400).json({ error: 'Sender and message content are required.' });
+      }
+      const newMsg = await createSubmissionMessage(sender, message, recipient, barangay);
+      res.json(newMsg);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -478,6 +542,19 @@ export async function getApp() {
     try {
       const username = req.user?.username || 'Admin';
       const id = req.params.id;
+
+      // Access control: only superusers or the original submitter can update
+      const userRole = (req.user?.role || 'Staff').toUpperCase();
+      const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(userRole) || req.user?.username.toLowerCase() === 'admin';
+      
+      if (!isSuperUser && req.user?.username) {
+        const existing = getLocalExistingAccounts();
+        const record = existing.find(item => item.id === id);
+        if (record && (record.submittedBy || '').toLowerCase() !== req.user.username.toLowerCase()) {
+          return res.status(403).json({ error: 'Permission denied: You can only update records you submitted.' });
+        }
+      }
+
       const updated = await updateLocalExistingAccount(id, req.body, username);
       res.json(updated);
     } catch (err: any) {
@@ -497,6 +574,17 @@ export async function getApp() {
       }
 
       const id = req.params.id;
+
+      // Access control: only superusers or original submitter can delete
+      const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(role) || req.user?.username.toLowerCase() === 'admin';
+      if (!isSuperUser && req.user?.username) {
+        const existing = getLocalExistingAccounts();
+        const record = existing.find(item => item.id === id);
+        if (record && (record.submittedBy || '').toLowerCase() !== req.user.username.toLowerCase()) {
+          return res.status(403).json({ error: 'Permission denied: You can only delete records you submitted.' });
+        }
+      }
+
       const updatedAccounts = await deleteLocalExistingAccount(id, username);
       res.json({ success: true, message: 'Record successfully deleted.', data: updatedAccounts });
     } catch (err: any) {

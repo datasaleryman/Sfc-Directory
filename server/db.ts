@@ -952,17 +952,42 @@ const base44BarangaysCache = new Set<string>();
 const HOUSEHOLDS_CACHE_FILE = path.join(DATA_DIR, 'base44_households.json');
 const PCUS_CACHE_FILE = path.join(DATA_DIR, 'base44_pcus.json');
 const MEMBER_VERIFIED_CACHE_FILE = path.join(DATA_DIR, 'base44_member_verified.json');
+const MESSAGES_CACHE_FILE = path.join(DATA_DIR, 'base44_messages.json');
 
 let lastHouseholdsFetchTime = 0;
 let lastPCUsFetchTime = 0;
 let lastMemberVerifiedFetchTime = 0;
+let lastMessagesFetchTime = 0;
 
 // Rate limiting tracking
-let base44RateLimitResetTime = 0;
+const COOLDOWN_FILE = path.join(DATA_DIR, 'base44_cooldown.json');
+
+function getCooldownResetTime(): number {
+  try {
+    if (fs.existsSync(COOLDOWN_FILE)) {
+      const data = fs.readFileSync(COOLDOWN_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (typeof parsed.resetTime === 'number') {
+        return parsed.resetTime;
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return 0;
+}
+
+function setCooldownResetTime(time: number) {
+  try {
+    fs.writeFileSync(COOLDOWN_FILE, JSON.stringify({ resetTime: time }), 'utf-8');
+  } catch (e) {
+    // Ignore
+  }
+}
 
 function checkRateLimit(): boolean {
-  if (Date.now() < base44RateLimitResetTime) {
-    console.warn(`[Base44 Rate Limit] Cooldown active for another ${Math.ceil((base44RateLimitResetTime - Date.now()) / 1000)}s. Bypassing live fetch to avoid 429.`);
+  const resetTime = getCooldownResetTime();
+  if (Date.now() < resetTime) {
     return true;
   }
   return false;
@@ -970,9 +995,10 @@ function checkRateLimit(): boolean {
 
 function handleBase44Error(err: any) {
   const errMsg = err?.message || '';
-  if (errMsg.includes('429') || errMsg.includes('traffic volume limit exceeded') || errMsg.includes('limit exceeded')) {
-    console.warn('[Base44 Rate Limit] Detected rate limit / traffic volume limit from Base44 API. Initiating 15-minute cooldown...');
-    base44RateLimitResetTime = Date.now() + 15 * 60 * 1000; // 15 minutes of quiet time
+  if (errMsg.includes('429') || errMsg.includes('traffic volume limit exceeded') || errMsg.includes('limit exceeded') || errMsg.includes('Too Many Requests')) {
+    const cooldownTime = Date.now() + 15 * 60 * 1000; // 15 minutes of quiet time
+    setCooldownResetTime(cooldownTime);
+    console.info('[Base44 Rate Limit] Detected rate limit from Base44 API. Initiating 15-minute persistent cooldown...');
   }
 }
 
@@ -1017,7 +1043,7 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
     }
   } catch (err: any) {
     handleBase44Error(err);
-    console.warn('[Base44 Cache Warning] Failed to fetch live submissions from Base44. Falling back to cache. Error:', err.message);
+    console.info('[Base44 Cache Fallback] Active: serving cached submissions (API cooling down or offline).');
     if (cacheExists) {
       try {
         const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
@@ -1061,7 +1087,7 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
     }
   } catch (err: any) {
     handleBase44Error(err);
-    console.warn('[Base44 Cache Warning] Failed to fetch live PCU updates from Base44. Falling back to cache. Error:', err.message);
+    console.info('[Base44 Cache Fallback] Active: serving cached PCU updates (API cooling down or offline).');
     if (cacheExists) {
       try {
         const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
@@ -1105,7 +1131,7 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
     }
   } catch (err: any) {
     handleBase44Error(err);
-    console.warn('[Base44 Cache Warning] Failed to fetch live MemberVerifiedSubmissions from Base44. Falling back to cache. Error:', err.message);
+    console.info('[Base44 Cache Fallback] Active: serving cached MemberVerifiedSubmissions (API cooling down or offline).');
     if (cacheExists) {
       try {
         const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
@@ -1116,6 +1142,92 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
     }
   }
   return [];
+}
+
+// Throttled fetch for SubmissionMessages from Base44 with cache fallback
+export async function getCachedSubmissionMessages(force: boolean = false): Promise<any[]> {
+  const cacheExists = fs.existsSync(MESSAGES_CACHE_FILE);
+  const isRateLimited = checkRateLimit();
+  const isFresh = isCacheFreshEnough(MESSAGES_CACHE_FILE, 60000); // 1 minute fresh window for messages to feel active
+
+  if (isRateLimited || (!force && cacheExists && (Date.now() - lastMessagesFetchTime < 60000)) || (force && cacheExists && isFresh)) {
+    try {
+      if (cacheExists) {
+        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.warn('[Base44 Cache] Failed to read messages cache file:', e);
+    }
+  }
+
+  try {
+    const messageEntity = (base44.entities as any).SubmissionMessage;
+    if (messageEntity && typeof messageEntity.list === 'function') {
+      console.log('[Base44 SDK] Fetching live SubmissionMessage entities from Base44...');
+      const records = await messageEntity.list(undefined, 5000);
+      if (records && Array.isArray(records)) {
+        lastMessagesFetchTime = Date.now();
+        await safeWriteFile(MESSAGES_CACHE_FILE, JSON.stringify(records, null, 2), 'utf-8');
+        return records;
+      }
+    }
+  } catch (err: any) {
+    handleBase44Error(err);
+    console.info('[Base44 Cache Fallback] Active: serving cached SubmissionMessages (API cooling down or offline).');
+    if (cacheExists) {
+      try {
+        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
+      } catch (e) {
+        console.warn('[Base44 Cache] Failed to read fallback messages cache:', e);
+      }
+    }
+  }
+  return [];
+}
+
+// Add a new SubmissionMessage to Base44
+export async function createSubmissionMessage(sender: string, message: string, recipient?: string, barangay?: string): Promise<any> {
+  const payload = {
+    sender,
+    senderName: sender,
+    message,
+    content: message,
+    recipient: recipient || '',
+    barangay: barangay || '',
+    createdAt: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  };
+
+  let newRecord: any = null;
+  try {
+    const messageEntity = (base44.entities as any).SubmissionMessage;
+    if (messageEntity && typeof messageEntity.create === 'function') {
+      console.log('[Base44 SDK] Creating live SubmissionMessage in Base44...');
+      newRecord = await messageEntity.create(payload);
+    }
+  } catch (err: any) {
+    console.warn('[Base44 SDK Warning] Failed to create SubmissionMessage on Base44 side:', err.message);
+  }
+
+  // Fallback / Cache update
+  if (!newRecord) {
+    newRecord = {
+      ...payload,
+      id: `local_msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+    };
+  }
+
+  try {
+    const current = await getCachedSubmissionMessages(false);
+    const updated = [newRecord, ...current];
+    await safeWriteFile(MESSAGES_CACHE_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  } catch (cacheErr: any) {
+    console.warn('[Base44 Cache Warning] Failed to update cache with new message:', cacheErr.message);
+  }
+
+  return newRecord;
 }
 
 // Safely parse uploaded files which can be stringified JSON in the Base44 database

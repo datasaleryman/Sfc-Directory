@@ -18,7 +18,10 @@ import {
   UploadCloud,
   UserCheck,
   BadgeCheck,
-  Database
+  Database,
+  Mail,
+  Bell,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, DashboardStats } from './types.js';
@@ -37,6 +40,7 @@ import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
 import { ExistingAccount } from './components/ExistingAccount.js';
 import { MemberVerification } from './components/MemberVerification.js';
+import { Inbox } from './components/Inbox.js';
 
 export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
 
@@ -49,7 +53,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -70,7 +74,7 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -120,6 +124,9 @@ export default function App() {
     let targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
     if (targetTabId === 'member-verification') {
       targetTabId = 'existing-account';
+    }
+    if (targetTabId === 'inbox') {
+      targetTabId = 'dashboard';
     }
     // Safety check: Prevent lockouts for administrative roles
     const usernameLower = adminUser?.username?.toLowerCase() || '';
@@ -214,7 +221,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'map', 'directory', 'exist-acc-files', 'member-verification', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
+      const allTabs = ['dashboard', 'inbox', 'map', 'directory', 'exist-acc-files', 'member-verification', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -242,6 +249,104 @@ export default function App() {
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Inbox & SubmissionMessage State & Polling
+  const [messagesList, setMessagesList] = useState<any[]>([]);
+  const [seenMessageIds, setSeenMessageIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('seen_message_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [activePopupMessage, setActivePopupMessage] = useState<any | null>(null);
+
+  // Ref to track if it is indeed the first fetch of messages to avoid spamming alerts on login
+  const isFirstFetchRef = useRef(true);
+
+  // Reset first fetch flag on auth changes
+  useEffect(() => {
+    isFirstFetchRef.current = true;
+  }, [authToken, adminUser]);
+
+  // Poll for messages to trigger notifications and badge updates
+  useEffect(() => {
+    if (!authToken) return;
+
+    const checkNewMessages = async () => {
+      try {
+        const res = await fetch('/api/messages', {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          let filteredData = data;
+          if (adminUser && !isSuperUser) {
+            const usernameLower = adminUser.username.toLowerCase();
+            const userBarangayLower = (adminUser.barangay || '').toLowerCase().trim();
+
+            filteredData = data.filter((msg: any) => {
+              const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || '').toLowerCase().trim();
+              const recipientLower = (msg.recipient || msg.to || '').toLowerCase().trim();
+              const msgBarangayLower = (msg.barangay || '').toLowerCase().trim();
+              const submittedByLower = (msg.submittedBy || '').toLowerCase().trim();
+
+              return (
+                senderLower === usernameLower ||
+                submittedByLower === usernameLower ||
+                recipientLower === usernameLower ||
+                (userBarangayLower && msgBarangayLower === userBarangayLower)
+              );
+            });
+          }
+          setMessagesList(filteredData);
+
+          if (isFirstFetchRef.current) {
+            isFirstFetchRef.current = false;
+            // Initially mark all existing messages as "seen" so we don't spam popups, 
+            // unless the user has never loaded them before.
+            if (seenMessageIds.length === 0 && filteredData.length > 0) {
+              const ids = filteredData.map((m: any) => m.id);
+              setSeenMessageIds(ids);
+              localStorage.setItem('seen_message_ids', JSON.stringify(ids));
+            }
+          } else {
+            // Find newly arrived messages (not in our seen list)
+            const unseen = filteredData.filter((m: any) => !seenMessageIds.includes(m.id));
+            if (unseen.length > 0) {
+              // Show popup for latest unseen message
+              const sortedUnseen = unseen.sort((a, b) => {
+                const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
+                const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
+                return dateB - dateA;
+              });
+
+              const latestUnseen = sortedUnseen[0];
+              setActivePopupMessage(latestUnseen);
+              
+              // Show a nice desktop toast notification as well
+              showToast(`New Message from ${latestUnseen.sender || 'System'}: "${latestUnseen.message || 'No content'}"`, 'info', 10000);
+              
+              // Automatically append all unseen messages to seen list
+              const updatedSeen = [...seenMessageIds, ...unseen.map((m: any) => m.id)];
+              setSeenMessageIds(updatedSeen);
+              localStorage.setItem('seen_message_ids', JSON.stringify(updatedSeen));
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error polling messages in App.tsx:', err);
+      }
+    };
+
+    checkNewMessages();
+    const interval = setInterval(checkNewMessages, 5000); // 5-second polling interval for real-time response!
+    return () => clearInterval(interval);
+  }, [authToken, seenMessageIds, adminUser, isSuperUser]);
 
   // Fetch Dashboard Summary Stats
   const fetchStats = async () => {
@@ -506,6 +611,7 @@ export default function App() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {([
             { id: 'dashboard', label: siteSettings.navDashboard || 'Dashboard', icon: LayoutDashboard },
+            { id: 'inbox', label: 'Inbox', icon: Mail },
             { id: 'map', label: siteSettings.navMap || 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
             { id: 'exist-acc-files', label: siteSettings.navExistAccFiles || 'Exist. Acc. Files', icon: UserCheck },
@@ -557,6 +663,11 @@ export default function App() {
                         : 'text-emerald-300/60 group-hover:text-emerald-200 group-hover:rotate-6'
                     }`} />
                     <span className="truncate tracking-widest">{item.label}</span>
+                    {item.id === 'inbox' && messagesList.filter(m => !seenMessageIds.includes(m.id)).length > 0 && (
+                      <span className="ml-2 px-1.5 py-0.5 bg-rose-500 text-white font-black text-[9px] rounded-full shadow-[0_2px_8px_rgba(244,63,94,0.4)] animate-pulse shrink-0">
+                        {messagesList.filter(m => !seenMessageIds.includes(m.id)).length}
+                      </span>
+                    )}
                   </div>
 
                   {/* Elegant subtle hover overlay ripple/pulse animation */}
@@ -847,6 +958,17 @@ export default function App() {
                 />
               )}
 
+              {activeTab === 'inbox' && (
+                <Inbox
+                  authToken={authToken || ''}
+                  showToast={showToast}
+                  currentUser={adminUser}
+                  onNewMessageReceived={(msg) => {
+                    setActivePopupMessage(msg);
+                  }}
+                />
+              )}
+
               {activeTab === 'map' && (
                 <ClinicMap
                   authToken={authToken}
@@ -982,6 +1104,82 @@ export default function App() {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Automation Popup for New Message */}
+      <AnimatePresence>
+        {activePopupMessage && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
+            >
+              <div className="bg-gradient-to-r from-teal-600 to-emerald-600 px-6 py-4 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center animate-bounce">
+                  <Bell className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">
+                    New Submission Message!
+                  </h3>
+                  <p className="text-[10px] text-teal-100 font-bold">
+                    Automation Alert
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActivePopupMessage(null)}
+                  className="ml-auto text-white/80 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4.5 space-y-2.5">
+                  <div className="text-xs">
+                    <span className="font-black text-slate-700 block text-[10px] uppercase tracking-wider mb-0.5">
+                      Sender:
+                    </span>
+                    <span className="font-bold text-slate-800 text-sm">
+                      {activePopupMessage.sender || activePopupMessage.senderName || activePopupMessage.fullName || activePopupMessage.from || 'Anonymous Sender'}
+                    </span>
+                  </div>
+                  
+                  <div className="text-xs border-t border-slate-200/50 pt-2.5">
+                    <span className="font-black text-slate-700 block text-[10px] uppercase tracking-wider mb-0.5">
+                      Message:
+                    </span>
+                    <span className="font-semibold text-slate-600 italic block leading-relaxed">
+                      "{activePopupMessage.message || activePopupMessage.content || activePopupMessage.body || 'No content'}"
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    onClick={() => {
+                      setActivePopupMessage(null);
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl transition-colors cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActivePopupMessage(null);
+                      setActiveTab('inbox');
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    View Inbox
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
