@@ -467,26 +467,48 @@ export async function getApp() {
       const force = req.query.force === 'true';
       const messages = await getCachedSubmissionMessages(force);
       
-      const userRole = (req.user?.role || 'Staff').toUpperCase();
-      const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(userRole) || req.user?.username.toLowerCase() === 'admin';
+      const isMasterAdmin = req.user?.username.toLowerCase() === 'admin';
       
-      if (!isSuperUser && req.user?.username) {
+      if (!isMasterAdmin && req.user?.username) {
         const usernameLower = req.user.username.toLowerCase();
         const userObj = findUser(req.user.username);
+        
+        const displayNameLower = (userObj?.displayName || '').toLowerCase().trim();
+        const fullNameLower = (userObj?.fullName || '').toLowerCase().trim();
+        const emailLower = (userObj?.email || '').toLowerCase().trim();
         const userBarangayLower = (userObj?.barangay || '').toLowerCase().trim();
 
         const filtered = messages.filter((msg: any) => {
-          const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || '').toLowerCase().trim();
+          const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || msg.sentBy || '').toLowerCase().trim();
           const recipientLower = (msg.recipient || msg.to || '').toLowerCase().trim();
           const msgBarangayLower = (msg.barangay || '').toLowerCase().trim();
-          const submittedByLower = (msg.submittedBy || '').toLowerCase().trim();
+          const submittedByLower = (msg.submittedBy || msg.submitted_by || '').toLowerCase().trim();
+          const msgMemberName = (msg.memberName || '').toLowerCase().trim();
+          const msgSentByEmail = (msg.sentByEmail || '').toLowerCase().trim();
 
-          return (
+          const isSender = 
             senderLower === usernameLower ||
-            submittedByLower === usernameLower ||
+            (displayNameLower && senderLower === displayNameLower) ||
+            (fullNameLower && senderLower === fullNameLower) ||
+            (emailLower && senderLower === emailLower) ||
+            (emailLower && msgSentByEmail === emailLower);
+
+          const isTarget = 
             recipientLower === usernameLower ||
-            (userBarangayLower && msgBarangayLower === userBarangayLower)
-          );
+            (displayNameLower && recipientLower === displayNameLower) ||
+            (fullNameLower && recipientLower === fullNameLower) ||
+            (emailLower && recipientLower === emailLower) ||
+            submittedByLower === usernameLower ||
+            (displayNameLower && submittedByLower === displayNameLower) ||
+            (fullNameLower && submittedByLower === fullNameLower) ||
+            (emailLower && submittedByLower === emailLower) ||
+            msgMemberName === usernameLower ||
+            (displayNameLower && msgMemberName === displayNameLower) ||
+            (fullNameLower && msgMemberName === fullNameLower) ||
+            (emailLower && msgMemberName === emailLower) ||
+            (userBarangayLower && msgBarangayLower === userBarangayLower);
+
+          return isSender || isTarget;
         });
         return res.json(filtered);
       }

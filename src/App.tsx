@@ -285,22 +285,44 @@ export default function App() {
         const data = await res.json();
         if (Array.isArray(data)) {
           let filteredData = data;
-          if (adminUser && !isSuperUser) {
+          if (adminUser && adminUser.username.toLowerCase() !== 'admin') {
             const usernameLower = adminUser.username.toLowerCase();
+            const displayNameLower = (adminUser.displayName || '').toLowerCase().trim();
+            const fullNameLower = (adminUser.fullName || '').toLowerCase().trim();
+            const emailLower = (adminUser.email || '').toLowerCase().trim();
             const userBarangayLower = (adminUser.barangay || '').toLowerCase().trim();
 
             filteredData = data.filter((msg: any) => {
-              const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || '').toLowerCase().trim();
+              const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || msg.sentBy || '').toLowerCase().trim();
               const recipientLower = (msg.recipient || msg.to || '').toLowerCase().trim();
               const msgBarangayLower = (msg.barangay || '').toLowerCase().trim();
-              const submittedByLower = (msg.submittedBy || '').toLowerCase().trim();
+              const submittedByLower = (msg.submittedBy || msg.submitted_by || '').toLowerCase().trim();
+              const msgMemberName = (msg.memberName || '').toLowerCase().trim();
+              const msgSentByEmail = (msg.sentByEmail || '').toLowerCase().trim();
 
-              return (
+              const isSender = 
                 senderLower === usernameLower ||
-                submittedByLower === usernameLower ||
+                (displayNameLower && senderLower === displayNameLower) ||
+                (fullNameLower && senderLower === fullNameLower) ||
+                (emailLower && senderLower === emailLower) ||
+                (emailLower && msgSentByEmail === emailLower);
+
+              const isTarget = 
                 recipientLower === usernameLower ||
-                (userBarangayLower && msgBarangayLower === userBarangayLower)
-              );
+                (displayNameLower && recipientLower === displayNameLower) ||
+                (fullNameLower && recipientLower === fullNameLower) ||
+                (emailLower && recipientLower === emailLower) ||
+                submittedByLower === usernameLower ||
+                (displayNameLower && submittedByLower === displayNameLower) ||
+                (fullNameLower && submittedByLower === fullNameLower) ||
+                (emailLower && submittedByLower === emailLower) ||
+                msgMemberName === usernameLower ||
+                (displayNameLower && msgMemberName === displayNameLower) ||
+                (fullNameLower && msgMemberName === fullNameLower) ||
+                (emailLower && msgMemberName === emailLower) ||
+                (userBarangayLower && msgBarangayLower === userBarangayLower);
+
+              return isSender || isTarget;
             });
           }
           setMessagesList(filteredData);

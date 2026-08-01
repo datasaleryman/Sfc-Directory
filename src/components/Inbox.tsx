@@ -3,18 +3,10 @@ import {
   Mail, 
   Search, 
   RefreshCw, 
-  Send, 
-  Trash2, 
   Clock, 
-  User, 
-  Bell, 
   CheckCircle,
   MessageSquare,
-  AlertCircle,
-  Loader2,
-  X,
-  Users,
-  MapPin
+  Loader2
 } from 'lucide-react';
 
 interface SubmissionMessage {
@@ -23,6 +15,8 @@ interface SubmissionMessage {
   senderName?: string;
   fullName?: string;
   from?: string;
+  sentBy?: string;
+  submittedBy?: string;
   message?: string;
   content?: string;
   body?: string;
@@ -34,7 +28,7 @@ interface InboxProps {
   authToken: string;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
   onNewMessageReceived?: (msg: SubmissionMessage) => void;
-  currentUser?: { username: string; role: string; displayName?: string; avatarDataUrl?: string; barangay?: string } | null;
+  currentUser?: { username: string; role: string; displayName?: string; fullName?: string; email?: string; avatarDataUrl?: string; barangay?: string } | null;
 }
 
 export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessageReceived, currentUser = null }) => {
@@ -42,112 +36,31 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessage, setSelectedMessage] = useState<SubmissionMessage | null>(null);
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
 
-  // Compose Message states
-  const [isComposeOpen, setIsComposeOpen] = useState(false);
-  const [composeTargetType, setComposeTargetType] = useState<'user' | 'barangay' | 'all'>('user');
-  const [composeRecipient, setComposeRecipient] = useState('');
-  const [composeBarangay, setComposeBarangay] = useState('');
-  const [composeContent, setComposeContent] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-
-  // Lists for dropdown selections
+  // Lists for user details mapping
   const [usersList, setUsersList] = useState<any[]>([]);
-  const [barangaysList, setBarangaysList] = useState<string[]>([]);
 
-  const isSuperUser = React.useMemo(() => {
+  const isMasterAdmin = React.useMemo(() => {
     if (!currentUser) return false;
-    const roleUpper = (currentUser.role || '').toUpperCase();
-    return ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(roleUpper) || currentUser.username.toLowerCase() === 'admin';
+    return currentUser.username.toLowerCase() === 'admin';
   }, [currentUser]);
 
-  // Fetch users and barangays for dropdowns if superuser
+  // Fetch users for mapping
   useEffect(() => {
-    if (isSuperUser && authToken) {
-      // Fetch users
+    if (authToken) {
       fetch('/api/users', {
         headers: { 'Authorization': `Bearer ${authToken}` }
       })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
-            // Filter out system admin or just display all accounts
             setUsersList(data);
           }
         })
         .catch(err => console.error('Error fetching users:', err));
-
-      // Fetch barangays
-      fetch('/api/public/barangays')
-        .then(res => res.json())
-        .then(data => {
-          if (data && Array.isArray(data.barangays)) {
-            setBarangaysList(data.barangays);
-          }
-        })
-        .catch(err => console.error('Error fetching barangays:', err));
     }
-  }, [isSuperUser, authToken]);
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!composeContent.trim()) {
-      showToast('Please type a message body.', 'error');
-      return;
-    }
-
-    let targetRecipient = '';
-    let targetBarangay = '';
-
-    if (composeTargetType === 'user') {
-      if (!composeRecipient) {
-        showToast('Please select a recipient account.', 'error');
-        return;
-      }
-      targetRecipient = composeRecipient;
-    } else if (composeTargetType === 'barangay') {
-      if (!composeBarangay) {
-        showToast('Please select a target Barangay folder.', 'error');
-        return;
-      }
-      targetBarangay = composeBarangay;
-    }
-
-    try {
-      setSendingMessage(true);
-      const senderName = currentUser?.displayName || currentUser?.username || 'System Administrator';
-      const res = await fetch('/api/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({
-          sender: senderName,
-          message: composeContent.trim(),
-          recipient: targetRecipient,
-          barangay: targetBarangay
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to send message.');
-      }
-
-      showToast('Message successfully dispatched & registered to Base44.', 'success');
-      setComposeContent('');
-      setComposeRecipient('');
-      setComposeBarangay('');
-      setIsComposeOpen(false);
-      
-      // Refresh message list
-      fetchMessages(true);
-    } catch (err: any) {
-      showToast(err.message || 'Error dispatching message.', 'error');
-    } finally {
-      setSendingMessage(false);
-    }
-  };
+  }, [authToken]);
 
   const fetchMessages = async (force = false) => {
     try {
@@ -203,8 +116,24 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
     return () => clearInterval(interval);
   }, [authToken]);
 
+  // Robust resolver that checks all raw fields and maps username/displayNames to the official Full Name
   const getSender = (msg: any) => {
-    return msg.sender || msg.senderName || msg.fullName || msg.from || 'Anonymous';
+    const rawSender = msg.sender || msg.senderName || msg.fullName || msg.sentBy || msg.submittedBy || msg.from;
+    
+    if (!rawSender) return 'Anonymous';
+    
+    const cleanRaw = rawSender.trim();
+    const matchedUser = usersList.find(u => 
+      (u.username && u.username.toLowerCase() === cleanRaw.toLowerCase()) ||
+      (u.displayName && u.displayName.toLowerCase() === cleanRaw.toLowerCase()) ||
+      (u.fullName && u.fullName.toLowerCase() === cleanRaw.toLowerCase())
+    );
+    
+    if (matchedUser) {
+      return matchedUser.fullName || matchedUser.displayName || matchedUser.username;
+    }
+    
+    return rawSender;
   };
 
   const getContent = (msg: any) => {
@@ -226,28 +155,50 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
     const matchesSearch = sender.includes(query) || content.includes(query);
     if (!matchesSearch) return false;
 
-    // Filter by account if user is not superadmin
-    if (currentUser && !isSuperUser) {
+    // Filter by account if user is not the master admin
+    if (currentUser && !isMasterAdmin) {
       const usernameLower = currentUser.username.toLowerCase();
+      const displayNameLower = (currentUser.displayName || '').toLowerCase().trim();
+      const fullNameLower = (currentUser.fullName || '').toLowerCase().trim();
+      const emailLower = (currentUser.email || '').toLowerCase().trim();
       const userBarangayLower = (currentUser.barangay || '').toLowerCase().trim();
 
-      const senderLower = sender.toLowerCase();
+      const senderLower = (msg.sender || msg.senderName || msg.fullName || msg.from || (msg as any).sentBy || '').toLowerCase().trim();
       const recipientLower = ((msg as any).recipient || (msg as any).to || '').toLowerCase().trim();
       const msgBarangayLower = ((msg as any).barangay || '').toLowerCase().trim();
-      const submittedByLower = ((msg as any).submittedBy || '').toLowerCase().trim();
+      const submittedByLower = ((msg as any).submittedBy || (msg as any).submitted_by || '').toLowerCase().trim();
+      const msgMemberName = ((msg as any).memberName || '').toLowerCase().trim();
+      const msgSentByEmail = ((msg as any).sentByEmail || '').toLowerCase().trim();
 
-      return (
+      const isSender = 
         senderLower === usernameLower ||
-        submittedByLower === usernameLower ||
+        (displayNameLower && senderLower === displayNameLower) ||
+        (fullNameLower && senderLower === fullNameLower) ||
+        (emailLower && senderLower === emailLower) ||
+        (emailLower && msgSentByEmail === emailLower);
+
+      const isTarget = 
         recipientLower === usernameLower ||
-        (userBarangayLower && msgBarangayLower === userBarangayLower)
-      );
+        (displayNameLower && recipientLower === displayNameLower) ||
+        (fullNameLower && recipientLower === fullNameLower) ||
+        (emailLower && recipientLower === emailLower) ||
+        submittedByLower === usernameLower ||
+        (displayNameLower && submittedByLower === displayNameLower) ||
+        (fullNameLower && submittedByLower === fullNameLower) ||
+        (emailLower && submittedByLower === emailLower) ||
+        msgMemberName === usernameLower ||
+        (displayNameLower && msgMemberName === displayNameLower) ||
+        (fullNameLower && msgMemberName === fullNameLower) ||
+        (emailLower && msgMemberName === emailLower) ||
+        (userBarangayLower && msgBarangayLower === userBarangayLower);
+
+      return isSender || isTarget;
     }
     return true;
   });
 
   return (
-    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-6 shadow-xs" id="inbox-page-root">
+    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-4 sm:p-6 shadow-xs" id="inbox-page-root">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200/60">
         <div>
@@ -260,15 +211,6 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {isSuperUser && (
-            <button
-              onClick={() => setIsComposeOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-3xs cursor-pointer focus:outline-none"
-            >
-              <Send className="w-3.5 h-3.5" />
-              Compose Message
-            </button>
-          )}
           <button
             onClick={() => fetchMessages(true)}
             disabled={loading}
@@ -282,7 +224,7 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
         {/* Left pane: Message list with Search */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className={`lg:col-span-5 space-y-4 ${mobileView === 'list' ? 'block' : 'hidden lg:block'}`}>
           {/* Search bar & list */}
           <div className="bg-white rounded-2xl border border-slate-200/50 overflow-hidden shadow-3xs flex flex-col h-[520px]">
             <div className="p-4 border-b border-slate-100 bg-slate-50/30 flex items-center gap-3 shrink-0">
@@ -318,7 +260,10 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
                   return (
                     <div
                       key={msg.id}
-                      onClick={() => setSelectedMessage(msg)}
+                      onClick={() => {
+                        setSelectedMessage(msg);
+                        setMobileView('detail');
+                      }}
                       className={`p-4 transition-all cursor-pointer flex items-start gap-3.5 ${
                         isSelected 
                           ? 'bg-teal-50/40 border-l-4 border-teal-500' 
@@ -352,11 +297,21 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
         </div>
 
         {/* Right pane: Message details viewer */}
-        <div className="lg:col-span-7">
-          <div className="bg-white rounded-2xl border border-slate-200/50 p-6 h-[520px] flex flex-col shadow-3xs relative overflow-hidden">
+        <div className={`lg:col-span-7 ${mobileView === 'detail' ? 'block' : 'hidden lg:block'}`}>
+          <div className="bg-white rounded-2xl border border-slate-200/50 p-4 sm:p-6 h-[520px] flex flex-col shadow-3xs relative overflow-hidden">
             {selectedMessage ? (
               <div className="flex-1 flex flex-col">
-                <div className="pb-5 border-b border-slate-100">
+                {/* Mobile Back Button */}
+                <div className="lg:hidden pb-4 border-b border-slate-100 mb-4 shrink-0">
+                  <button
+                    onClick={() => setMobileView('list')}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    &larr; Back to Message List
+                  </button>
+                </div>
+
+                <div className="pb-5 border-b border-slate-100 shrink-0">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 font-black text-sm select-none">
                       {getSender(selectedMessage).charAt(0).toUpperCase() || '?'}
@@ -382,7 +337,7 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 bg-white flex justify-between items-center">
+                <div className="pt-4 border-t border-slate-100 bg-white flex flex-col sm:flex-row gap-3 justify-between items-center shrink-0">
                   <span className="text-[11px] text-slate-400 font-bold">
                     Read-only submission record
                   </span>
@@ -394,6 +349,15 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-400 py-12">
+                {/* Mobile Back Button if details is open with nothing selected */}
+                <div className="lg:hidden mb-4 shrink-0">
+                  <button
+                    onClick={() => setMobileView('list')}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    &larr; Back to Message List
+                  </button>
+                </div>
                 <MessageSquare className="w-12 h-12 text-slate-200 mb-3" />
                 <h3 className="text-xs font-black text-slate-600 uppercase tracking-wider">
                   No Message Selected
@@ -406,185 +370,6 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
           </div>
         </div>
       </div>
-
-      {/* Compose Message Modal Overlay */}
-      {isComposeOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 transition-all">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <Send className="w-4 h-4 text-teal-600" />
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
-                  Compose Dispatch / Message
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsComposeOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleSendMessage} className="p-6 space-y-5">
-              {/* Target Type selector tabs */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                  Recipient Mode / Target
-                </label>
-                <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setComposeTargetType('user');
-                      setComposeBarangay('');
-                    }}
-                    className={`py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
-                      composeTargetType === 'user'
-                        ? 'bg-white text-teal-700 shadow-3xs'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    User Account
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setComposeTargetType('barangay');
-                      setComposeRecipient('');
-                    }}
-                    className={`py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
-                      composeTargetType === 'barangay'
-                        ? 'bg-white text-teal-700 shadow-3xs'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Barangay Group
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setComposeTargetType('all');
-                      setComposeRecipient('');
-                      setComposeBarangay('');
-                    }}
-                    className={`py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
-                      composeTargetType === 'all'
-                        ? 'bg-white text-teal-700 shadow-3xs'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Broadcast (All)
-                  </button>
-                </div>
-              </div>
-
-              {/* Recipient Selection depending on Target Type */}
-              {composeTargetType === 'user' && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                    <User className="w-3 h-3 text-teal-600" />
-                    Target User Account
-                  </label>
-                  <select
-                    value={composeRecipient}
-                    onChange={(e) => setComposeRecipient(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 text-slate-800 rounded-xl text-xs font-semibold focus:outline-none focus:border-teal-500 transition-colors"
-                  >
-                    <option value="">-- Choose Account --</option>
-                    {usersList.map((user) => (
-                      <option key={user.username} value={user.username}>
-                        {user.displayName || user.username} ({user.role})
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[9px] text-slate-400 font-medium">
-                    This message will automatically be detected and display ONLY in the selected account's inbox.
-                  </p>
-                </div>
-              )}
-
-              {composeTargetType === 'barangay' && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-teal-600" />
-                    Target Barangay Group
-                  </label>
-                  <select
-                    value={composeBarangay}
-                    onChange={(e) => setComposeBarangay(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 text-slate-800 rounded-xl text-xs font-semibold focus:outline-none focus:border-teal-500 transition-colors"
-                  >
-                    <option value="">-- Choose Barangay Folder --</option>
-                    {barangaysList.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[9px] text-slate-400 font-medium">
-                    This message will automatically display for all user accounts assigned to the selected Barangay.
-                  </p>
-                </div>
-              )}
-
-              {composeTargetType === 'all' && (
-                <div className="p-3 bg-teal-50/50 border border-teal-100 rounded-xl flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-teal-700 font-medium leading-relaxed">
-                    This is a global broadcast. The message will automatically display on the inbox of all administrators, superusers, and staff members across all locations.
-                  </p>
-                </div>
-              )}
-
-              {/* Message Content */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Message Body
-                </label>
-                <textarea
-                  placeholder="Type message content..."
-                  value={composeContent}
-                  onChange={(e) => setComposeContent(e.target.value)}
-                  rows={4}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 text-slate-800 rounded-xl text-xs font-semibold focus:outline-none focus:border-teal-500 transition-colors placeholder:text-slate-400 resize-none"
-                />
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="pt-2 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsComposeOpen(false)}
-                  className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-extrabold text-xs rounded-xl transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={sendingMessage}
-                  className="flex items-center gap-1.5 px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-3xs cursor-pointer focus:outline-none disabled:opacity-50"
-                >
-                  {sendingMessage ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Dispatching...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      Dispatch Message
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

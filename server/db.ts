@@ -1148,9 +1148,9 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
 export async function getCachedSubmissionMessages(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(MESSAGES_CACHE_FILE);
   const isRateLimited = checkRateLimit();
-  const isFresh = isCacheFreshEnough(MESSAGES_CACHE_FILE, 60000); // 1 minute fresh window for messages to feel active
+  const cacheLifetime = 5000; // 5 seconds for highly responsive and active messaging
 
-  if (isRateLimited || (!force && cacheExists && (Date.now() - lastMessagesFetchTime < 60000)) || (force && cacheExists && isFresh)) {
+  if (isRateLimited || (!force && cacheExists && (Date.now() - lastMessagesFetchTime < cacheLifetime))) {
     try {
       if (cacheExists) {
         const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
@@ -1170,6 +1170,14 @@ export async function getCachedSubmissionMessages(force: boolean = false): Promi
         lastMessagesFetchTime = Date.now();
         await safeWriteFile(MESSAGES_CACHE_FILE, JSON.stringify(records, null, 2), 'utf-8');
         return records;
+      }
+    } else {
+      // If SubmissionMessage is not dynamically supported on the Base44 server-side,
+      // seamlessly fall back to our local persistent JSON database file so messages work perfectly.
+      console.info('[Base44 Local Mode] SubmissionMessage entity not active on remote. Serving from local database.');
+      if (cacheExists) {
+        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
       }
     }
   } catch (err: any) {
@@ -1192,6 +1200,10 @@ export async function createSubmissionMessage(sender: string, message: string, r
   const payload = {
     sender,
     senderName: sender,
+    submittedBy: sender,
+    submitted_by: sender,
+    sentBy: sender,
+    memberName: recipient || barangay || 'Broadcast',
     message,
     content: message,
     recipient: recipient || '',
