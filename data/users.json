@@ -212,16 +212,16 @@
   {
     "username": "jeenrosshicrea",
     "passwordHash": "a2d33b83140d6995df3d42a7583a21db0e0873855b9754debb08aea52751ca0f",
-    "role": "LEADER",
+    "role": "ADMIN",
     "displayName": "Jeanrose Monsion",
-    "avatarDataUrl": "",
+    "avatarDataUrl": "/uploads/avatars/avatar_jeenrosshicrea.png?t=1785489211085",
     "fullName": "Jeanrose Monsion",
     "email": "jeenrosshicrea@gmail.com",
     "barangay": "Lumbia",
     "status": "Active",
     "createdAt": "2026-07-27T03:07:30.337Z",
     "passwordPlain": "199624",
-    "updatedAt": ""
+    "updatedAt": "2026-07-31T09:13:31.085Z"
   },
   {
     "username": "elgen200513",
@@ -347,6 +347,34 @@
     "status": "Active",
     "createdAt": "2026-07-30T03:13:47.719Z",
     "passwordPlain": "jingsunacasio09096429457",
+    "updatedAt": ""
+  },
+  {
+    "username": "villanuevarhea839",
+    "passwordHash": "4980a82c82826d835da58e9bb6169698692d9470b293c9ed67f8045206ad29b2",
+    "role": "LEADER",
+    "displayName": "Rhea  C. Villanueva",
+    "avatarDataUrl": "",
+    "fullName": "Rhea  C. Villanueva",
+    "email": "villanuevarhea839@gmail.com",
+    "barangay": "Tuburan",
+    "status": "Active",
+    "createdAt": "2026-07-31T05:38:30.586Z",
+    "passwordPlain": "ssitkizer",
+    "updatedAt": ""
+  },
+  {
+    "username": "bryansalik10",
+    "passwordHash": "ace26ce7ca3426bc996a1dfc0b7b5582c02354d451143939daae9860d8ddd4e9",
+    "role": "IT",
+    "displayName": "Bryan Alondre Salik",
+    "avatarDataUrl": "",
+    "fullName": "Bryan Alondre Salik",
+    "email": "bryansalik10@gmail.com",
+    "barangay": "San Pedro",
+    "status": "Active",
+    "createdAt": "2026-07-31T08:23:01.006Z",
+    "passwordPlain": "23096",
     "updatedAt": ""
   }
 ]

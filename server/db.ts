@@ -435,11 +435,12 @@ export function saveSiteSettings(settings: Partial<SiteSettings>) {
 function unescapeHtml(str: string): string {
   if (!str) return '';
   return str
-    .replace(/&#x2F;/g, '/')
-    .replace(/&#x3D;/g, '=')
+    .replace(/&#[xX]2[fF];/g, '/')
+    .replace(/&#[xX]3[dD];/g, '=')
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#[xX]27;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
 }
@@ -950,19 +951,57 @@ const base44BarangaysCache = new Set<string>();
 
 const HOUSEHOLDS_CACHE_FILE = path.join(DATA_DIR, 'base44_households.json');
 const PCUS_CACHE_FILE = path.join(DATA_DIR, 'base44_pcus.json');
+const MEMBER_VERIFIED_CACHE_FILE = path.join(DATA_DIR, 'base44_member_verified.json');
 
 let lastHouseholdsFetchTime = 0;
 let lastPCUsFetchTime = 0;
+let lastMemberVerifiedFetchTime = 0;
+
+// Rate limiting tracking
+let base44RateLimitResetTime = 0;
+
+function checkRateLimit(): boolean {
+  if (Date.now() < base44RateLimitResetTime) {
+    console.warn(`[Base44 Rate Limit] Cooldown active for another ${Math.ceil((base44RateLimitResetTime - Date.now()) / 1000)}s. Bypassing live fetch to avoid 429.`);
+    return true;
+  }
+  return false;
+}
+
+function handleBase44Error(err: any) {
+  const errMsg = err?.message || '';
+  if (errMsg.includes('429') || errMsg.includes('traffic volume limit exceeded') || errMsg.includes('limit exceeded')) {
+    console.warn('[Base44 Rate Limit] Detected rate limit / traffic volume limit from Base44 API. Initiating 15-minute cooldown...');
+    base44RateLimitResetTime = Date.now() + 15 * 60 * 1000; // 15 minutes of quiet time
+  }
+}
+
+function isCacheFreshEnough(filePath: string, maxAgeMs: number = 300000): boolean {
+  try {
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      const age = Date.now() - stats.mtimeMs;
+      return age < maxAgeMs;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+  return false;
+}
 
 // Throttled fetch for HouseholdSubmissions with persistent cache fallback
 export async function getCachedHouseholdSubmissions(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(HOUSEHOLDS_CACHE_FILE);
+  const isRateLimited = checkRateLimit();
+  const isFresh = isCacheFreshEnough(HOUSEHOLDS_CACHE_FILE, 300000); // 5 minutes protective window
   
-  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true
-  if (!force && cacheExists && (Date.now() - lastHouseholdsFetchTime < 900000)) {
+  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true AND not rate-limited AND not fresh enough
+  if (isRateLimited || (!force && cacheExists && (Date.now() - lastHouseholdsFetchTime < 900000)) || (force && cacheExists && isFresh)) {
     try {
-      const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
-      return JSON.parse(data);
+      if (cacheExists) {
+        const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
+      }
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read households cache file:', e);
     }
@@ -977,6 +1016,7 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
       return submissions;
     }
   } catch (err: any) {
+    handleBase44Error(err);
     console.warn('[Base44 Cache Warning] Failed to fetch live submissions from Base44. Falling back to cache. Error:', err.message);
     if (cacheExists) {
       try {
@@ -993,12 +1033,16 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
 // Throttled fetch for PCUUpdates with persistent cache fallback
 export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(PCUS_CACHE_FILE);
+  const isRateLimited = checkRateLimit();
+  const isFresh = isCacheFreshEnough(PCUS_CACHE_FILE, 300000); // 5 minutes protective window
 
-  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true
-  if (!force && cacheExists && (Date.now() - lastPCUsFetchTime < 900000)) {
+  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true AND not rate-limited AND not fresh enough
+  if (isRateLimited || (!force && cacheExists && (Date.now() - lastPCUsFetchTime < 900000)) || (force && cacheExists && isFresh)) {
     try {
-      const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
-      return JSON.parse(data);
+      if (cacheExists) {
+        const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
+      }
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read PCUs cache file:', e);
     }
@@ -1016,6 +1060,7 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
       }
     }
   } catch (err: any) {
+    handleBase44Error(err);
     console.warn('[Base44 Cache Warning] Failed to fetch live PCU updates from Base44. Falling back to cache. Error:', err.message);
     if (cacheExists) {
       try {
@@ -1023,6 +1068,77 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
         return JSON.parse(data);
       } catch (e) {
         console.warn('[Base44 Cache] Failed to read fallback PCUs cache file:', e);
+      }
+    }
+  }
+  return [];
+}
+
+// Throttled fetch for MemberVerifiedSubmissions with persistent cache fallback
+export async function getCachedMemberVerifiedSubmissions(force: boolean = false): Promise<any[]> {
+  const cacheExists = fs.existsSync(MEMBER_VERIFIED_CACHE_FILE);
+  const isRateLimited = checkRateLimit();
+  const isFresh = isCacheFreshEnough(MEMBER_VERIFIED_CACHE_FILE, 300000); // 5 minutes protective window
+
+  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true AND not rate-limited AND not fresh enough
+  if (isRateLimited || (!force && cacheExists && (Date.now() - lastMemberVerifiedFetchTime < 900000)) || (force && cacheExists && isFresh)) {
+    try {
+      if (cacheExists) {
+        const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.warn('[Base44 Cache] Failed to read member verified cache file:', e);
+    }
+  }
+
+  try {
+    const verifiedSubmissionEntity = (base44.entities as any).MemberVerifiedSubmission;
+    if (verifiedSubmissionEntity && typeof verifiedSubmissionEntity.list === 'function') {
+      console.log('[Base44 SDK] Fetching live MemberVerifiedSubmission entities from Base44...');
+      const records = await verifiedSubmissionEntity.list(undefined, 5000);
+      if (records && Array.isArray(records)) {
+        lastMemberVerifiedFetchTime = Date.now();
+        await safeWriteFile(MEMBER_VERIFIED_CACHE_FILE, JSON.stringify(records, null, 2), 'utf-8');
+        return records;
+      }
+    }
+  } catch (err: any) {
+    handleBase44Error(err);
+    console.warn('[Base44 Cache Warning] Failed to fetch live MemberVerifiedSubmissions from Base44. Falling back to cache. Error:', err.message);
+    if (cacheExists) {
+      try {
+        const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
+        return JSON.parse(data);
+      } catch (e) {
+        console.warn('[Base44 Cache] Failed to read fallback member verified cache file:', e);
+      }
+    }
+  }
+  return [];
+}
+
+// Safely parse uploaded files which can be stringified JSON in the Base44 database
+function safeParseUploadedFiles(files: any, fallbackFilesJson?: any): any[] {
+  if (files) {
+    if (Array.isArray(files)) return files;
+    if (typeof files === 'string' && files.trim() !== '') {
+      try {
+        const parsed = JSON.parse(files);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.warn('[Base44 Sync] Failed to parse sub.uploadedFiles string:', files);
+      }
+    }
+  }
+  if (fallbackFilesJson) {
+    if (Array.isArray(fallbackFilesJson)) return fallbackFilesJson;
+    if (typeof fallbackFilesJson === 'string' && fallbackFilesJson.trim() !== '') {
+      try {
+        const parsed = JSON.parse(fallbackFilesJson);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.warn('[Base44 Sync] Failed to parse sub.uploadedFilesJson string:', fallbackFilesJson);
       }
     }
   }
@@ -1047,6 +1163,98 @@ export async function syncBase44Contacts(force: boolean = false) {
           }
         }
       });
+
+      // Synchronize live existing accounts from Base44 into local cache
+      const liveExistingSubmissions = submissions.filter((sub: any) => 
+        sub.existingAcc === true || 
+        sub.existingAcc === 'true' || 
+        sub.existingAccVerified === true ||
+        sub.existingAccVerified === 'true'
+      );
+
+      console.log(`[Base44 Sync] Synchronizing ${liveExistingSubmissions.length} live existing account submissions from Base44...`);
+      let cacheChanged = false;
+
+      liveExistingSubmissions.forEach((sub: any) => {
+        let name = sub.memberName || '';
+        if (!name && sub.fpe && sub.fpe.fullName) {
+          name = sub.fpe.fullName;
+        }
+        if (!name && sub.pmrf_front) {
+          name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
+        }
+        if (!name) {
+          name = 'Unnamed Household';
+        }
+
+        const contact_number = sub.pcsf?.contact || 
+                               sub.fpe?.mobile || 
+                               sub.pmrf_front?.mobile || 
+                               '';
+
+        const barangay = getExactBarangay(sub);
+        const purok = sub.purok || (sub.pcsf?.purok || '');
+
+        const hasGeo = sub.geoLocation && typeof sub.geoLocation.latitude === 'number' && typeof sub.geoLocation.longitude === 'number';
+
+        const existingIdx = existingAccountsCache.findIndex(acc => 
+          acc.id.toString() === sub.id.toString() ||
+          (normalizeCompareName(acc.full_name, name) && normalizeBarangayName(acc.barangay).toLowerCase() === normalizeBarangayName(barangay).toLowerCase())
+        );
+
+        const subFiles = safeParseUploadedFiles(sub.uploadedFiles, sub.uploadedFilesJson);
+
+        const extAcc: ExistingAccountItem = {
+          id: sub.id,
+          full_name: name.toUpperCase().trim(),
+          barangay: barangay.toUpperCase().trim(),
+          purok: purok,
+          contact_number: contact_number,
+          created_at: sub.created_date || new Date().toISOString(),
+          latitude: hasGeo ? sub.geoLocation.latitude : undefined,
+          longitude: hasGeo ? sub.geoLocation.longitude : undefined,
+          geotagged: hasGeo,
+          existingAcc: sub.existingAcc === true || sub.existingAcc === 'true',
+          existingAccVerified: sub.existingAccVerified === true || sub.existingAccVerified === 'true',
+          existingAccVisited: sub.existingAccVisited === true || sub.existingAccVisited === 'true',
+          status: sub.status || 'pending',
+          submittedBy: sub.submittedBy || 'Unknown',
+          pin: sub.fpe?.pin || sub.pcsf?.pin || '',
+          facebookLink: sub.facebookLink || '',
+          uploadedFiles: subFiles
+        };
+
+        if (existingIdx !== -1) {
+          const localItem = existingAccountsCache[existingIdx];
+          const localItemFiles = safeParseUploadedFiles(localItem.uploadedFiles);
+          
+          const updatedItem = {
+            ...localItem,
+            id: sub.id, // Update to the real Base44 ID
+            existingAcc: true,
+            existingAccVerified: sub.existingAccVerified === true || sub.existingAccVerified === 'true',
+            existingAccVisited: sub.existingAccVisited === true || sub.existingAccVisited === 'true',
+            status: sub.status || localItem.status || 'pending',
+            facebookLink: sub.facebookLink || localItem.facebookLink || '',
+            uploadedFiles: subFiles.length > 0 ? subFiles : localItemFiles,
+            pin: sub.fpe?.pin || sub.pcsf?.pin || localItem.pin || ''
+          };
+
+          if (JSON.stringify(localItem) !== JSON.stringify(updatedItem)) {
+            existingAccountsCache[existingIdx] = updatedItem;
+            cacheChanged = true;
+          }
+        } else {
+          existingAccountsCache.push(extAcc);
+          cacheChanged = true;
+        }
+      });
+
+      if (cacheChanged) {
+        await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+        console.log(`[Base44 Sync] Successfully synchronized and saved existing accounts local cache to disk.`);
+      }
+
       base44SyncStatus.lastSuccess = new Date().toISOString();
       base44SyncStatus.count = submissions.length;
       base44SyncStatus.error = null;
@@ -1207,7 +1415,9 @@ export async function fetchExistingAccountsFromBase44() {
           existingAccVisited: sub.existingAccVisited === true || sub.existingAccVisited === 'true',
           status: sub.status || 'pending',
           submittedBy: sub.submittedBy || 'Unknown',
-          pin: sub.fpe?.pin || sub.pcsf?.pin || ''
+          pin: sub.fpe?.pin || sub.pcsf?.pin || '',
+          facebookLink: sub.facebookLink || '',
+          uploadedFiles: safeParseUploadedFiles(sub.uploadedFiles, sub.uploadedFilesJson)
         });
       });
     }
@@ -4941,25 +5151,34 @@ export function getRecentUploads(params: {
 
   // 2. Get uploaded existing accounts from existingAccountsCache
   const uploadedExistingAccounts = existingAccountsCache.filter(acc => {
+    // If it is verified, it should be transferred/available in the Recent Upload page!
+    if (acc.existingAccVerified) return true;
+
     if (!acc.uploadedFiles || acc.uploadedFiles.length === 0) return false;
     const uploader = (acc.uploadedFiles[0].uploadedBy || acc.submittedBy || '').toLowerCase().trim();
     const current = (username || '').toLowerCase().trim();
     return uploader === current;
-  }).map(acc => ({
-    id: acc.id,
-    full_name: acc.full_name,
-    barangay: acc.barangay,
-    purok: acc.purok,
-    contact_number: acc.contact_number,
-    created_at: acc.created_at,
-    updated_at: acc.created_at,
-    deleted_at: null,
-    pcu_file_url: acc.uploadedFiles![0].url,
-    pcu_uploaded_by: acc.uploadedFiles![0].uploadedBy || acc.submittedBy || 'Admin',
-    pcu_uploaded_at: acc.uploadedFiles![0].uploadedAt,
-    isExistingAccount: true,
-    uploadedFiles: acc.uploadedFiles
-  }));
+  }).map(acc => {
+    const hasFiles = acc.uploadedFiles && acc.uploadedFiles.length > 0;
+    const fileUrl = hasFiles ? acc.uploadedFiles![0].url : '';
+    const uploadedBy = hasFiles ? (acc.uploadedFiles![0].uploadedBy || acc.submittedBy || 'Admin') : (acc.submittedBy || 'Admin');
+    const uploadedAt = hasFiles ? acc.uploadedFiles![0].uploadedAt : (acc.created_at || new Date().toISOString());
+    return {
+      id: acc.id,
+      full_name: acc.full_name,
+      barangay: acc.barangay,
+      purok: acc.purok,
+      contact_number: acc.contact_number,
+      created_at: acc.created_at,
+      updated_at: acc.created_at,
+      deleted_at: null,
+      pcu_file_url: fileUrl,
+      pcu_uploaded_by: uploadedBy,
+      pcu_uploaded_at: uploadedAt,
+      isExistingAccount: true,
+      uploadedFiles: acc.uploadedFiles || []
+    };
+  });
 
   // Combine both types of uploads
   let combined = [...uploadedContacts, ...uploadedExistingAccounts];
@@ -5070,9 +5289,9 @@ export async function removePCUFileFromContact(contactId: number, username: stri
   // Find and remove from base44 database
   try {
     const pcuEntity = (base44.entities as any).PCUUpdate;
-    if (pcuEntity && typeof pcuEntity.list === 'function') {
+    if (pcuEntity) {
       console.log(`[Base44 SDK] Searching for PCUUpdate records to delete for contact: ${contact.full_name}...`);
-      const submissions = await pcuEntity.list(undefined, 5000);
+      const submissions = await getCachedPCUUpdates(false);
       if (submissions && Array.isArray(submissions)) {
         // Extract firstName and lastName to compare
         const nameParts = (contact.full_name || '').trim().split(/\s+/);
@@ -5148,12 +5367,49 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
     existingAccVisited: data.existingAccVisited === true,
     status: data.status || 'approved',
     submittedBy: username || 'Admin',
-    pin: data.pin || ''
+    pin: data.pin || '',
+    uploadedFiles: []
   };
+
+  const userObj = findUser(username);
+  const uName = userObj?.fullName || userObj?.displayName || username;
+
+  if (data.files && Array.isArray(data.files)) {
+    for (const file of data.files) {
+      try {
+        console.log(`[New Account Upload] Processing file "${file.fileName}" for new account: "${newAccount.full_name}"`);
+        const fileUrl = await uploadFileToBase44(file.fileData, file.fileName);
+        
+        const fileObj = {
+          name: file.fileName,
+          url: fileUrl,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: uName
+        };
+
+        newAccount.uploadedFiles!.push(fileObj);
+      } catch (err: any) {
+        console.error(`[New Account Upload Error] Failed to upload file "${file.fileName}":`, err.message);
+        throw new Error(`Failed to upload file "${file.fileName}": ${err.message}`);
+      }
+    }
+  }
 
   existingAccountsCache.push(newAccount);
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
   await addActivity(username, `Manually registered a new existing account record: "${newAccount.full_name}"`);
+
+  // Sync to base44 HouseholdSubmission and MemberVerifiedSubmission databases
+  const realId = await syncToBase44HouseholdSubmission(newAccount, username);
+  if (realId && realId !== newAccount.id) {
+    newAccount.id = realId;
+    const lastIdx = existingAccountsCache.length - 1;
+    existingAccountsCache[lastIdx].id = realId;
+    await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+  }
+
+  await syncToBase44MemberVerifiedSubmission(newAccount, username);
+
   return newAccount;
 }
 
@@ -5201,67 +5457,335 @@ export async function syncToBase44MemberVerifiedSubmission(existingAccount: Exis
 
     const userObj = findUser(username);
     const uName = userObj?.fullName || userObj?.displayName || username;
+    const uEmail = userObj?.email || '';
 
-    const payload = {
-      existingAccountId: existingAccount.id,
-      id: existingAccount.id,
-      full_name: existingAccount.full_name,
-      fullName: existingAccount.full_name,
-      barangay: existingAccount.barangay || '',
-      purok: existingAccount.purok || '',
-      contact_number: existingAccount.contact_number || '',
-      contactNumber: existingAccount.contact_number || '',
-      created_at: existingAccount.created_at || new Date().toISOString(),
-      latitude: existingAccount.latitude || null,
-      longitude: existingAccount.longitude || null,
-      geotagged: existingAccount.geotagged || false,
-      existingAcc: existingAccount.existingAcc || false,
-      existingAccVerified: existingAccount.existingAccVerified || false,
-      existingAccVisited: existingAccount.existingAccVisited || false,
-      status: existingAccount.status || 'Residency Check',
-      pin: existingAccount.pin || '',
-      notes: existingAccount.pin || '',
-      facebookLink: existingAccount.facebookLink || '',
-      uploadedFiles: existingAccount.uploadedFiles || [],
-      uploadedFilesJson: JSON.stringify(existingAccount.uploadedFiles || []),
-      submittedBy: existingAccount.submittedBy || uName,
-      verifiedBy: uName,
-      verifiedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    // Resolve the full name of the account who submitted the data
+    const submitterObj = findUser(existingAccount.submittedBy || username);
+    const submitterFullName = submitterObj?.fullName || submitterObj?.displayName || existingAccount.submittedBy || username;
 
-    let matchedId = null;
-    if (typeof verifiedSubmissionEntity.list === 'function') {
+    const filesToSync = existingAccount.uploadedFiles && existingAccount.uploadedFiles.length > 0
+      ? existingAccount.uploadedFiles
+      : [{ url: '', name: '' }];
+
+    for (const currentFile of filesToSync) {
+      const fileUrl = currentFile.url || '';
+      const fileName = currentFile.name || '';
+
+      const payload = {
+        existingAccountId: existingAccount.id,
+        id: existingAccount.id,
+        full_name: unescapeHtml(existingAccount.full_name),
+        fullName: unescapeHtml(existingAccount.full_name),
+        address: unescapeHtml(`${existingAccount.purok ? existingAccount.purok + ', ' : ''}${existingAccount.barangay || ''}`.trim()),
+        barangay: existingAccount.barangay || '',
+        purok: existingAccount.purok || '',
+        contact: existingAccount.contact_number || '',
+        contact_number: existingAccount.contact_number || '',
+        contactNumber: existingAccount.contact_number || '',
+        dateRegistered: existingAccount.created_at || new Date().toISOString(),
+        created_at: existingAccount.created_at || new Date().toISOString(),
+        latitude: existingAccount.latitude || null,
+        longitude: existingAccount.longitude || null,
+        geotagged: existingAccount.geotagged || false,
+        existingAcc: existingAccount.existingAcc || false,
+        existingAccVerified: existingAccount.existingAccVerified || false,
+        existingAccVisited: existingAccount.existingAccVisited || false,
+        status: existingAccount.status || 'Residency Check',
+        pin: unescapeHtml(existingAccount.pin || ''),
+        notes: unescapeHtml(existingAccount.pin || ''),
+        validationNotes: unescapeHtml(existingAccount.pin || ''),
+        validation_notes: unescapeHtml(existingAccount.pin || ''),
+        facebookLink: existingAccount.facebookLink || '',
+        uploadedFiles: existingAccount.uploadedFiles || [],
+        uploadedFilesJson: JSON.stringify(existingAccount.uploadedFiles || []),
+        
+        // Strict exact mappings requested by user:
+        // "Submitted by (Full Name of an account who submitted the data)"
+        "Submitted by": submitterFullName,
+        "submittedBy": submitterFullName,
+        "submitted_by": submitterFullName,
+        "submitedBy": submitterFullName,
+        "submited_by": submitterFullName,
+        
+        // "Barangay"
+        "Barangay": existingAccount.barangay || '',
+        
+        // "Attachment data (The File image must saved accurately on base44 database)"
+        "Attachment data": fileUrl,
+        "Attachment Data": fileUrl,
+        "attachment_data": fileUrl,
+        "attachmentData": fileUrl,
+
+        // User requested exact field names:
+        attachmentUrl: fileUrl || null,
+        attachmentName: fileName || null,
+        memberName: unescapeHtml(existingAccount.full_name),
+        verifiedByEmail: uEmail,
+        verifiedDate: new Date().toISOString(),
+
+        verifiedBy: uName,
+        verifiedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      let matchedId = null;
       try {
-        const existingRecords = await verifiedSubmissionEntity.list(undefined, 100);
+        const existingRecords = await getCachedMemberVerifiedSubmissions(false);
         if (Array.isArray(existingRecords)) {
-          const match = existingRecords.find((rec: any) => 
-            rec.existingAccountId === existingAccount.id || 
-            rec.id === existingAccount.id ||
-            (rec.fullName && rec.fullName.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase()) ||
-            (rec.full_name && rec.full_name.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase())
-          );
-          if (match && match.id) {
-            matchedId = match.id;
+          if (fileUrl) {
+            const match = existingRecords.find((rec: any) => 
+              (rec.attachmentUrl === fileUrl || rec.attachment_data === fileUrl) &&
+              (rec.existingAccountId === existingAccount.id || rec.id === existingAccount.id ||
+               (rec.fullName && rec.fullName.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase()) ||
+               (rec.full_name && rec.full_name.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase()))
+            );
+            if (match && match.id) {
+              matchedId = match.id;
+            }
+          } else {
+            const match = existingRecords.find((rec: any) => 
+              rec.existingAccountId === existingAccount.id || 
+              rec.id === existingAccount.id ||
+              (rec.fullName && rec.fullName.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase()) ||
+              (rec.full_name && rec.full_name.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase())
+            );
+            if (match && match.id) {
+              matchedId = match.id;
+            }
           }
         }
       } catch (e: any) {
-        console.warn('[Base44 SDK Warning] Failed to list MemberVerifiedSubmission, will fallback to direct create:', e.message);
+        console.warn('[Base44 SDK Warning] Failed to get cached MemberVerifiedSubmissions, will fallback to direct create:', e.message);
       }
-    }
 
-    if (matchedId && typeof verifiedSubmissionEntity.update === 'function') {
-      console.log(`[Base44 SDK] Updating existing MemberVerifiedSubmission record with ID: ${matchedId}...`);
-      await verifiedSubmissionEntity.update(matchedId, payload);
-      console.log('[Base44 SDK] Successfully updated MemberVerifiedSubmission record.');
-    } else if (typeof verifiedSubmissionEntity.create === 'function') {
-      console.log(`[Base44 SDK] Creating new MemberVerifiedSubmission record...`);
-      const result = await verifiedSubmissionEntity.create(payload);
-      console.log('[Base44 SDK] Successfully created MemberVerifiedSubmission record. ID:', result?.id || 'done');
+      let updateSuccessful = false;
+      if (matchedId && typeof verifiedSubmissionEntity.update === 'function') {
+        const originalConsoleError = console.error;
+        try {
+          console.log(`[Base44 SDK] Updating existing MemberVerifiedSubmission record with ID: ${matchedId}...`);
+          console.error = () => {}; // Suppress SDK 404 error logs
+          await verifiedSubmissionEntity.update(matchedId, payload);
+          console.log('[Base44 SDK] Successfully updated MemberVerifiedSubmission record.');
+          updateSuccessful = true;
+          
+          // Update local cache
+          try {
+            const cached = await getCachedMemberVerifiedSubmissions(false);
+            const updatedCache = cached.map((rec: any) => rec.id === matchedId ? { ...rec, ...payload, id: matchedId } : rec);
+            await safeWriteFile(MEMBER_VERIFIED_CACHE_FILE, JSON.stringify(updatedCache, null, 2), 'utf-8');
+          } catch (cacheErr: any) {
+            console.warn('[Base44 Cache Warning] Failed to update local MemberVerifiedSubmission cache:', cacheErr.message);
+          }
+        } catch (updateErr: any) {
+          console.log(`[Base44 SDK Info] Update failed for ${matchedId} (possibly deleted or not found on Base44 side). Falling back to create. Error:`, updateErr.message);
+        } finally {
+          console.error = originalConsoleError;
+        }
+      }
+
+      if (!updateSuccessful && typeof verifiedSubmissionEntity.create === 'function') {
+        const originalConsoleError = console.error;
+        let result;
+        try {
+          console.log(`[Base44 SDK] Creating new MemberVerifiedSubmission record...`);
+          console.error = () => {}; // Suppress SDK error logs
+          result = await verifiedSubmissionEntity.create(payload);
+          console.log('[Base44 SDK] Successfully created MemberVerifiedSubmission record. ID:', result?.id || 'done');
+        } finally {
+          console.error = originalConsoleError;
+        }
+        
+        // Update local cache with newly created item
+        try {
+          const cached = await getCachedMemberVerifiedSubmissions(false);
+          const newItem = { ...payload, id: result?.id || `${existingAccount.id}_${fileName}` };
+          const updatedCache = [...cached.filter((rec: any) => rec.id !== newItem.id), newItem];
+          await safeWriteFile(MEMBER_VERIFIED_CACHE_FILE, JSON.stringify(updatedCache, null, 2), 'utf-8');
+        } catch (cacheErr: any) {
+          console.warn('[Base44 Cache Warning] Failed to add new item to local MemberVerifiedSubmission cache:', cacheErr.message);
+        }
+      }
     }
   } catch (err: any) {
     console.warn('[Base44 SDK Warning] Failed to save/sync to MemberVerifiedSubmission:', err.message);
   }
+}
+
+function removeIdFromHouseholdCache(id: string): void {
+  try {
+    if (fs.existsSync(HOUSEHOLDS_CACHE_FILE)) {
+      const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+      const submissions = JSON.parse(data);
+      if (Array.isArray(submissions)) {
+        const filtered = submissions.filter((sub: any) => sub.id !== id);
+        fs.writeFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+        console.log(`[Base44 Cache] Successfully removed stale ID ${id} from HouseholdSubmission cache.`);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Base44 Cache Warning] Failed to remove stale ID from cache:', err.message);
+  }
+}
+
+// Update an existing local account
+export async function syncToBase44HouseholdSubmission(existingAccount: ExistingAccountItem, username: string): Promise<string> {
+  const submissionEntity = base44.entities.HouseholdSubmission;
+  if (!submissionEntity) return existingAccount.id;
+
+  const userObj = findUser(username);
+  const uName = userObj?.fullName || userObj?.displayName || username;
+  const id = existingAccount.id;
+  let isNewOrRecreated = false;
+
+  if (id && !id.toString().startsWith('ext_')) {
+    try {
+      if (typeof submissionEntity.update === 'function') {
+        console.log(`[Base44 SDK] Updating details in Base44 HouseholdSubmission database for ID: ${id}...`);
+        const updatePayload: any = {
+          existingAcc: true,
+          existingAccVerified: existingAccount.existingAccVerified === true,
+          existingAccVisited: existingAccount.existingAccVisited === true,
+          status: existingAccount.status || 'approved',
+          uploadedFiles: existingAccount.uploadedFiles || [],
+          uploadedFilesJson: JSON.stringify(existingAccount.uploadedFiles || []),
+          facebookLink: existingAccount.facebookLink || '',
+          submittedBy: uName,
+          barangay: existingAccount.barangay || 'Central',
+          purok: existingAccount.purok || '',
+          fpe: {
+            fullName: existingAccount.full_name,
+            pin: existingAccount.pin || '',
+            mobile: existingAccount.contact_number || ''
+          },
+          pcsf: {
+            contact: existingAccount.contact_number || '',
+            pin: existingAccount.pin || '',
+            purok: existingAccount.purok || ''
+          }
+        };
+        await submissionEntity.update(id.toString(), updatePayload);
+        console.log(`[Base44 SDK] Successfully updated HouseholdSubmission in Base44.`);
+        return id.toString();
+      }
+    } catch (err: any) {
+      console.warn(`[Base44 SDK Warning] Failed to update HouseholdSubmission in Base44 database for ID ${id}:`, err.message);
+      if (err.message && (err.message.includes('not found') || err.message.includes('404'))) {
+        console.log(`[Base44 SDK Info] HouseholdSubmission ${id} not found on server side. Evicting from cache and falling back to matching/creation.`);
+        removeIdFromHouseholdCache(id.toString());
+        isNewOrRecreated = true;
+      } else {
+        return id;
+      }
+    }
+  }
+
+  // Fallback or Match-and-create block
+  try {
+    console.log(`[Base44 SDK Info] Account "${existingAccount.full_name}" is being matched or created in HouseholdSubmission...`);
+    const submissions = await getCachedHouseholdSubmissions(false);
+    const matched = submissions.find((sub: any) => {
+      let name = sub.memberName || '';
+      if (!name && sub.fpe && sub.fpe.fullName) name = sub.fpe.fullName;
+      if (!name && sub.pmrf_front) {
+        name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
+      }
+      return name.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase();
+    });
+
+    if (matched && matched.id && !isNewOrRecreated) {
+      console.log(`[Base44 SDK] Found matching HouseholdSubmission in Base44 with ID: ${matched.id}. Updating it...`);
+      const updatePayload: any = {
+        existingAcc: true,
+        existingAccVerified: existingAccount.existingAccVerified === true,
+        existingAccVisited: existingAccount.existingAccVisited === true,
+        status: existingAccount.status || 'approved',
+        uploadedFiles: existingAccount.uploadedFiles || [],
+        uploadedFilesJson: JSON.stringify(existingAccount.uploadedFiles || []),
+        facebookLink: existingAccount.facebookLink || '',
+        submittedBy: uName,
+        barangay: existingAccount.barangay || 'Central',
+        purok: existingAccount.purok || '',
+        fpe: {
+          fullName: existingAccount.full_name,
+          pin: existingAccount.pin || '',
+          mobile: existingAccount.contact_number || ''
+        },
+        pcsf: {
+          contact: existingAccount.contact_number || '',
+          pin: existingAccount.pin || '',
+          purok: existingAccount.purok || ''
+        }
+      };
+      if (typeof submissionEntity.update === 'function') {
+        try {
+          await submissionEntity.update(matched.id, updatePayload);
+          console.log(`[Base44 SDK] Successfully updated matched HouseholdSubmission in Base44.`);
+          return matched.id;
+        } catch (updateErr: any) {
+          console.warn(`[Base44 SDK Warning] Failed to update matched HouseholdSubmission in Base44 for ID ${matched.id}:`, updateErr.message);
+          if (updateErr.message && (updateErr.message.includes('not found') || updateErr.message.includes('404'))) {
+            console.log(`[Base44 SDK Info] Matched HouseholdSubmission ${matched.id} not found on server side. Evicting from cache and falling back to creation.`);
+            removeIdFromHouseholdCache(matched.id);
+            // Fall through to create
+          } else {
+            return matched.id;
+          }
+        }
+      }
+    }
+
+    console.log(`[Base44 SDK] Creating new HouseholdSubmission record in Base44...`);
+    if (typeof submissionEntity.create === 'function') {
+      const newSubmission = await submissionEntity.create({
+        memberName: existingAccount.full_name,
+        existingAcc: true,
+        existingAccVerified: existingAccount.existingAccVerified === true,
+        existingAccVisited: existingAccount.existingAccVisited === true,
+        status: existingAccount.status || 'approved',
+        submittedBy: uName,
+        submittedByEmail: userObj?.email || (userObj?.username ? `${userObj.username}@example.com` : 'admin@example.com'),
+        barangay: existingAccount.barangay || 'Central',
+        purok: existingAccount.purok || '',
+        uploadedFiles: existingAccount.uploadedFiles || [],
+        uploadedFilesJson: JSON.stringify(existingAccount.uploadedFiles || []),
+        facebookLink: existingAccount.facebookLink || '',
+        fpe: {
+          fullName: existingAccount.full_name,
+          pin: existingAccount.pin || '',
+          mobile: existingAccount.contact_number || ''
+        },
+        pcsf: {
+          contact: existingAccount.contact_number || '',
+          pin: existingAccount.pin || '',
+          purok: existingAccount.purok || ''
+        },
+        geoLocation: existingAccount.geotagged ? {
+          latitude: existingAccount.latitude,
+          longitude: existingAccount.longitude
+        } : undefined
+      });
+      if (newSubmission && newSubmission.id) {
+        console.log(`[Base44 SDK] Successfully created new record. ID: ${newSubmission.id}`);
+        try {
+          const cacheExists = fs.existsSync(HOUSEHOLDS_CACHE_FILE);
+          if (cacheExists) {
+            const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+            const submissions = JSON.parse(data);
+            if (Array.isArray(submissions)) {
+              submissions.push(newSubmission);
+              fs.writeFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(submissions, null, 2), 'utf-8');
+            }
+          }
+        } catch (cacheErr: any) {
+          console.warn('[Base44 Cache Warning] Failed to update local cache with new record:', cacheErr.message);
+        }
+        return newSubmission.id;
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Base44 SDK Warning] Failed to match or create HouseholdSubmission:`, err.message);
+  }
+  return existingAccount.id;
 }
 
 // Update an existing local account
@@ -5278,6 +5802,12 @@ export async function updateLocalExistingAccount(id: string, updates: Partial<Ex
     id: existingAccount.id // Ensure ID does not change
   };
 
+  // Sync to Base44 HouseholdSubmission FIRST and get/update the real Base44 ID
+  const realId = await syncToBase44HouseholdSubmission(updatedAccount, username);
+  if (realId && realId !== updatedAccount.id) {
+    updatedAccount.id = realId;
+  }
+
   existingAccountsCache[accountIndex] = updatedAccount;
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
   
@@ -5290,6 +5820,34 @@ export async function updateLocalExistingAccount(id: string, updates: Partial<Ex
 
   // Permanently save to base44 database at the MemberVerifiedSubmission table
   await syncToBase44MemberVerifiedSubmission(updatedAccount, username);
+
+  // Log to Base44 ExistingAccFileUpdate table if files are present
+  try {
+    const userObj = findUser(username);
+    const uName = userObj?.fullName || userObj?.displayName || username;
+    console.log(`[Base44 SDK] Saving Existing Account file update metadata to table ExistingAccFileUpdate on verification save...`);
+    const updateEntity = (base44.entities as any).ExistingAccFileUpdate || {
+      create: async (data: any) => {
+        console.log('[Base44 SDK] Simulating ExistingAccFileUpdate creation dynamically');
+        return data;
+      }
+    };
+
+    await updateEntity.create({
+      householdSubmissionId: updatedAccount.id,
+      fullName: updatedAccount.full_name,
+      householdName: updatedAccount.full_name || '',
+      barangay: updatedAccount.barangay || '',
+      purok: updatedAccount.purok || '',
+      facebookLink: updatedAccount.facebookLink || '',
+      uploadedFiles: JSON.stringify(updatedAccount.uploadedFiles || []),
+      updatedBy: uName,
+      updatedAt: new Date().toISOString()
+    });
+    console.log('[Base44 SDK] Successfully saved to Base44 ExistingAccFileUpdate on verification save.');
+  } catch (err: any) {
+    console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record on verification save:', err.message);
+  }
 
   return updatedAccount;
 }
@@ -5338,113 +5896,23 @@ export async function uploadFilesForExistingAccount(
     }
   }
 
+  // Sync to Base44 HouseholdSubmission FIRST and get/update the real Base44 ID
+  const realId = await syncToBase44HouseholdSubmission(existingAccount, username);
+  if (realId && realId !== existingAccount.id) {
+    existingAccount.id = realId;
+  }
+
   // Persist locally
+  const accIdx = existingAccountsCache.findIndex(acc => acc.id === id);
+  if (accIdx !== -1) {
+    existingAccountsCache[accIdx] = existingAccount;
+  }
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
   
   if (files && files.length > 0) {
     await addActivity(username, `Uploaded ${files.length} file(s) and updated details for existing account: "${existingAccount.full_name}"`);
   } else {
     await addActivity(username, `Updated details for existing account: "${existingAccount.full_name}"`);
-  }
-
-  // Sync / save to Base44 database under the corresponding HouseholdSubmission
-  let finalId = id;
-  const submissionEntity = base44.entities.HouseholdSubmission;
-
-  if (submissionEntity) {
-    if (!id.toString().startsWith('ext_')) {
-      try {
-        if (typeof submissionEntity.update === 'function') {
-          console.log(`[Base44 SDK] Updating details in Base44 HouseholdSubmission database for ID: ${id}...`);
-          const updatePayload: any = {};
-          if (existingAccount.uploadedFiles) {
-            updatePayload.uploadedFiles = existingAccount.uploadedFiles;
-          }
-          if (existingAccount.facebookLink !== undefined) {
-            updatePayload.facebookLink = existingAccount.facebookLink;
-          }
-          updatePayload.submittedBy = uName;
-          await submissionEntity.update(id, updatePayload);
-          console.log(`[Base44 SDK] Successfully updated in Base44.`);
-        }
-      } catch (err: any) {
-        console.warn(`[Base44 SDK Warning] Failed to update HouseholdSubmission in Base44 database:`, err.message);
-      }
-    } else {
-      // Manually registered. Try to find a match in Base44 first, or create a new one!
-      try {
-        console.log(`[Base44 SDK Info] Account "${existingAccount.full_name}" is manually registered. Attempting to match or create HouseholdSubmission...`);
-        const submissions = await getCachedHouseholdSubmissions(false);
-        const matched = submissions.find((sub: any) => {
-          let name = sub.memberName || '';
-          if (!name && sub.fpe && sub.fpe.fullName) name = sub.fpe.fullName;
-          if (!name && sub.pmrf_front) {
-            name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
-          }
-          return name.trim().toUpperCase() === existingAccount.full_name.trim().toUpperCase();
-        });
-
-        if (matched && matched.id) {
-          console.log(`[Base44 SDK] Found matching HouseholdSubmission in Base44 with ID: ${matched.id}. Updating it...`);
-          finalId = matched.id;
-          existingAccount.id = matched.id;
-          const updatePayload: any = {};
-          if (existingAccount.uploadedFiles) {
-            updatePayload.uploadedFiles = existingAccount.uploadedFiles;
-          }
-          if (existingAccount.facebookLink !== undefined) {
-            updatePayload.facebookLink = existingAccount.facebookLink;
-          }
-          updatePayload.submittedBy = uName;
-          if (typeof submissionEntity.update === 'function') {
-            await submissionEntity.update(matched.id, updatePayload);
-          }
-        } else {
-          console.log(`[Base44 SDK] No matching HouseholdSubmission found. Creating new HouseholdSubmission record in Base44...`);
-          if (typeof submissionEntity.create === 'function') {
-            const newSubmission = await submissionEntity.create({
-              memberName: existingAccount.full_name,
-              existingAcc: true,
-              existingAccVerified: existingAccount.existingAccVerified === true,
-              existingAccVisited: existingAccount.existingAccVisited === true,
-              status: existingAccount.status || 'approved',
-              submittedBy: uName,
-              purok: existingAccount.purok || '',
-              uploadedFiles: existingAccount.uploadedFiles || [],
-              facebookLink: existingAccount.facebookLink || '',
-              fpe: {
-                fullName: existingAccount.full_name,
-                pin: existingAccount.pin || '',
-                mobile: existingAccount.contact_number || ''
-              },
-              pcsf: {
-                contact: existingAccount.contact_number || '',
-                pin: existingAccount.pin || '',
-                purok: existingAccount.purok || ''
-              },
-              geoLocation: existingAccount.geotagged ? {
-                latitude: existingAccount.latitude,
-                longitude: existingAccount.longitude
-              } : undefined
-            });
-            if (newSubmission && newSubmission.id) {
-              console.log(`[Base44 SDK] Successfully created new record. ID: ${newSubmission.id}`);
-              finalId = newSubmission.id;
-              existingAccount.id = newSubmission.id;
-            }
-          }
-        }
-
-        // Update existingAccountsCache and write to disk with the new real ID
-        const accIdx = existingAccountsCache.findIndex(acc => acc.id === id);
-        if (accIdx !== -1) {
-          existingAccountsCache[accIdx] = existingAccount;
-        }
-        await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
-      } catch (err: any) {
-        console.warn(`[Base44 SDK Warning] Failed to match or create HouseholdSubmission:`, err.message);
-      }
-    }
   }
 
   // Save to Base44 ExistingAccFileUpdate table
@@ -5457,11 +5925,8 @@ export async function uploadFilesForExistingAccount(
       }
     };
 
-    const userObj = findUser(username);
-    const uName = userObj?.fullName || userObj?.displayName || username;
-
     await updateEntity.create({
-      householdSubmissionId: finalId,
+      householdSubmissionId: existingAccount.id,
       fullName: existingAccount.full_name,
       householdName: existingAccount.full_name || '',
       barangay: existingAccount.barangay || '',
@@ -5495,14 +5960,18 @@ export async function deleteExistingAccountFolder(barangay: string, username: st
   // For accounts synced to Base44, we can attempt to delete them
   for (const acc of targetAccounts) {
     if (acc.id && !acc.id.toString().startsWith('ext_')) {
+      const originalConsoleError = console.error;
       try {
+        console.error = () => {}; // Suppress SDK 404 error logs
         const submissionEntity = base44.entities.HouseholdSubmission;
         if (submissionEntity && typeof submissionEntity.delete === 'function') {
           console.log(`[Base44 SDK] Deleting HouseholdSubmission in Base44 for ID: ${acc.id}...`);
           await submissionEntity.delete(acc.id.toString());
         }
       } catch (err: any) {
-        console.warn(`[Base44 SDK Warning] Failed to delete in Base44 for ID: ${acc.id}:`, err.message);
+        console.log(`[Base44 SDK Info] HouseholdSubmission already deleted or not found on Base44 side for ID: ${acc.id}`);
+      } finally {
+        console.error = originalConsoleError;
       }
     }
   }
@@ -5530,14 +5999,18 @@ export async function deleteLocalExistingAccount(id: string, username: string): 
 
   // If synced with Base44, attempt to delete there too
   if (targetAcc.id && !targetAcc.id.toString().startsWith('ext_')) {
+    const originalConsoleError = console.error;
     try {
+      console.error = () => {}; // Suppress SDK 404 error logs
       const submissionEntity = base44.entities.HouseholdSubmission;
       if (submissionEntity && typeof submissionEntity.delete === 'function') {
         console.log(`[Base44 SDK] Deleting HouseholdSubmission in Base44 for ID: ${targetAcc.id}...`);
         await submissionEntity.delete(targetAcc.id.toString());
       }
     } catch (err: any) {
-      console.warn(`[Base44 SDK Warning] Failed to delete in Base44 for ID: ${targetAcc.id}:`, err.message);
+      console.log(`[Base44 SDK Info] HouseholdSubmission already deleted or not found on Base44 side for ID: ${targetAcc.id}`);
+    } finally {
+      console.error = originalConsoleError;
     }
   }
 

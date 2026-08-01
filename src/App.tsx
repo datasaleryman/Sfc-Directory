@@ -37,7 +37,6 @@ import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
 import { ExistingAccount } from './components/ExistingAccount.js';
 import { MemberVerification } from './components/MemberVerification.js';
-import { VerificationEntry } from './components/VerificationEntry.js';
 
 export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
 
@@ -50,7 +49,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'verification-entry' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -66,12 +65,12 @@ export default function App() {
 
   // Auto-expand "DATA ENTRY" if a sub-tab is active
   useEffect(() => {
-    if (['bulk', 'print', 'existing-account', 'verification-entry'].includes(activeTab)) {
+    if (['bulk', 'print', 'existing-account'].includes(activeTab)) {
       setIsDataEntryOpen(true);
     }
   }, [activeTab]);
 
-  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'verification-entry' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -94,7 +93,6 @@ export default function App() {
     navExistingAccount?: string;
     navExistAccFiles?: string;
     navMemberVerification?: string;
-    navVerificationEntry?: string;
     rolePermissions?: Record<string, string[]>;
   }>({
     title: 'PCU Uploader',
@@ -112,8 +110,7 @@ export default function App() {
     navSettings: 'Website Settings',
     navExistingAccount: 'Existing Account',
     navExistAccFiles: 'Exist. Acc. Files',
-    navMemberVerification: 'Member verification',
-    navVerificationEntry: 'Verification Entry'
+    navMemberVerification: 'Member verification'
   });
 
   const userRole = adminUser?.role || 'STAFF';
@@ -121,7 +118,7 @@ export default function App() {
 
   const hasTabPermission = (tabId: string) => {
     let targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
-    if (targetTabId === 'member-verification' || targetTabId === 'verification-entry') {
+    if (targetTabId === 'member-verification') {
       targetTabId = 'existing-account';
     }
     // Safety check: Prevent lockouts for administrative roles
@@ -217,7 +214,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'map', 'directory', 'exist-acc-files', 'member-verification', 'verification-entry', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
+      const allTabs = ['dashboard', 'map', 'directory', 'exist-acc-files', 'member-verification', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -264,7 +261,11 @@ export default function App() {
       }
       setDashboardStats(data);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        console.warn('Dashboard statistics fetch suspended (server starting/restarting).');
+      } else {
+        showToast(err.message || 'Failed to fetch statistics.', 'error');
+      }
     } finally {
       setLoadingStats(false);
     }
@@ -283,8 +284,12 @@ export default function App() {
       } else if (res.status === 401) {
         handleLogout();
       }
-    } catch (err) {
-      console.error('Error fetching current user:', err);
+    } catch (err: any) {
+      if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        console.warn('Current user details fetch suspended (server starting/restarting).');
+      } else {
+        console.error('Error fetching current user:', err);
+      }
     }
   };
 
@@ -566,7 +571,6 @@ export default function App() {
               { id: 'bulk', label: siteSettings.navBulk || 'Bulk Entry', icon: FileSpreadsheet },
               { id: 'print', label: siteSettings.navPrint || 'Patient Data List', icon: Printer },
               { id: 'existing-account', label: siteSettings.navExistingAccount || 'Existing Account', icon: UserCheck },
-              { id: 'verification-entry', label: siteSettings.navVerificationEntry || 'Verification Entry', icon: BadgeCheck },
             ] as const;
 
             const visibleDataEntryItems = dataEntryItems.filter((item) => hasTabPermission(item.id));
@@ -932,14 +936,6 @@ export default function App() {
 
               {activeTab === 'member-verification' && (
                 <MemberVerification
-                  authToken={authToken}
-                  showToast={showToast}
-                  currentUser={adminUser}
-                />
-              )}
-
-              {activeTab === 'verification-entry' && (
-                <VerificationEntry
                   authToken={authToken}
                   showToast={showToast}
                   currentUser={adminUser}

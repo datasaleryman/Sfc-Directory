@@ -25,9 +25,41 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  Paperclip
+  Paperclip,
+  Plus,
+  Grid,
+  List
 } from 'lucide-react';
 import { ExistingAccountItem } from '../types.js';
+
+const DEFAULT_BARANGAYS = [
+  'Navalan',
+  'Kalingayan',
+  'Dampalan',
+  'SAN JOSE',
+  'SAN FRANCISCO',
+  'SANTA MARIA',
+  'Dumalinao',
+  'NAPOLAN',
+  'Balangasan',
+  'Tuburan',
+  'Lumbia',
+  'Banale',
+  'Bulatok',
+  'Dumagoc',
+  'Kawit',
+  'Muricay',
+  'Santiago',
+  'Santo Niño',
+  'Sta. Lucia',
+  'Tawagan Sur',
+  'Tiguma',
+  'White Beach',
+  'Dao',
+  'SAN PEDRO',
+  'Buenavista',
+  'SFC'
+];
 
 interface MemberVerificationProps {
   authToken: string | null;
@@ -45,6 +77,13 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'verified' | 'unverified'>('all');
   const [selectedItem, setSelectedItem] = useState<ExistingAccountItem | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+
+  // Add New File Popup States
+  const [showAddNewFileModal, setShowAddNewFileModal] = useState(false);
+  const [newFileBarangay, setNewFileBarangay] = useState('Kalingayan');
+  const [newFileAttachments, setNewFileAttachments] = useState<{ fileName: string; fileData: string }[]>([]);
+  const [newFileSaving, setNewFileSaving] = useState(false);
 
   // Folder-specific States
   const [activeBarangayFolder, setActiveBarangayFolder] = useState<string | null>(null);
@@ -52,6 +91,18 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [folderToDeleteTotal, setFolderToDeleteTotal] = useState<number>(0);
   const [deletingFolder, setDeletingFolder] = useState(false);
+
+  // Member-specific Delete States
+  const [memberToDelete, setMemberToDelete] = useState<ExistingAccountItem | null>(null);
+  const [deletingMember, setDeletingMember] = useState(false);
+
+  // Auto-set the barangay select box if we are currently inside an active folder
+  useEffect(() => {
+    if (showAddNewFileModal) {
+      setNewFileBarangay(activeBarangayFolder || 'Kalingayan');
+      setNewFileAttachments([]);
+    }
+  }, [showAddNewFileModal, activeBarangayFolder]);
 
   // Verification Form States
   const [formVerified, setFormVerified] = useState(false);
@@ -137,6 +188,58 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
     }
   };
 
+  // Confirm deletion of individual member record
+  const handleConfirmDeleteMember = async (id: string | number) => {
+    if (!id) return;
+    setDeletingMember(true);
+    try {
+      const res = await fetch(`/api/existing-accounts/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete member.');
+      }
+
+      // Restore deleted account back as draft to VerificationEntry
+      if (memberToDelete) {
+        try {
+          const savedDraftsRaw = localStorage.getItem('sfc_verification_drafts');
+          const currentDrafts = savedDraftsRaw ? JSON.parse(savedDraftsRaw) : [];
+          
+          const newDrafts = [{
+            id: `draft_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${memberToDelete.id}`,
+            full_name: memberToDelete.full_name || '',
+            barangay: memberToDelete.barangay || '',
+            purok: memberToDelete.purok || '',
+            contact_number: memberToDelete.contact_number || '',
+            created_at: new Date().toISOString(),
+            status: memberToDelete.status || 'Residency Check'
+          }];
+          
+          const updatedDrafts = [...currentDrafts, ...newDrafts];
+          localStorage.setItem('sfc_verification_drafts', JSON.stringify(updatedDrafts));
+          console.log(`[Drafts Restore] Restored deleted member back to VerificationEntry drafts.`);
+        } catch (storageErr) {
+          console.error('Failed to restore deleted member to drafts storage:', storageErr);
+        }
+      }
+
+      showToast(`Member "${memberToDelete?.full_name}" has been successfully deleted and restored as draft in Verification Entry.`, 'success');
+      setSelectedItem(null); // Close details modal if open
+      setMemberToDelete(null);
+      await fetchAccounts();
+    } catch (err: any) {
+      showToast(err.message || 'Error deleting member', 'error');
+    } finally {
+      setDeletingMember(false);
+    }
+  };
+
   // Open verification side-panel
   const handleOpenVerifier = (item: ExistingAccountItem) => {
     setSelectedItem(item);
@@ -153,8 +256,8 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
     try {
       const updatePayload = {
         ...selectedItem,
-        existingAccVerified: formVerified,
-        existingAccVisited: formVisited,
+        existingAccVerified: true,
+        existingAccVisited: true,
         status: verificationCategory,
         pin: verificationNotes.trim()
       };
@@ -178,7 +281,7 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
       
       // Update local cache
       setItems(prev => prev.map(item => item.id === selectedItem.id ? updatedData : item));
-      setSelectedItem(updatedData);
+      setSelectedItem(null); // Close popup/panel automatically on save
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -312,12 +415,20 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
     }
   };
 
+  // Only display the data added from the Add New File button, that has been saved to base44 database.
+  const filteredItems = useMemo(() => {
+    return items.filter(item => {
+      const nameUpper = (item.full_name || '').toUpperCase();
+      return nameUpper.startsWith('VERIFICATION DOC');
+    });
+  }, [items]);
+
   // Dynamically group items into Barangay Folders
   const barangayFolders = useMemo(() => {
     const foldersMap: Record<string, { total: number; verified: number; visited: number }> = {};
     
     // Group existing accounts from the database
-    items.forEach(item => {
+    filteredItems.forEach(item => {
       const bName = (item.barangay || 'UNSPECIFIED').toUpperCase().trim();
       if (!foldersMap[bName]) {
         foldersMap[bName] = { total: 0, verified: 0, visited: 0 };
@@ -327,17 +438,19 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
       if (item.existingAccVisited) foldersMap[bName].visited += 1;
     });
 
-    return Object.entries(foldersMap).map(([name, stats]) => {
-      const rate = stats.total > 0 ? Math.round((stats.verified / stats.total) * 100) : 0;
-      return {
-        name,
-        total: stats.total,
-        verified: stats.verified,
-        visited: stats.visited,
-        rate
-      };
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [items]);
+    return Object.entries(foldersMap)
+      .filter(([_, stats]) => stats.total > 0)
+      .map(([name, stats]) => {
+        const rate = stats.total > 0 ? Math.round((stats.verified / stats.total) * 100) : 0;
+        return {
+          name,
+          total: stats.total,
+          verified: stats.verified,
+          visited: stats.visited,
+          rate
+        };
+      }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredItems]);
 
   // Filter Barangay Folders based on folder search
   const filteredFolders = useMemo(() => {
@@ -346,25 +459,25 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
     return barangayFolders.filter(f => f.name.includes(query));
   }, [barangayFolders, folderSearchQuery]);
 
-  // Global Statistics
+  // Global Statistics (Tracks all members inside directories)
   const globalStats = useMemo(() => {
-    const total = items.length;
-    const verified = items.filter(i => i.existingAccVerified).length;
+    const total = filteredItems.length;
+    const verified = filteredItems.filter(i => i.existingAccVerified).length;
     const unverified = total - verified;
-    const visited = items.filter(i => i.existingAccVisited).length;
+    const visited = filteredItems.filter(i => i.existingAccVisited).length;
     const rate = total > 0 ? Math.round((verified / total) * 100) : 0;
     
     return { total, verified, unverified, visited, rate };
-  }, [items]);
+  }, [filteredItems]);
 
-  // Active folder members
+  // Active folder members (Includes all accounts in active folder)
   const folderMembers = useMemo(() => {
     if (!activeBarangayFolder) return [];
-    return items.filter(item => {
+    return filteredItems.filter(item => {
       const bName = (item.barangay || 'UNSPECIFIED').toUpperCase().trim();
       return bName === activeBarangayFolder;
     });
-  }, [items, activeBarangayFolder]);
+  }, [filteredItems, activeBarangayFolder]);
 
   // Active folder filtered and searched members
   const filteredFolderMembers = useMemo(() => {
@@ -582,23 +695,33 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                   <p className="text-xs text-slate-500 mt-1">Select a folder to view and verify members in that specific directory.</p>
                 </div>
 
-                <div className="relative min-w-[240px]">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search Member folders..."
-                    value={folderSearchQuery}
-                    onChange={(e) => setFolderSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
-                  />
-                  {folderSearchQuery && (
-                    <button
-                      onClick={() => setFolderSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-100 rounded-full"
-                    >
-                      <X className="w-3.5 h-3.5 text-slate-400" />
-                    </button>
-                  )}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <button
+                    onClick={() => setShowAddNewFileModal(true)}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-550 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add New File
+                  </button>
+
+                  <div className="relative min-w-[240px]">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search Member folders..."
+                      value={folderSearchQuery}
+                      onChange={(e) => setFolderSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-100 rounded-xl transition-all text-xs outline-none text-slate-800 font-semibold"
+                    />
+                    {folderSearchQuery && (
+                      <button
+                        onClick={() => setFolderSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-100 rounded-full"
+                      >
+                        <X className="w-3.5 h-3.5 text-slate-400" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -740,13 +863,48 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                     <p className="text-xs text-slate-600 font-bold mt-0.5">Filter and click any member inside {activeBarangayFolder} to view complete details and verify.</p>
                   </div>
 
-                  <button 
-                    onClick={fetchAccounts}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 hover:text-teal-700 hover:border-teal-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
-                  >
-                    <Loader2 className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh List
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-0.5">
+                      <button
+                        onClick={() => setViewMode('grid')}
+                        className={`p-1 flex items-center justify-center rounded-lg cursor-pointer transition-all ${
+                          viewMode === 'grid' 
+                            ? 'bg-teal-600 text-white font-bold' 
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                        }`}
+                        title="Grid View"
+                      >
+                        <Grid className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setViewMode('table')}
+                        className={`p-1 flex items-center justify-center rounded-lg cursor-pointer transition-all ${
+                          viewMode === 'table' 
+                            ? 'bg-teal-600 text-white font-bold' 
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                        }`}
+                        title="List View"
+                      >
+                        <List className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => setShowAddNewFileModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-550 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add New File
+                    </button>
+
+                    <button 
+                      onClick={fetchAccounts}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 hover:text-teal-700 hover:border-teal-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      <Loader2 className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                      Refresh List
+                    </button>
+                  </div>
                 </div>
 
                 <div className="relative">
@@ -795,7 +953,7 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                 </div>
               </div>
 
-              {/* Patient List Table */}
+              {/* Patient List Content */}
               <div className="overflow-x-auto">
                 {filteredFolderMembers.length === 0 ? (
                   <div className="py-20 flex flex-col items-center justify-center text-slate-400 space-y-3 px-6 text-center max-w-sm mx-auto">
@@ -805,19 +963,142 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                       No matches found for your search query. Try typing another keyword or selecting a different status filter.
                     </p>
                   </div>
+                ) : viewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5 bg-slate-50/30">
+                    {filteredFolderMembers.map((item) => {
+                      const isSelected = selectedItem?.id === item.id;
+                      const hasFiles = item.uploadedFiles && item.uploadedFiles.length > 0;
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleOpenVerifier(item)}
+                          className={`bg-white rounded-2xl border border-slate-200 hover:border-teal-500 p-5 transition-all hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 relative ${
+                            isSelected ? 'ring-2 ring-teal-500 bg-teal-50/10' : ''
+                          }`}
+                        >
+                          {/* Top Card Info: Avatar and Name */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-sm border border-slate-200/50">
+                                {item.full_name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="text-left">
+                                <h4 className="font-extrabold text-slate-900 text-sm tracking-wide line-clamp-1">{item.full_name}</h4>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Three Main Grid-Style Blocks: Attachment, Barangay, Submitted by */}
+                          <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                            {/* 1. Attachment section with Visual Image/Thumb Grid */}
+                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-left">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2 block">
+                                <Paperclip className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                Attachments
+                              </span>
+                              {hasFiles ? (
+                                <div className="grid grid-cols-3 gap-1.5 mt-1">
+                                  {item.uploadedFiles!.map((file, fIdx) => {
+                                    const isImg = file.url && (
+                                      /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(file.name || '') ||
+                                      file.url.startsWith('data:image/') ||
+                                      file.url.includes('images') ||
+                                      file.url.startsWith('blob:')
+                                    );
+                                    return (
+                                      <div key={fIdx} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border border-slate-200 group/thumb shrink-0">
+                                        {isImg ? (
+                                          <img
+                                            src={file.url}
+                                            alt={file.name}
+                                            className="w-full h-full object-cover"
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-150">
+                                            <FileText className="w-4 h-4 text-slate-500" />
+                                            <span className="text-[8px] font-bold">PDF</span>
+                                          </div>
+                                        )}
+                                        <a
+                                          href={file.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="absolute inset-0 bg-teal-900/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center text-white text-[8px] font-bold transition-opacity duration-155"
+                                        >
+                                          View
+                                        </a>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-slate-400 font-semibold mt-1 italic">No attachments</p>
+                              )}
+                            </div>
+
+                            {/* 2 & 3: Barangay and Submitted by Side-by-Side Grid columns */}
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {/* Barangay Section */}
+                              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-left">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                  Barangay
+                                </span>
+                                <p className="text-[11px] font-extrabold text-slate-800 mt-1.5 uppercase truncate" title={item.barangay}>
+                                  {item.barangay}
+                                </p>
+                              </div>
+
+                              {/* Submitted by Section */}
+                              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-left">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                  Submitted by
+                                </span>
+                                <p className="text-[11px] font-extrabold text-slate-800 mt-1.5 truncate" title={item.submittedBy || 'System Encoder'}>
+                                  {item.submittedBy || 'System Encoder'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Footer Actions row */}
+                          <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleOpenVerifier(item)}
+                              className="flex-1 py-2 bg-slate-100 hover:bg-teal-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded-xl transition-all cursor-pointer text-center"
+                            >
+                              Details
+                            </button>
+                            <button
+                              onClick={() => setMemberToDelete(item)}
+                              className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-650 border border-slate-200/50 hover:border-red-200 text-slate-500 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0"
+                              title="Delete record"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50 text-slate-400 font-bold text-[10px] uppercase tracking-wider border-b border-slate-100">
-                        <th className="py-3 px-5">Member Details</th>
-                        <th className="py-3 px-5">Purok</th>
-                        <th className="py-3 px-5">Status</th>
+                        <th className="py-3 px-5">Member / File</th>
+                        <th className="py-3 px-5">Attachment</th>
+                        <th className="py-3 px-5">Barangay</th>
+                        <th className="py-3 px-5">Submitted By</th>
                         <th className="py-3 px-5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
                       {filteredFolderMembers.map((item) => {
                         const isSelected = selectedItem?.id === item.id;
+                        const hasFiles = item.uploadedFiles && item.uploadedFiles.length > 0;
                         return (
                           <tr
                             key={item.id}
@@ -831,56 +1112,84 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                                 <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
                                   {item.full_name.charAt(0).toUpperCase()}
                                 </div>
-                                <div>
-                                  <p className="font-bold text-slate-900">{item.full_name}</p>
-                                  <p className="text-[10px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1 font-mono">
-                                    <Phone className="w-3 h-3 text-slate-400" />
-                                    {item.contact_number || 'No contact #'}
+                                <div className="truncate max-w-[180px]">
+                                  <p className="font-extrabold text-slate-900 truncate" title={item.full_name}>
+                                    {item.full_name}
                                   </p>
                                 </div>
                               </div>
                             </td>
 
                             <td className="py-3.5 px-5">
-                              <p className="font-bold text-slate-700">Purok {item.purok || 'N/A'}</p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">{item.barangay}</p>
+                              {hasFiles ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {item.uploadedFiles!.map((file, fIdx) => {
+                                    const isImg = file.url && (
+                                      /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(file.name || '') ||
+                                      file.url.startsWith('data:image/') ||
+                                      file.url.includes('images') ||
+                                      file.url.startsWith('blob:')
+                                    );
+                                    return (
+                                      <div key={fIdx} className="relative w-8 h-8 rounded border border-slate-200 overflow-hidden bg-slate-100 group/table-thumb shrink-0">
+                                        {isImg ? (
+                                          <img
+                                            src={file.url}
+                                            alt={file.name}
+                                            className="w-full h-full object-cover"
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-150">
+                                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                                          </div>
+                                        )}
+                                        <a
+                                          href={file.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="absolute inset-0 bg-teal-900/60 opacity-0 group-hover/table-thumb:opacity-100 flex items-center justify-center text-white text-[7px] font-bold transition-opacity duration-150"
+                                        >
+                                          View
+                                        </a>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-semibold italic">No attachment</span>
+                              )}
                             </td>
 
                             <td className="py-3.5 px-5">
-                              <div className="flex flex-col gap-1">
-                                {item.existingAccVerified ? (
-                                  <span className="self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold text-[9px] uppercase tracking-wider">
-                                    <Check className="w-2.5 h-2.5" />
-                                    Verified
-                                  </span>
-                                ) : (
-                                  <span className="self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-bold text-[9px] uppercase tracking-wider">
-                                    <Clock className="w-2.5 h-2.5" />
-                                    Pending
-                                  </span>
-                                )}
-                              </div>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                                <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                {item.barangay}
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-5">
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 truncate max-w-[150px]">
+                                <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                {item.submittedBy || 'System Encoder'}
+                              </span>
                             </td>
 
                             <td className="py-3.5 px-5 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-2">
                                 <button
-                                  onClick={(e) => handleQuickVerify(e, item)}
-                                  className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                                    item.existingAccVerified 
-                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-200' 
-                                      : 'bg-white hover:bg-slate-50 text-slate-400 border-slate-200 hover:text-emerald-600'
-                                  }`}
-                                  title={item.existingAccVerified ? "Cancel verification" : "Instantly verify"}
-                                >
-                                  <BadgeCheck className="w-3.5 h-3.5" />
-                                </button>
-                                
-                                <button
                                   onClick={() => handleOpenVerifier(item)}
-                                  className="px-2.5 py-1.5 bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg transition-colors cursor-pointer"
+                                  className="px-2.5 py-1.5 bg-slate-150 hover:bg-teal-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer"
                                 >
                                   Details
+                                </button>
+                                <button
+                                  onClick={() => setMemberToDelete(item)}
+                                  className="p-1.5 bg-slate-150 hover:bg-red-50 hover:text-red-650 border border-transparent hover:border-red-100 text-slate-500 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0"
+                                  title="Delete record"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </td>
@@ -917,15 +1226,12 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                     <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center font-bold text-lg border border-teal-100">
-                          {selectedItem.full_name.charAt(0).toUpperCase()}
+                          <FileText className="w-5 h-5 text-teal-600" />
                         </div>
                         <div>
                           <h3 className="text-base font-extrabold text-slate-900 leading-none">
-                            {selectedItem.full_name}
+                            Member Verification Details
                           </h3>
-                          <p className="text-xs text-slate-500 mt-1 uppercase tracking-wide font-semibold">
-                            Complete Household Profile & Verification
-                          </p>
                         </div>
                       </div>
                       <button
@@ -938,309 +1244,179 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
 
                     {/* Scrollable Body */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                        {/* Left Column: Complete Details */}
-                        <div className="space-y-6">
+                      {/* Submission Details: 2 columns in 1 row */}
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                          Submission Metadata
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Barangay Details Card */}
+                          <div className="bg-slate-50/80 rounded-xl p-5 border border-slate-100 flex items-start gap-3">
+                            <div className="p-2 bg-white border border-slate-150 rounded-lg text-teal-600 shadow-xs">
+                              <MapPin className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Barangay</span>
+                              <span className="text-sm font-extrabold text-slate-800 uppercase tracking-wide">
+                                {selectedItem.barangay}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Submitted By Details Card */}
+                          <div className="bg-slate-50/80 rounded-xl p-5 border border-slate-100 flex items-start gap-3">
+                            <div className="p-2 bg-white border border-slate-150 rounded-lg text-teal-600 shadow-xs">
+                              <User className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Submitted By</span>
+                              <span className="text-sm font-extrabold text-slate-800 block truncate">
+                                {selectedItem.submittedBy || 'System Encoder'}
+                              </span>
+                              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                                Uploaded on: {selectedItem.created_at ? new Date(selectedItem.created_at).toLocaleString() : 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Attachments Section Below */}
+                      <div className="space-y-4 pt-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            Attachments
+                          </h4>
                           <div>
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                              Household Information
-                            </h4>
-                            <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-100 space-y-3.5">
-                              <div className="flex items-start gap-3">
-                                <MapPin className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Address</span>
-                                  <span className="text-xs font-bold text-slate-800">
-                                    Purok {selectedItem.purok || 'N/A'}, Barangay {selectedItem.barangay}
-                                  </span>
-                                </div>
-                              </div>
+                            <input
+                              type="file"
+                              id="member-detail-file-upload-instant"
+                              className="hidden"
+                              multiple
+                              disabled={uploadingFile}
+                              onChange={async (e) => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  for (const file of Array.from(e.target.files)) {
+                                    await handleFileUpload(file as any);
+                                  }
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor="member-detail-file-upload-instant"
+                              className={`flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 font-extrabold text-[11px] rounded-xl transition-colors cursor-pointer border border-teal-200/40 shadow-2xs ${uploadingFile ? 'opacity-50 pointer-events-none' : ''}`}
+                            >
+                              {uploadingFile ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-600" />
+                              ) : (
+                                <Upload className="w-3.5 h-3.5 text-teal-600" />
+                              )}
+                              Upload File
+                            </label>
+                          </div>
+                        </div>
+                        {selectedItem.uploadedFiles && selectedItem.uploadedFiles.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-[480px] overflow-y-auto pr-1">
+                            {selectedItem.uploadedFiles.map((file, idx) => {
+                              const isImage = file.url && (
+                                /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(file.name || '') ||
+                                file.url.startsWith('data:image/') ||
+                                file.url.includes('images') ||
+                                file.url.startsWith('blob:')
+                              );
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex flex-col justify-between p-3.5 bg-slate-50 border border-slate-150 rounded-2xl hover:border-teal-200 hover:bg-teal-50/10 transition-all text-xs space-y-3 shadow-2xs overflow-hidden"
+                                >
+                                  {isImage ? (
+                                    <div className="relative w-full h-36 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/50 group/img">
+                                      <img
+                                        src={file.url}
+                                        alt={file.name}
+                                        className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center w-full h-36 rounded-xl bg-slate-150 text-slate-400 border border-slate-200/50">
+                                      <FileText className="w-8 h-8 text-slate-300 mb-1" />
+                                      <span className="text-[10px] font-bold text-slate-400">PDF Document</span>
+                                    </div>
+                                  )}
 
-                              <div className="flex items-start gap-3 border-t border-slate-200/40 pt-3.5">
-                                <Phone className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Contact Number</span>
-                                  <span className="text-xs font-extrabold text-slate-800 font-mono">
-                                    {selectedItem.contact_number || 'No contact number provided'}
-                                  </span>
-                                </div>
-                              </div>
+                                  <div className="flex items-start gap-2.5">
+                                    <div className="p-1.5 bg-white border border-slate-150 rounded-xl text-teal-600 shrink-0 shadow-2xs">
+                                      <FileText className="w-4 h-4" />
+                                    </div>
+                                    <div className="truncate text-left flex-1 min-w-0">
+                                      <span className="font-extrabold text-slate-800 block truncate text-xs" title={file.name}>
+                                        {file.name}
+                                      </span>
+                                      {file.uploadedAt && (
+                                        <span className="text-[9px] text-slate-400 block font-bold mt-0.5">
+                                          {new Date(file.uploadedAt).toLocaleDateString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
 
-                              {selectedItem.facebookLink && (
-                                <div className="flex items-start gap-3 border-t border-slate-200/40 pt-3.5">
-                                  <Sparkles className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                                  <div>
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Facebook Profile / Link</span>
+                                  <div className="flex items-center gap-2 pt-2 border-t border-slate-200/40">
                                     <a
-                                      href={selectedItem.facebookLink}
+                                      href={file.url}
+                                      download
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-xs font-bold text-teal-600 hover:text-teal-700 hover:underline inline-flex items-center gap-1 mt-0.5"
+                                      className="flex-1 py-1.5 bg-white hover:bg-teal-50 border border-teal-200 text-teal-700 hover:text-teal-800 font-extrabold text-center rounded-lg transition-colors shadow-2xs text-[10px]"
                                     >
-                                      View Facebook Link
-                                      <ChevronRight className="w-3.5 h-3.5" />
+                                      View
                                     </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteFile(idx)}
+                                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-100"
+                                      title="Delete file"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
                                   </div>
                                 </div>
-                              )}
-
-                              <div className="flex items-start gap-3 border-t border-slate-200/40 pt-3.5">
-                                <Calendar className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Date Registered</span>
-                                  <span className="text-xs font-bold text-slate-800">
-                                    {selectedItem.created_at ? new Date(selectedItem.created_at).toLocaleString() : 'N/A'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-start gap-3 border-t border-slate-200/40 pt-3.5">
-                                <User className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Submitted By</span>
-                                  <span className="text-xs font-bold text-slate-800">
-                                    {selectedItem.submittedBy || 'System Encoder'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {(selectedItem.latitude || selectedItem.longitude) && (
-                                <div className="flex items-start gap-3 border-t border-slate-200/40 pt-3.5">
-                                  <Shield className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                                  <div>
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Geotag Coordinates</span>
-                                    <span className="text-xs font-bold text-slate-800 font-mono block mt-0.5">
-                                      Lat: {selectedItem.latitude}, Lng: {selectedItem.longitude}
-                                    </span>
-                                    {selectedItem.geotagged && (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-teal-100 text-teal-800 text-[9px] font-bold uppercase tracking-wider mt-1.5 border border-teal-200/50">
-                                        ✓ Verified Geotag
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                              );
+                            })}
                           </div>
-
-                          {/* Uploaded Documents / Files */}
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                              Uploaded Case / PCU Documents
-                            </h4>
-                            
-                            {/* File Drag and Drop / Input Upload Zone */}
-                            <div className="mb-4">
-                              <label
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  setDragActive(true);
-                                }}
-                                onDragLeave={() => setDragActive(false)}
-                                onDrop={async (e) => {
-                                  e.preventDefault();
-                                  setDragActive(false);
-                                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                                    await handleFileUpload(e.dataTransfer.files[0]);
-                                  }
-                                }}
-                                className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl transition-all cursor-pointer text-center ${
-                                  dragActive
-                                    ? 'border-teal-500 bg-teal-50/40 scale-[1.01]'
-                                    : 'border-slate-200 hover:border-teal-400 bg-slate-50/40 hover:bg-slate-50'
-                                }`}
-                              >
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      await handleFileUpload(e.target.files[0]);
-                                    }
-                                  }}
-                                  disabled={uploadingFile}
-                                />
-                                {uploadingFile ? (
-                                  <div className="flex flex-col items-center space-y-2">
-                                    <Loader2 className="w-6 h-6 text-teal-600 animate-spin" />
-                                    <span className="text-[11px] font-bold text-slate-500">Uploading Document...</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col items-center space-y-1">
-                                    <div className="p-1.5 bg-white shadow-xs rounded-lg border border-slate-100 text-slate-400">
-                                      <Upload className="w-5 h-5 text-teal-600" />
-                                    </div>
-                                    <p className="text-[11px] font-bold text-slate-700">
-                                      Click or drag to upload PCU Document
-                                    </p>
-                                    <p className="text-[9px] text-slate-400">
-                                      Supports PDF, Images up to 10MB
-                                    </p>
-                                  </div>
-                                )}
-                              </label>
-                            </div>
-
-                            {selectedItem.uploadedFiles && selectedItem.uploadedFiles.length > 0 ? (
-                              <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                                {selectedItem.uploadedFiles.map((file, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-lg hover:border-teal-200 hover:bg-teal-50/20 transition-all text-xs"
-                                  >
-                                    <div className="flex items-center gap-2 truncate mr-2">
-                                      <FileText className="w-4 h-4 text-teal-600 shrink-0" />
-                                      <div className="truncate text-left">
-                                        <span className="font-bold text-slate-700 block truncate" title={file.name}>
-                                          {file.name}
-                                        </span>
-                                        {file.uploadedAt && (
-                                          <span className="text-[9px] text-slate-400 block">
-                                            {new Date(file.uploadedAt).toLocaleDateString()}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      <a
-                                        href={file.url}
-                                        download
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 hover:text-teal-700 font-bold rounded-md transition-colors"
-                                      >
-                                        View
-                                      </a>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteFile(idx)}
-                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                                        title="Delete file"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400">
-                                <FileText className="w-7 h-7 mx-auto mb-1.5 text-slate-300" />
-                                <p className="text-[11px] font-bold text-slate-500">No attached files or PCU logs</p>
-                                <p className="text-[10px] text-slate-400">Use the upload box above to attach files</p>
-                              </div>
-                            )}
+                        ) : (
+                          <div className="p-8 rounded-2xl border border-dashed border-slate-200 text-center text-slate-400 bg-slate-50/50">
+                            <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                            <p className="text-xs font-bold text-slate-500">No attached files</p>
                           </div>
-                        </div>
+                        )}
+                      </div>
+                    </div>
 
-                        {/* Right Column: Verification & Action Console */}
-                        <div className="space-y-6">
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                              Verifier Console Actions
-                            </h4>
-                            <div className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm space-y-4">
-                              {/* Verified Switch */}
-                              <div className="flex items-center justify-between p-3 bg-slate-50/50 hover:bg-slate-50 rounded-xl border border-slate-200/50 transition-colors">
-                                <div className="flex items-center gap-2.5">
-                                  <BadgeCheck className={`w-5 h-5 ${formVerified ? 'text-emerald-600' : 'text-slate-400'}`} />
-                                  <div>
-                                    <span className="text-xs font-bold text-slate-700 block">Verified Active Member</span>
-                                    <span className="text-[10px] text-slate-400 block">Set verification approval tag</span>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setFormVerified(!formVerified)}
-                                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                    formVerified ? 'bg-emerald-600' : 'bg-slate-200'
-                                  }`}
-                                >
-                                  <span
-                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                                      formVerified ? 'translate-x-4' : 'translate-x-0'
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-
-                              {/* Category Select */}
-                              <div className="space-y-1">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                                  Verification Method
-                                </label>
-                                <select
-                                  value={verificationCategory}
-                                  onChange={(e) => setVerificationCategory(e.target.value)}
-                                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-teal-500 rounded-xl text-xs outline-none text-slate-700 font-bold cursor-pointer transition-all"
-                                >
-                                  <option value="Residency Check">📍 Residency Interview Check</option>
-                                  <option value="Barangay ID">🪪 Barangay ID Confirmed</option>
-                                  <option value="Leader Witnessed">👥 Barangay Leader Certified</option>
-                                  <option value="Clinic Record Matching">📁 Clinic Case Matching</option>
-                                  <option value="Voters Registry">🗳️ Voters List Confirmed</option>
-                                </select>
-                              </div>
-
-                              {/* Notes */}
-                              <div className="space-y-1">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                                  Validation Notes
-                                </label>
-                                <textarea
-                                  value={verificationNotes}
-                                  onChange={(e) => setVerificationNotes(e.target.value)}
-                                  placeholder="Add brief observations..."
-                                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-teal-500 rounded-xl text-xs outline-none text-slate-700 font-semibold shadow-inner min-h-[70px] resize-none"
-                                />
-                              </div>
-
-                              {/* Save Button */}
-                              <button
-                                onClick={handleSaveVerification}
-                                disabled={saving}
-                                className="w-full flex items-center justify-center gap-2 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white font-extrabold text-xs rounded-xl shadow-md shadow-teal-500/10 transition-colors cursor-pointer"
-                              >
-                                {saving ? (
-                                  <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    Saving...
-                                  </>
-                                ) : (
-                                  <>
-                                    <CheckCircle className="w-3.5 h-3.5" />
-                                    Save Verification
-                                  </>
-                                )}
-                              </button>
-
-                              {/* Printer block */}
-                              {formVerified && (
-                                <div className="pt-3 border-t border-slate-100">
-                                  <button
-                                    onClick={handlePrintBadge}
-                                    className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-teal-50 border border-teal-200 text-teal-700 hover:text-teal-800 font-bold text-xs rounded-lg transition-colors cursor-pointer"
-                                  >
-                                    <Printer className="w-3.5 h-3.5" />
-                                    Print Verification Pass
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Standards Guidance */}
-                          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/60 space-y-1.5">
-                            <h4 className="font-bold text-slate-700 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                              <Shield className="w-3.5 h-3.5 text-teal-600" />
-                              Verification Standards
-                            </h4>
-                            <ul className="text-[10px] text-slate-500 space-y-1 list-disc pl-4 font-semibold">
-                              <li>Double check patient identities before approving the verified status toggle.</li>
-                              <li>Ensure coordinates are confirmed where a physical residency interview was logged.</li>
-                            </ul>
-                          </div>
-                        </div>
+                    {/* Modal Action Footer */}
+                    <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+                      <button
+                        onClick={() => setMemberToDelete(selectedItem)}
+                        className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-700 border border-red-100 hover:border-red-200 font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Member
+                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={handlePrintBadge}
+                          className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-250 hover:border-slate-300 font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Printer className="w-4 h-4" />
+                          Print Pass
+                        </button>
+                        <button
+                          onClick={() => setSelectedItem(null)}
+                          className="px-5 py-2 bg-teal-600 hover:bg-teal-550 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+                        >
+                          Close
+                        </button>
                       </div>
                     </div>
                   </motion.div>
@@ -1255,13 +1431,14 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
       {/* Delete Folder Confirmation Modal */}
       <AnimatePresence>
         {folderToDelete && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" id="delete-folder-modal-container">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setFolderToDelete(null)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer"
+              id="delete-folder-modal-backdrop"
             />
 
             <motion.div
@@ -1269,6 +1446,7 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 z-10 space-y-6"
+              id="delete-folder-modal-card"
             >
               <div className="flex items-center gap-3 text-red-600">
                 <div className="p-3 bg-red-50 rounded-xl border border-red-100">
@@ -1298,6 +1476,7 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                   onClick={() => setFolderToDelete(null)}
                   disabled={deletingFolder}
                   className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                  id="cancel-delete-folder-btn"
                 >
                   Cancel
                 </button>
@@ -1305,6 +1484,7 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                   onClick={() => handleConfirmDeleteFolder(folderToDelete)}
                   disabled={deletingFolder}
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 disabled:bg-red-400 text-white font-extrabold text-xs rounded-xl shadow-md shadow-red-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="confirm-delete-folder-btn"
                 >
                   {deletingFolder ? (
                     <>
@@ -1315,6 +1495,324 @@ export const MemberVerification: React.FC<MemberVerificationProps> = ({
                     <>
                       <Trash2 className="w-3.5 h-3.5" />
                       Delete Folder
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Member Confirmation Modal */}
+      <AnimatePresence>
+        {memberToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" id="delete-member-modal-container">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMemberToDelete(null)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer"
+              id="delete-member-modal-backdrop"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 z-10 space-y-6"
+              id="delete-member-modal-card"
+            >
+              <div className="flex items-center gap-3 text-red-600">
+                <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 leading-none">
+                    Delete Member Record?
+                  </h3>
+                  <p className="text-[11px] text-red-600 font-bold mt-1 uppercase tracking-wider">
+                    Irreversible Action
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3.5">
+                <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+                  Are you sure you want to delete the record for <span className="font-extrabold text-slate-950 uppercase">{memberToDelete.full_name}</span>?
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  This will permanently delete this member record, any uploaded files, and verification logs. The member will be removed from the Barangay folder. This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => setMemberToDelete(null)}
+                  disabled={deletingMember}
+                  className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                  id="cancel-delete-member-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleConfirmDeleteMember(memberToDelete.id)}
+                  disabled={deletingMember}
+                  className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 disabled:bg-red-400 text-white font-extrabold text-xs rounded-xl shadow-md shadow-red-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="confirm-delete-member-btn"
+                >
+                  {deletingMember ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete Record
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add New File Modal */}
+      <AnimatePresence>
+        {showAddNewFileModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" id="add-new-file-modal-container">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!newFileSaving) setShowAddNewFileModal(false);
+              }}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer"
+              id="add-new-file-modal-backdrop"
+            />
+
+            {/* Modal Card */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 z-10 space-y-6 flex flex-col"
+              id="add-new-file-modal-card"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-teal-50 text-teal-700 rounded-xl border border-teal-100">
+                    <Plus className="w-5 h-5 text-teal-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 leading-none">
+                      Add New File
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-bold mt-1 uppercase tracking-wider">
+                      Upload Barangay Member Attachments
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddNewFileModal(false)}
+                  disabled={newFileSaving}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  id="add-new-file-close-btn"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <div className="space-y-4">
+                {/* Barangay Selection */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                    Barangay Selection
+                  </label>
+                  <select
+                    value={newFileBarangay}
+                    onChange={(e) => setNewFileBarangay(e.target.value)}
+                    disabled={newFileSaving}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-teal-500 rounded-xl text-xs outline-none text-slate-700 font-semibold"
+                    id="add-new-file-barangay-select"
+                  >
+                    {DEFAULT_BARANGAYS.map((brgy) => (
+                      <option key={brgy} value={brgy}>
+                        {brgy}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Attachment Upload Box */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                    Attachment (Multiple Files)
+                  </label>
+                  
+                  <label
+                    htmlFor="add-new-file-input"
+                    className={`flex flex-col items-center justify-center p-5 border-2 border-dashed rounded-xl transition-all cursor-pointer text-center ${
+                      newFileSaving
+                        ? 'opacity-50 pointer-events-none'
+                        : 'border-slate-200 hover:border-teal-400 bg-slate-50/40 hover:bg-slate-50'
+                    }`}
+                    id="add-new-file-upload-label"
+                  >
+                    <input
+                      type="file"
+                      id="add-new-file-input"
+                      className="hidden"
+                      multiple
+                      onChange={async (e) => {
+                        if (e.target.files) {
+                          const fileList = Array.from(e.target.files);
+                          const loadedFiles: { fileName: string; fileData: string }[] = [];
+                          for (const f of fileList) {
+                            try {
+                              const reader = new FileReader();
+                              const fileData = await new Promise<string>((resolve, reject) => {
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.onerror = () => reject(reader.error);
+                                reader.readAsDataURL(f as any);
+                              });
+                              loadedFiles.push({ fileName: (f as any).name, fileData });
+                            } catch (err) {
+                              console.error('File reading failed:', err);
+                            }
+                          }
+                          setNewFileAttachments(prev => [...prev, ...loadedFiles]);
+                        }
+                      }}
+                      disabled={newFileSaving}
+                    />
+                    <div className="flex flex-col items-center space-y-1">
+                      <div className="p-1.5 bg-white shadow-xs rounded-lg border border-slate-150 text-slate-400">
+                        <Upload className="w-5 h-5 text-teal-600" />
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-700">
+                        Click to select or drag files to upload
+                      </p>
+                      <p className="text-[9px] text-slate-400">
+                        Select multiple attachments (images, PDFs)
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* List of currently attached files */}
+                {newFileAttachments.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                      Staged Attachments ({newFileAttachments.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1" id="add-new-file-staged-list">
+                      {newFileAttachments.map((att, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded-lg text-[11px]"
+                        >
+                          <div className="flex items-center gap-2 truncate pr-2">
+                            <FileText className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                            <span className="font-semibold text-slate-700 truncate" title={att.fileName}>
+                              {att.fileName}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewFileAttachments(prev => prev.filter((_, i) => i !== idx));
+                            }}
+                            disabled={newFileSaving}
+                            className="p-1 text-slate-400 hover:text-rose-650 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddNewFileModal(false)}
+                  disabled={newFileSaving}
+                  className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-150 disabled:opacity-50 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                  id="add-new-file-cancel-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!newFileBarangay) {
+                      showToast('Please select a Barangay.', 'error');
+                      return;
+                    }
+                    if (newFileAttachments.length === 0) {
+                      showToast('Please attach at least one document.', 'error');
+                      return;
+                    }
+
+                    setNewFileSaving(true);
+                    try {
+                      const payload = {
+                        full_name: `Verification Doc - ${new Date().toLocaleDateString()}`,
+                        barangay: newFileBarangay,
+                        purok: '',
+                        contact_number: '',
+                        existingAccVerified: true,
+                        status: 'approved',
+                        files: newFileAttachments
+                      };
+
+                      const res = await fetch('/api/existing-accounts', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify(payload)
+                      });
+
+                      if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.error || 'Failed to save attachments.');
+                      }
+
+                      showToast('Attachments saved permanently to Base44 and stored successfully!', 'success');
+                      setShowAddNewFileModal(false);
+                      await fetchAccounts();
+                    } catch (err: any) {
+                      showToast(err.message || 'Error saving new file attachments.', 'error');
+                    } finally {
+                      setNewFileSaving(false);
+                    }
+                  }}
+                  disabled={newFileSaving}
+                  className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white font-extrabold text-xs rounded-xl shadow-md shadow-teal-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="add-new-file-save-btn"
+                >
+                  {newFileSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving permanently...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      Save File
                     </>
                   )}
                 </button>

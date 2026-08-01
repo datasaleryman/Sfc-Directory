@@ -1,0 +1,44 @@
+[
+  {
+    "id": "ext_1",
+    "full_name": "JUAN DELA CRUZ",
+    "barangay": "DAMPALAN",
+    "purok": "Mabuhay",
+    "contact_number": "09171234567",
+    "created_at": "2026-08-01T01:00:52.524Z",
+    "existingAcc": true,
+    "existingAccVerified": true,
+    "existingAccVisited": true,
+    "status": "approved",
+    "submittedBy": "Admin",
+    "pin": "12-345678901-2"
+  },
+  {
+    "id": "ext_2",
+    "full_name": "MARIA CLARA SANTOS",
+    "barangay": "KALINGAYAN",
+    "purok": "Orchid",
+    "contact_number": "09187654321",
+    "created_at": "2026-08-01T01:00:52.525Z",
+    "existingAcc": true,
+    "existingAccVerified": true,
+    "existingAccVisited": true,
+    "status": "approved",
+    "submittedBy": "Admin",
+    "pin": "98-765432109-8"
+  },
+  {
+    "id": "ext_3",
+    "full_name": "PEDRO SILANG",
+    "barangay": "SAN JOSE",
+    "purok": "Narra",
+    "contact_number": "09223334444",
+    "created_at": "2026-08-01T01:00:52.525Z",
+    "existingAcc": true,
+    "existingAccVerified": false,
+    "existingAccVisited": false,
+    "status": "pending",
+    "submittedBy": "Admin",
+    "pin": "44-332211009-8"
+  }
+]
