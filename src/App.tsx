@@ -366,7 +366,7 @@ export default function App() {
     };
 
     checkNewMessages();
-    const interval = setInterval(checkNewMessages, 5000); // 5-second polling interval for real-time response!
+    const interval = setInterval(checkNewMessages, 15000); // 15-second polling interval for real-time response!
     return () => clearInterval(interval);
   }, [authToken, seenMessageIds, adminUser, isSuperUser]);
 

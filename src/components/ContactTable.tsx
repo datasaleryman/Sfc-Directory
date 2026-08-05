@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3 } from 'lucide-react';
 import { Contact } from '../types.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -52,6 +52,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   // Folder View state vs Table View
   const [activeFolder, setActiveFolder] = useState<string | null>(null); // null = Folder Overview, string = specific Barangay folder
   const [folderSearch, setFolderSearch] = useState('');
+  const [isChartExpanded, setIsChartExpanded] = useState(true);
+  const [chartMetric, setChartMetric] = useState<'households' | 'puroks' | 'all'>('all');
 
   // Query Filter States
   const [search, setSearch] = useState('');
@@ -98,8 +100,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       if (res.ok && Array.isArray(data)) {
         setUserAccounts(data);
       }
-    } catch (err) {
-      console.error('Failed to fetch user accounts:', err);
+    } catch (err: any) {
+      if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        console.warn('User accounts fetch suspended (server starting/restarting).');
+      } else {
+        console.error('Failed to fetch user accounts:', err);
+      }
     }
   };
 
@@ -632,6 +638,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     ? [{ barangay: userBarangay, count: total, purokCount: allPuroks.length, geotaggedCount: contacts.filter(c => c.geotagged).length }]
     : rawFiltered;
 
+  const maxHouseholds = Math.max(...barangayFolders.map(f => f.count), 1);
+  const maxPuroks = Math.max(...barangayFolders.map(f => f.purokCount), 1);
+
   return (
     <div className="space-y-6">
       {/* View Switcher Breadcrumb Header */}
@@ -705,6 +714,180 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       {/* VIEW MODE 1: BARANGAY FOLDERS OVERVIEW GRID */}
       {!activeFolder && (
         <div className="space-y-6">
+          {/* Barangay Summary & Analytics Panel */}
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs transition-all">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center border border-emerald-200/50 shadow-inner">
+                  <BarChart3 className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-800 font-display">
+                    Barangay Summary Analytics
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    Overview of households and puroks across all folders
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+                <div className="flex flex-wrap items-center bg-slate-50 p-1 rounded-xl border border-slate-200/60 text-xs gap-1 justify-center sm:justify-start">
+                  <button
+                    onClick={() => setChartMetric('all')}
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer text-center ${
+                      chartMetric === 'all'
+                        ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/40'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    All Metrics
+                  </button>
+                  <button
+                    onClick={() => setChartMetric('households')}
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer text-center ${
+                      chartMetric === 'households'
+                        ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/40'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Households
+                  </button>
+                  <button
+                    onClick={() => setChartMetric('puroks')}
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer text-center ${
+                      chartMetric === 'puroks'
+                        ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/40'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Puroks
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setIsChartExpanded(!isChartExpanded)}
+                  className="py-2 px-3 sm:p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 sm:gap-0"
+                  title={isChartExpanded ? 'Collapse Analytics' : 'Expand Analytics'}
+                >
+                  <span className="inline sm:hidden text-xs font-bold text-slate-600">
+                    {isChartExpanded ? 'Hide Analytics' : 'Show Analytics'}
+                  </span>
+                  {isChartExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {isChartExpanded && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  {/* Executive Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Barangays</p>
+                      <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">{barangayFolders.length}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Active folders</p>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Households</p>
+                      <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
+                        {barangayFolders.reduce((sum, f) => sum + f.count, 0)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Across all folders</p>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Puroks Listed</p>
+                      <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
+                        {barangayFolders.reduce((sum, f) => sum + f.purokCount, 0)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Aggregated unique sectors</p>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar Landscape view with numbers of households */}
+                  <div className="mt-6 w-full bg-slate-50/30 rounded-2xl border border-slate-100 p-4 sm:p-5">
+                    {barangayFolders.length === 0 ? (
+                      <div className="h-[200px] flex flex-col items-center justify-center gap-2">
+                        <div className="w-8 h-8 border-3 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+                        <p className="text-xs text-slate-400 font-bold">Populating analytical data...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1.5 scrollbar-thin">
+                        {barangayFolders.map((f) => {
+                          const householdsPercent = maxHouseholds > 0 ? (f.count / maxHouseholds) * 100 : 0;
+                          const puroksPercent = maxPuroks > 0 ? (f.purokCount / maxPuroks) * 100 : 0;
+                          
+                          return (
+                            <div 
+                              key={f.barangay} 
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white border border-slate-100 rounded-2xl transition-all shadow-xs hover:border-emerald-200/50 hover:shadow-sm"
+                            >
+                              {/* Left details: Barangay Name & Stats Badge */}
+                              <div className="flex items-center gap-3 min-w-[170px] sm:max-w-[210px] shrink-0">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100 shrink-0">
+                                  <Folder className="w-4 h-4" />
+                                </div>
+                                <div className="truncate">
+                                  <p className="font-extrabold text-slate-700 text-xs sm:text-sm truncate">{f.barangay}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                    {f.count} Households {f.purokCount > 0 && `• ${f.purokCount} Puroks`}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right details: Horizontal Landscape Progress Bars */}
+                              <div className="flex-1 space-y-2 w-full">
+                                {/* Households Progress Bar */}
+                                {(chartMetric === 'all' || chartMetric === 'households') && (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-extrabold text-slate-400 w-16 shrink-0 text-left tracking-wider uppercase">Households</span>
+                                    <div className="flex-1 bg-slate-100 h-3 rounded-full overflow-hidden relative border border-slate-200/30">
+                                      <div 
+                                        className="bg-emerald-600 h-full rounded-full transition-all duration-500 shadow-inner"
+                                        style={{ width: `${householdsPercent}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-xs font-extrabold text-emerald-800 w-12 text-right shrink-0 bg-emerald-50/50 px-2 py-0.5 rounded-md border border-emerald-100/50">
+                                      {f.count}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Puroks Progress Bar */}
+                                {(chartMetric === 'all' || chartMetric === 'puroks') && (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-extrabold text-slate-400 w-16 shrink-0 text-left tracking-wider uppercase">Puroks</span>
+                                    <div className="flex-1 bg-slate-100 h-3 rounded-full overflow-hidden relative border border-slate-200/30">
+                                      <div 
+                                        className="bg-amber-600 h-full rounded-full transition-all duration-500 shadow-inner"
+                                        style={{ width: `${puroksPercent}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-xs font-extrabold text-amber-800 w-12 text-right shrink-0 bg-amber-50/50 px-2 py-0.5 rounded-md border border-amber-100/50">
+                                      {f.purokCount}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Folders Search & Toolbar */}
           <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
             <div className="relative w-full sm:max-w-md">

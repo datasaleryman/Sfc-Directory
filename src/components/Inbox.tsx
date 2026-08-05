@@ -58,7 +58,13 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
             setUsersList(data);
           }
         })
-        .catch(err => console.error('Error fetching users:', err));
+        .catch(err => {
+          if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+            console.warn('Users fetch suspended in Inbox (server starting/restarting).');
+          } else {
+            console.error('Error fetching users:', err);
+          }
+        });
     }
   }, [authToken]);
 
@@ -99,7 +105,11 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
         }
       }
     } catch (err: any) {
-      console.error('Error fetching messages:', err);
+      if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        console.warn('Messages fetch suspended (server starting/restarting).');
+      } else {
+        console.error('Error fetching messages:', err);
+      }
     } finally {
       setLoading(false);
     }
@@ -108,10 +118,10 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
   useEffect(() => {
     fetchMessages();
     
-    // Set up continuous polling every 5 seconds to trigger real-time notifications/automation popup
+    // Set up continuous polling every 15 seconds to trigger real-time notifications/automation popup
     const interval = setInterval(() => {
       fetchMessages(false);
-    }, 5000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [authToken]);
