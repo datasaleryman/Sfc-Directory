@@ -948,7 +948,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
 
           {/* Barangay Folders Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
             {filteredFolders.map((folder) => {
               const assignedAccounts = userAccounts.filter(
                 u => u.barangay && u.barangay.trim().toLowerCase() === folder.barangay.trim().toLowerCase()
@@ -959,109 +959,89 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               return (
                 <motion.div
                   key={folder.barangay}
-                  whileHover={{ y: -3, transition: { duration: 0.15 } }}
-                  className="bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-300 transition-all overflow-hidden flex flex-col justify-between group"
+                  whileHover={{ y: -3, transition: { duration: 0.12 } }}
+                  onClick={() => openFolder(folder.barangay)}
+                  className="relative cursor-pointer group pt-5 flex flex-col h-full min-h-[165px] max-w-[250px] w-full mx-auto sm:mx-0 select-none"
                 >
-                  {/* Folder Top Tab Design */}
-                  <div className="p-6 pb-4">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200/70 border border-amber-300/60 text-amber-800 flex items-center justify-center shadow-xs group-hover:from-emerald-100 group-hover:to-emerald-200 group-hover:border-emerald-300 group-hover:text-emerald-800 transition-colors">
-                        <Folder className="w-6 h-6 fill-amber-300/50 group-hover:fill-emerald-300/50 transition-colors" />
-                      </div>
-
-                      <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-extrabold text-xs">
-                        {folder.count} Households
-                      </span>
-                    </div>
-
-                    <h3 className="text-lg font-extrabold text-slate-800 font-display group-hover:text-emerald-700 transition-colors">
-                      {folder.barangay}
-                    </h3>
-                    <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                      Official Barangay Records Folder
-                    </p>
-
-                    {/* Assigned Accounts & Designated Badges */}
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      {isUserDesignated && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-[10px] flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-emerald-700" /> Designated for Your Account
-                        </span>
-                      )}
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] flex items-center gap-1">
-                        <User className="w-3 h-3 text-slate-500" />
-                        {assignedCount} {assignedCount === 1 ? 'Account' : 'Accounts'} Assigned
-                      </span>
-                    </div>
-
-                    <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
-                      <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{folder.purokCount} Puroks</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl">
-                        <Navigation className="w-3.5 h-3.5 text-teal-600" />
-                        <span>{folder.geotaggedCount} Geotagged</span>
-                      </div>
-                    </div>
+                  {/* Skeuomorphic Folder Tab on Top */}
+                  <div className="absolute top-0 left-4 h-6 w-32 bg-amber-100/90 border-t border-x border-amber-300/70 rounded-t-lg group-hover:bg-emerald-50 group-hover:border-emerald-300/80 transition-all duration-300 shadow-2xs flex items-center justify-start px-2.5 z-10">
+                    <Folder className="w-3 h-3 text-amber-700 group-hover:text-emerald-700 fill-amber-300/30 group-hover:fill-emerald-300/20 mr-1 shrink-0" />
+                    <span className="text-[9px] font-extrabold text-amber-800 group-hover:text-emerald-800 tracking-wider uppercase truncate">
+                      {folder.count} {folder.count === 1 ? 'Household' : 'Households'}
+                    </span>
                   </div>
 
-                  {/* Folder Bottom Action Bar */}
-                  <div className="p-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleExportExcel(folder.barangay);
-                        }}
-                        className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
-                        title={`Export ${folder.barangay} to Excel`}
-                      >
-                        <ArrowDownToLine className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleExportPDF(folder.barangay);
-                        }}
-                        className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
-                        title={`Export ${folder.barangay} to PDF`}
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                      {isAdmin && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenDesignateModal(folder.barangay);
-                            }}
-                            className="p-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/80 bg-emerald-50 border border-emerald-200/70 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-bold"
-                            title={`Designate ${folder.barangay} folder to accounts`}
-                          >
-                            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                            <span className="hidden sm:inline">Designate</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteFolderTarget(folder.barangay);
-                            }}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
-                            title={`Delete folder ${folder.barangay} & all its households`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
+                  {/* Physical Folder Body */}
+                  <div className="flex-1 bg-amber-50/15 hover:bg-amber-50/35 border border-amber-300/50 rounded-b-2xl rounded-tr-2xl rounded-tl-sm shadow-2xs group-hover:shadow-xs group-hover:border-emerald-400/70 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden z-0">
+                    {/* Subtle aesthetic folder paper line design inside the folder */}
+                    <div className="absolute right-3 top-3 opacity-[0.02] group-hover:opacity-[0.05] transition-all">
+                      <Folder className="w-16 h-16 stroke-1 text-slate-900" />
                     </div>
 
-                    <button
-                      onClick={() => openFolder(folder.barangay)}
-                      className="px-4 py-2 bg-slate-900 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                    >
-                      Open Folder <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Barangay Details */}
+                    <div className="space-y-1">
+                      <span className="text-[8px] font-extrabold text-amber-800/60 group-hover:text-emerald-800/60 tracking-wider uppercase block">
+                        Barangay Folder
+                      </span>
+                      <h3 className="text-base font-extrabold text-slate-800 font-display group-hover:text-emerald-800 transition-colors truncate">
+                        {folder.barangay}
+                      </h3>
+                      <p className="text-[10px] font-semibold text-slate-500 flex items-center gap-1 mt-0.5 bg-white/60 group-hover:bg-emerald-50/60 px-2 py-0.5 rounded-md border border-amber-200/30 group-hover:border-emerald-200/30 w-fit transition-colors">
+                        <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Ready to browse</span>
+                      </p>
+                    </div>
+
+                    {/* Folder Action Bar */}
+                    <div className="mt-4 pt-2 border-t border-amber-200/30 group-hover:border-emerald-200/30 flex items-center justify-between gap-2 z-10">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExportExcel(folder.barangay);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer border border-transparent hover:border-emerald-200/40"
+                          title={`Export ${folder.barangay} to Excel`}
+                        >
+                          <ArrowDownToLine className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExportPDF(folder.barangay);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer border border-transparent hover:border-emerald-200/40"
+                          title={`Export ${folder.barangay} to PDF`}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDesignateModal(folder.barangay);
+                              }}
+                              className="p-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/80 bg-emerald-50 border border-emerald-200/70 rounded-lg transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                              title={`Designate ${folder.barangay} folder to accounts`}
+                            >
+                              <UserCheck className="w-3 h-3 text-emerald-600" />
+                              <span className="hidden sm:inline">Designate</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteFolderTarget(folder.barangay);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              title={`Delete folder ${folder.barangay} & all its households`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               );

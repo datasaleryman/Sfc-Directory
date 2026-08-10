@@ -360,8 +360,12 @@ export default function App() {
             }
           }
         }
-      } catch (err) {
-        console.error('Error polling messages in App.tsx:', err);
+      } catch (err: any) {
+        if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+          console.warn('Messages polling suspended (server starting/restarting).');
+        } else {
+          console.error('Error polling messages in App.tsx:', err);
+        }
       }
     };
 
