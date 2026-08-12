@@ -306,7 +306,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setViewContact(null);
       setStagedPcuFiles([]);
       fetchContacts();
-      showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s)! Household "${viewContact.full_name}" has been transferred to Recent Upload.`, 'success');
+      showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s)! Member "${viewContact.full_name}" has been transferred to Recent Upload.`, 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -475,7 +475,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         throw new Error(data.error || 'Failed to delete folder.');
       }
 
-      showToast(`Barangay folder "${deleteFolderTarget}" has been successfully deleted along with ${data.count} households.`, 'success');
+      showToast(`Barangay folder "${deleteFolderTarget}" has been successfully deleted along with ${data.count} members.`, 'success');
       setDeleteFolderTarget(null);
       setActiveFolder(null); // Return to folders grid overview if they were inside it
       fetchContacts();
@@ -675,7 +675,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             </h2>
             <p className="text-xs text-slate-400 font-medium">
               {activeFolder
-                ? `Showing household records stored inside ${activeFolder}`
+                ? `Showing member records stored inside ${activeFolder}`
                 : isLeaderOrCoLeader && userBarangay
                   ? `Assigned Barangay Folder for ${currentUser?.role || 'Leader'}: ${userBarangay}`
                   : `Organized into ${barangayFolders.length} Barangay Folders from Base44 Database`}
@@ -726,7 +726,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     Barangay Summary Analytics
                   </h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    Overview of households and puroks across all folders
+                    Overview of members and puroks across all folders
                   </p>
                 </div>
               </div>
@@ -751,7 +751,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    Households
+                    Members
                   </button>
                   <button
                     onClick={() => setChartMetric('puroks')}
@@ -788,98 +788,61 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   className="overflow-hidden"
                 >
                   {/* Executive Summary Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5">
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Barangays</p>
-                      <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">{barangayFolders.length}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Active folders</p>
+                      <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
+                        {barangayFolders.length}
+                        <span className="text-slate-400 text-sm font-semibold ml-0.5">
+                          /{barangayFolders.reduce((sum, f) => sum + f.purokCount, 0)}
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Active folders & puroks</p>
                     </div>
 
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Households</p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Members</p>
                       <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
                         {barangayFolders.reduce((sum, f) => sum + f.count, 0)}
                       </p>
                       <p className="text-[10px] text-slate-400 mt-0.5">Across all folders</p>
                     </div>
-
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Puroks Listed</p>
-                      <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
-                        {barangayFolders.reduce((sum, f) => sum + f.purokCount, 0)}
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Aggregated unique sectors</p>
-                    </div>
                   </div>
 
-                  {/* Progress Bar Landscape view with numbers of households */}
-                  <div className="mt-6 w-full bg-slate-50/30 rounded-2xl border border-slate-100 p-4 sm:p-5">
+                  {/* Ultra-compact Barangay Folders Summary list with no progress bars */}
+                  <div className="mt-5 w-full bg-slate-50/30 rounded-2xl border border-slate-100 p-3 sm:p-4">
                     {barangayFolders.length === 0 ? (
-                      <div className="h-[200px] flex flex-col items-center justify-center gap-2">
+                      <div className="h-[120px] flex flex-col items-center justify-center gap-2">
                         <div className="w-8 h-8 border-3 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
                         <p className="text-xs text-slate-400 font-bold">Populating analytical data...</p>
                       </div>
                     ) : (
-                      <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1.5 scrollbar-thin">
-                        {barangayFolders.map((f) => {
-                          const householdsPercent = maxHouseholds > 0 ? (f.count / maxHouseholds) * 100 : 0;
-                          const puroksPercent = maxPuroks > 0 ? (f.purokCount / maxPuroks) * 100 : 0;
-                          
-                          return (
-                            <div 
-                              key={f.barangay} 
-                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white border border-slate-100 rounded-2xl transition-all shadow-xs hover:border-emerald-200/50 hover:shadow-sm"
-                            >
-                              {/* Left details: Barangay Name & Stats Badge */}
-                              <div className="flex items-center gap-3 min-w-[170px] sm:max-w-[210px] shrink-0">
-                                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100 shrink-0">
-                                  <Folder className="w-4 h-4" />
-                                </div>
-                                <div className="truncate">
-                                  <p className="font-extrabold text-slate-700 text-xs sm:text-sm truncate">{f.barangay}</p>
-                                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">
-                                    {f.count} Households {f.purokCount > 0 && `• ${f.purokCount} Puroks`}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* Right details: Horizontal Landscape Progress Bars */}
-                              <div className="flex-1 space-y-2 w-full">
-                                {/* Households Progress Bar */}
-                                {(chartMetric === 'all' || chartMetric === 'households') && (
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-[10px] font-extrabold text-slate-400 w-16 shrink-0 text-left tracking-wider uppercase">Households</span>
-                                    <div className="flex-1 bg-slate-100 h-3 rounded-full overflow-hidden relative border border-slate-200/30">
-                                      <div 
-                                        className="bg-emerald-600 h-full rounded-full transition-all duration-500 shadow-inner"
-                                        style={{ width: `${householdsPercent}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-xs font-extrabold text-emerald-800 w-12 text-right shrink-0 bg-emerald-50/50 px-2 py-0.5 rounded-md border border-emerald-100/50">
-                                      {f.count}
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Puroks Progress Bar */}
-                                {(chartMetric === 'all' || chartMetric === 'puroks') && (
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-[10px] font-extrabold text-slate-400 w-16 shrink-0 text-left tracking-wider uppercase">Puroks</span>
-                                    <div className="flex-1 bg-slate-100 h-3 rounded-full overflow-hidden relative border border-slate-200/30">
-                                      <div 
-                                        className="bg-amber-600 h-full rounded-full transition-all duration-500 shadow-inner"
-                                        style={{ width: `${puroksPercent}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-xs font-extrabold text-amber-800 w-12 text-right shrink-0 bg-amber-50/50 px-2 py-0.5 rounded-md border border-amber-100/50">
-                                      {f.purokCount}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                        {barangayFolders.map((f) => (
+                          <div 
+                            key={f.barangay} 
+                            className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Folder className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="font-extrabold text-slate-700 text-xs truncate" title={f.barangay}>
+                                {f.barangay}
+                              </span>
                             </div>
-                          );
-                        })}
+                            <div className="flex items-center gap-1 shrink-0 text-[9px] font-black tracking-wide">
+                              {(chartMetric === 'all' || chartMetric === 'households') && (
+                                <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100/50" title={`${f.count} Members`}>
+                                  {f.count} M
+                                </span>
+                              )}
+                              {(chartMetric === 'all' || chartMetric === 'puroks') && (
+                                <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100/50" title={`${f.purokCount} Puroks`}>
+                                  {f.purokCount} P
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -967,7 +930,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   <div className="absolute top-0 left-4 h-6 w-32 bg-amber-100/90 border-t border-x border-amber-300/70 rounded-t-lg group-hover:bg-emerald-50 group-hover:border-emerald-300/80 transition-all duration-300 shadow-2xs flex items-center justify-start px-2.5 z-10">
                     <Folder className="w-3 h-3 text-amber-700 group-hover:text-emerald-700 fill-amber-300/30 group-hover:fill-emerald-300/20 mr-1 shrink-0" />
                     <span className="text-[9px] font-extrabold text-amber-800 group-hover:text-emerald-800 tracking-wider uppercase truncate">
-                      {folder.count} {folder.count === 1 ? 'Household' : 'Households'}
+                      {folder.count} {folder.count === 1 ? 'Member' : 'Members'}
                     </span>
                   </div>
 
@@ -1034,7 +997,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                                 setDeleteFolderTarget(folder.barangay);
                               }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                              title={`Delete folder ${folder.barangay} & all its households`}
+                              title={`Delete folder ${folder.barangay} & all its members`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1138,7 +1101,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   <button
                     onClick={() => setDeleteFolderTarget(activeFolder)}
                     className="col-span-2 sm:col-span-1 px-3.5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px]"
-                    title={`Delete folder "${activeFolder}" & all its households`}
+                    title={`Delete folder "${activeFolder}" & all its members`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Delete Folder
@@ -1210,7 +1173,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     <tr>
                       <td colSpan={8} className="py-12 px-5 text-center text-slate-400">
                         <Folder className="w-10 h-10 mb-3 mx-auto text-slate-300" />
-                        <p className="font-semibold text-slate-600">No household records stored in this Barangay folder.</p>
+                        <p className="font-semibold text-slate-600">No member records stored in this Barangay folder.</p>
                         <p className="text-xs text-slate-400 mt-0.5">Try clearing search filters or add a new record.</p>
                       </td>
                     </tr>
@@ -1334,7 +1297,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               ) : contacts.length === 0 ? (
                 <div className="py-10 px-4 text-center text-slate-400">
                   <Folder className="w-10 h-10 mb-3 mx-auto text-slate-300" />
-                  <p className="font-semibold text-slate-600 text-sm">No household records found.</p>
+                  <p className="font-semibold text-slate-600 text-sm">No member records found.</p>
                 </div>
               ) : (
                 contacts.map((contact, index) => {
@@ -1486,7 +1449,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-slate-800 font-display">{viewContact.full_name}</h3>
-                  <p className="text-xs text-slate-400">Directory Household Record Details</p>
+                  <p className="text-xs text-slate-400">Directory Member Record Details</p>
                 </div>
               </div>
 
@@ -1681,7 +1644,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 Are you sure you want to delete the entire <strong className="text-slate-800">Barangay {deleteFolderTarget}</strong> folder?
               </p>
               <p className="text-[11px] text-rose-600 font-bold mt-3 bg-rose-50 p-3 rounded-2xl border border-rose-100/65 leading-normal">
-                ⚠️ This will soft-delete ALL household records associated with this Barangay folder from the clinic directory.
+                ⚠️ This will soft-delete ALL member records associated with this Barangay folder from the clinic directory.
               </p>
 
               <div className="pt-6 flex gap-3">
@@ -1748,7 +1711,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     <option value="">None (Do not transfer records from previous folder)</option>
                     {barangayFolders.map(f => (
                       <option key={f.barangay} value={f.barangay}>
-                        {f.barangay} ({f.count} Households)
+                        {f.barangay} ({f.count} Members)
                       </option>
                     ))}
                   </select>
@@ -1800,7 +1763,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         <span>Automatic Data Transfer & Folder Removal</span>
                       </div>
                       <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                        All <strong className="text-amber-950 font-extrabold">{recCount} household record(s)</strong> inside previous folder <strong className="text-amber-950">"{sourceDesignateBarangay}"</strong> will automatically be transferred to <strong className="text-emerald-900 font-extrabold">"{targetDesignateBarangay}"</strong>.
+                        All <strong className="text-amber-950 font-extrabold">{recCount} member record(s)</strong> inside previous folder <strong className="text-amber-950">"{sourceDesignateBarangay}"</strong> will automatically be transferred to <strong className="text-emerald-900 font-extrabold">"{targetDesignateBarangay}"</strong>.
                       </p>
                       <div className="pt-1.5 border-t border-amber-200/70 text-[11px] text-amber-900 font-bold flex items-center gap-1.5">
                         <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />

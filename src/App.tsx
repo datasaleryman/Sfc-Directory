@@ -361,8 +361,16 @@ export default function App() {
           }
         }
       } catch (err: any) {
-        if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
-          console.warn('Messages polling suspended (server starting/restarting).');
+        const errMsg = err?.message || '';
+        if (
+          err?.name === 'TypeError' ||
+          err?.name === 'AbortError' ||
+          errMsg.includes('fetch') ||
+          errMsg.includes('Network') ||
+          errMsg.includes('Failed to fetch') ||
+          errMsg.includes('load')
+        ) {
+          console.warn('Messages polling suspended (network/server starting/restarting).');
         } else {
           console.error('Error polling messages in App.tsx:', err);
         }
