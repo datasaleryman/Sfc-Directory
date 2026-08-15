@@ -39,7 +39,6 @@ import { ProfileModal } from './components/ProfileModal.js';
 import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
 import { ExistingAccount } from './components/ExistingAccount.js';
-import { MemberVerification } from './components/MemberVerification.js';
 import { Inbox } from './components/Inbox.js';
 
 export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
@@ -53,7 +52,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -74,7 +73,7 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleTabChange = (tab: 'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'member-verification' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -96,7 +95,6 @@ export default function App() {
     navSettings?: string;
     navExistingAccount?: string;
     navExistAccFiles?: string;
-    navMemberVerification?: string;
     rolePermissions?: Record<string, string[]>;
   }>({
     title: 'PCU Uploader',
@@ -113,8 +111,7 @@ export default function App() {
     navAdmins: 'Admin Credentials',
     navSettings: 'Website Settings',
     navExistingAccount: 'Existing Account',
-    navExistAccFiles: 'Exist. Acc. Files',
-    navMemberVerification: 'Member verification'
+    navExistAccFiles: 'Exist. Acc. Files'
   });
 
   const userRole = adminUser?.role || 'STAFF';
@@ -122,9 +119,6 @@ export default function App() {
 
   const hasTabPermission = (tabId: string) => {
     let targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
-    if (targetTabId === 'member-verification') {
-      targetTabId = 'existing-account';
-    }
     if (targetTabId === 'inbox') {
       targetTabId = 'dashboard';
     }
@@ -221,7 +215,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'inbox', 'map', 'directory', 'exist-acc-files', 'member-verification', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
+      const allTabs = ['dashboard', 'inbox', 'map', 'directory', 'exist-acc-files', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -649,7 +643,6 @@ export default function App() {
             { id: 'map', label: siteSettings.navMap || 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
             { id: 'exist-acc-files', label: siteSettings.navExistAccFiles || 'Exist. Acc. Files', icon: UserCheck },
-            { id: 'member-verification', label: siteSettings.navMemberVerification || 'Member verification', icon: BadgeCheck },
             { id: 'recent-upload', label: siteSettings.navRecentUpload || 'Recent Upload', icon: UploadCloud },
             { id: 'accounts', label: siteSettings.navAccounts || 'Account Management', icon: ShieldCheck },
           ] as const)
@@ -837,8 +830,6 @@ export default function App() {
                             ? (siteSettings.navExistingAccount || 'Existing Account')
                           : activeTab === 'exist-acc-files'
                             ? (siteSettings.navExistAccFiles || 'Exist. Acc. Files')
-                          : activeTab === 'member-verification'
-                            ? (siteSettings.navMemberVerification || 'Member verification')
                           : activeTab === 'admins' 
                             ? (siteSettings.navAdmins || 'Admin Credentials') 
                             : activeTab === 'settings'
@@ -1086,14 +1077,6 @@ export default function App() {
                   authToken={authToken}
                   showToast={showToast}
                   activeTab={activeTab}
-                  currentUser={adminUser}
-                />
-              )}
-
-              {activeTab === 'member-verification' && (
-                <MemberVerification
-                  authToken={authToken}
-                  showToast={showToast}
                   currentUser={adminUser}
                 />
               )}

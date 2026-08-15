@@ -59,8 +59,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const [search, setSearch] = useState('');
   const [addressFilter, setAddressFilter] = useState('All Barangays');
   const [purokFilter, setPurokFilter] = useState('All Puroks');
-  const [sortBy, setSortBy] = useState<'name' | 'address' | 'date'>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<'name' | 'address' | 'date'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
 
@@ -78,6 +78,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   // Active Modals state
   const [viewContact, setViewContact] = useState<Contact | null>(null);
+  const [highlightedContactId, setHighlightedContactId] = useState<number | string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<string | null>(null);
@@ -624,15 +625,17 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     setPage(1);
   };
 
-  // Filter Barangay Folders grid
-  const rawFiltered = barangayFolders.filter(f => {
-    if (isLeaderOrCoLeader && userBarangay) {
-      if (f.barangay.trim().toLowerCase() !== userBarangay.trim().toLowerCase()) {
-        return false;
+  // Filter and sort Barangay Folders grid alphabetically
+  const rawFiltered = [...barangayFolders]
+    .sort((a, b) => a.barangay.localeCompare(b.barangay))
+    .filter(f => {
+      if (isLeaderOrCoLeader && userBarangay) {
+        if (f.barangay.trim().toLowerCase() !== userBarangay.trim().toLowerCase()) {
+          return false;
+        }
       }
-    }
-    return f.barangay.toLowerCase().includes(folderSearch.toLowerCase().trim());
-  });
+      return f.barangay.toLowerCase().includes(folderSearch.toLowerCase().trim());
+    });
 
   const filteredFolders = (isLeaderOrCoLeader && userBarangay && rawFiltered.length === 0)
     ? [{ barangay: userBarangay, count: total, purokCount: allPuroks.length, geotaggedCount: contacts.filter(c => c.geotagged).length }]
@@ -818,7 +821,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
-                        {barangayFolders.map((f) => (
+                        {[...barangayFolders].sort((a, b) => a.barangay.localeCompare(b.barangay)).map((f) => (
                           <div 
                             key={f.barangay} 
                             className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all"
@@ -1180,11 +1183,19 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   ) : (
                     contacts.map((contact, index) => {
                       const itemIndex = (page - 1) * limit + index + 1;
+                      const isHighlighted = highlightedContactId === contact.id;
                       return (
                         <tr 
                           key={contact.id} 
-                          onClick={() => setViewContact(contact)}
-                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                          onClick={() => {
+                            setViewContact(contact);
+                            setHighlightedContactId(contact.id);
+                          }}
+                          className={`${
+                            isHighlighted 
+                              ? 'bg-amber-100/90 border-l-4 border-l-amber-500 font-bold hover:bg-amber-200/90 text-amber-950 shadow-sm ring-1 ring-amber-500/10' 
+                              : 'hover:bg-slate-50/80'
+                          } transition-all duration-150 cursor-pointer border-b border-slate-100/75`}
                         >
                           <td className="py-3.5 px-5 text-center text-xs font-bold text-slate-400">
                             {itemIndex}
@@ -1302,11 +1313,19 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               ) : (
                 contacts.map((contact, index) => {
                   const itemIndex = (page - 1) * limit + index + 1;
+                  const isHighlighted = highlightedContactId === contact.id;
                   return (
                     <div 
                       key={contact.id} 
-                      onClick={() => setViewContact(contact)}
-                      className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setViewContact(contact);
+                        setHighlightedContactId(contact.id);
+                      }}
+                      className={`${
+                        isHighlighted 
+                          ? 'bg-amber-100/90 border-l-4 border-l-amber-500 font-bold hover:bg-amber-200/90 text-amber-950 shadow-sm ring-1 ring-amber-500/10' 
+                          : 'hover:bg-slate-50/50'
+                      } p-4 space-y-3 transition-colors cursor-pointer border-b border-slate-100/75`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">

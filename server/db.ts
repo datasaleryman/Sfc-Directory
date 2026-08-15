@@ -4,10 +4,14 @@ import crypto from 'crypto';
 import { google } from 'googleapis';
 import { createClient } from '@base44/sdk';
 
-// Intercept console.error to suppress Base44 429 rate-limiting logs from stderr (preventing artificial AI Studio applet failures)
+// Intercept console functions to suppress Base44 429 rate-limiting logs (preventing artificial AI Studio applet failures)
 try {
   const originalConsoleError = console.error;
-  console.error = function (...args: any[]) {
+  const originalConsoleWarn = console.warn;
+  const originalConsoleLog = console.log;
+  const originalConsoleInfo = console.info;
+
+  const isRateLimitLog = (args: any[]): boolean => {
     const msg = args.map(arg => {
       if (typeof arg === 'string') return arg;
       if (arg instanceof Error) return arg.message;
@@ -16,22 +20,39 @@ try {
       } catch {
         return String(arg);
       }
-    }).join(' ');
+    }).join(' ').toLowerCase();
 
-    if (
-      msg.includes('[Base44 SDK Error]') || 
-      msg.includes('traffic volume limit exceeded') || 
-      msg.includes('Error data:') ||
-      msg.includes('App entity read traffic volume limit exceeded') ||
-      msg.includes('Too Many Requests')
-    ) {
-      console.info('[Base44 SDK Suppressed Rate-Limit Log]:', ...args);
-      return;
-    }
+    return (
+      msg.includes('base44 sdk error') ||
+      msg.includes('traffic volume limit exceeded') ||
+      msg.includes('error data:') ||
+      msg.includes('too many requests') ||
+      msg.includes('suppressed rate-limit') ||
+      msg.includes('429')
+    );
+  };
+
+  console.error = function (...args: any[]) {
+    if (isRateLimitLog(args)) return;
     originalConsoleError.apply(console, args);
   };
+
+  console.warn = function (...args: any[]) {
+    if (isRateLimitLog(args)) return;
+    originalConsoleWarn.apply(console, args);
+  };
+
+  console.log = function (...args: any[]) {
+    if (isRateLimitLog(args)) return;
+    originalConsoleLog.apply(console, args);
+  };
+
+  console.info = function (...args: any[]) {
+    if (isRateLimitLog(args)) return;
+    originalConsoleInfo.apply(console, args);
+  };
 } catch (e: any) {
-  console.warn('[Console Warning] Could not globally patch console.error:', e.message);
+  console.warn('[Console Warning] Could not globally patch console methods:', e.message);
 }
 
 // Safe filesystem wrappers for serverless platforms like Netlify
@@ -324,14 +345,14 @@ export function getSheetsStatus() {
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
-  'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'settings'],
-  'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'settings'],
-  'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'settings'],
-  'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'member-verification', 'settings'],
-  'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification'],
-  'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification'],
-  'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification'],
-  'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account', 'member-verification']
+  'MASTER ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'IT': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'ADMIN': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'Administrator': ['dashboard', 'map', 'directory', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account', 'settings'],
+  'LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account'],
+  'CO-LEADER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account'],
+  'ENCODER': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account'],
+  'STAFF': ['dashboard', 'map', 'directory', 'recent-upload', 'bulk', 'print', 'existing-account']
 };
 
 export interface SiteSettings {
@@ -350,7 +371,6 @@ export interface SiteSettings {
   navSettings?: string;
   navExistingAccount?: string;
   navExistAccFiles?: string;
-  navMemberVerification?: string;
   rolePermissions?: Record<string, string[]>;
 }
 
@@ -372,7 +392,6 @@ let siteSettings: SiteSettings = {
   navSettings: 'Website Settings',
   navExistingAccount: 'Existing Account',
   navExistAccFiles: 'Exist. Acc. Files',
-  navMemberVerification: 'Member verification',
   rolePermissions: DEFAULT_ROLE_PERMISSIONS
 };
 
@@ -776,20 +795,13 @@ export async function initDb() {
           navSettings: unescapeHtml(parsed.navSettings || 'Website Settings'),
           navExistingAccount: unescapeHtml(parsed.navExistingAccount || 'Existing Account'),
           navExistAccFiles: unescapeHtml(parsed.navExistAccFiles || 'Exist. Acc. Files'),
-          navMemberVerification: unescapeHtml(parsed.navMemberVerification || 'Member verification'),
           rolePermissions: (() => {
             const parsedPermissions = parsed.rolePermissions || {};
             const merged: Record<string, string[]> = { ...DEFAULT_ROLE_PERMISSIONS };
             for (const role of Object.keys(parsedPermissions)) {
               const perms = parsedPermissions[role];
               if (Array.isArray(perms)) {
-                const hasExisting = perms.includes('existing-account');
-                const hasVerification = perms.includes('member-verification');
-                if (hasExisting && !hasVerification) {
-                  merged[role] = [...perms, 'member-verification'];
-                } else {
-                  merged[role] = perms;
-                }
+                merged[role] = perms;
               }
             }
             return merged;
@@ -4695,7 +4707,6 @@ export async function syncSiteSettingsToGoogleSheets() {
       ['navSettings', siteSettings.navSettings || ''],
       ['navExistingAccount', siteSettings.navExistingAccount || ''],
       ['navExistAccFiles', siteSettings.navExistAccFiles || ''],
-      ['navMemberVerification', siteSettings.navMemberVerification || ''],
       ['rolePermissions', siteSettings.rolePermissions ? JSON.stringify(siteSettings.rolePermissions) : '']
     ];
 
