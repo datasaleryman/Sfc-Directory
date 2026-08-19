@@ -1104,47 +1104,12 @@ function isCacheFreshEnough(filePath: string, maxAgeMs: number = 300000): boolea
 // Throttled fetch for HouseholdSubmissions with persistent cache fallback
 export async function getCachedHouseholdSubmissions(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(HOUSEHOLDS_CACHE_FILE);
-  const isRateLimited = checkRateLimit();
-  const isFresh = isCacheFreshEnough(HOUSEHOLDS_CACHE_FILE, 300000); // 5 minutes protective window
-  
-  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true AND not rate-limited AND not fresh enough
-  if (isRateLimited || (!force && cacheExists && (Date.now() - lastHouseholdsFetchTime < 900000)) || (force && cacheExists && isFresh)) {
+  if (cacheExists) {
     try {
-      if (cacheExists) {
-        const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
+      const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+      return JSON.parse(data);
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read households cache file:', e);
-    }
-  }
-
-  try {
-    if (!trackAndCheckLocalRateLimit()) {
-      console.info('[Base44 Proactive Throttling] Serving cached submissions (API protective window active).');
-      if (cacheExists) {
-        const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
-      return [];
-    }
-    console.log('[Base44 SDK] Fetching live HouseholdSubmission entities from Base44...');
-    const submissions = await base44.entities.HouseholdSubmission.list(undefined, 5000);
-    if (submissions && Array.isArray(submissions)) {
-      lastHouseholdsFetchTime = Date.now();
-      await safeWriteFile(HOUSEHOLDS_CACHE_FILE, JSON.stringify(submissions, null, 2), 'utf-8');
-      return submissions;
-    }
-  } catch (err: any) {
-    handleBase44Error(err);
-    console.info('[Base44 Cache Fallback] Active: serving cached submissions (API cooling down or offline).');
-    if (cacheExists) {
-      try {
-        const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      } catch (e) {
-        console.warn('[Base44 Cache] Failed to read fallback households cache file:', e);
-      }
     }
   }
   return [];
@@ -1153,50 +1118,12 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
 // Throttled fetch for PCUUpdates with persistent cache fallback
 export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(PCUS_CACHE_FILE);
-  const isRateLimited = checkRateLimit();
-  const isFresh = isCacheFreshEnough(PCUS_CACHE_FILE, 300000); // 5 minutes protective window
-
-  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true AND not rate-limited AND not fresh enough
-  if (isRateLimited || (!force && cacheExists && (Date.now() - lastPCUsFetchTime < 900000)) || (force && cacheExists && isFresh)) {
+  if (cacheExists) {
     try {
-      if (cacheExists) {
-        const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
+      const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
+      return JSON.parse(data);
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read PCUs cache file:', e);
-    }
-  }
-
-  try {
-    if (!trackAndCheckLocalRateLimit()) {
-      console.info('[Base44 Proactive Throttling] Serving cached PCU updates (API protective window active).');
-      if (cacheExists) {
-        const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
-      return [];
-    }
-    const pcuEntity = (base44.entities as any).PCUUpdate;
-    if (pcuEntity && typeof pcuEntity.list === 'function') {
-      console.log('[Base44 SDK] Fetching live PCUUpdate entities from Base44...');
-      const records = await pcuEntity.list(undefined, 5000);
-      if (records && Array.isArray(records)) {
-        lastPCUsFetchTime = Date.now();
-        await safeWriteFile(PCUS_CACHE_FILE, JSON.stringify(records, null, 2), 'utf-8');
-        return records;
-      }
-    }
-  } catch (err: any) {
-    handleBase44Error(err);
-    console.info('[Base44 Cache Fallback] Active: serving cached PCU updates (API cooling down or offline).');
-    if (cacheExists) {
-      try {
-        const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      } catch (e) {
-        console.warn('[Base44 Cache] Failed to read fallback PCUs cache file:', e);
-      }
     }
   }
   return [];
@@ -1205,50 +1132,12 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
 // Throttled fetch for MemberVerifiedSubmissions with persistent cache fallback
 export async function getCachedMemberVerifiedSubmissions(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(MEMBER_VERIFIED_CACHE_FILE);
-  const isRateLimited = checkRateLimit();
-  const isFresh = isCacheFreshEnough(MEMBER_VERIFIED_CACHE_FILE, 300000); // 5 minutes protective window
-
-  // Cooldown throttle: 15 minutes (900,000 ms) unless force is true AND not rate-limited AND not fresh enough
-  if (isRateLimited || (!force && cacheExists && (Date.now() - lastMemberVerifiedFetchTime < 900000)) || (force && cacheExists && isFresh)) {
+  if (cacheExists) {
     try {
-      if (cacheExists) {
-        const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
+      const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
+      return JSON.parse(data);
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read member verified cache file:', e);
-    }
-  }
-
-  try {
-    if (!trackAndCheckLocalRateLimit()) {
-      console.info('[Base44 Proactive Throttling] Serving cached MemberVerifiedSubmissions (API protective window active).');
-      if (cacheExists) {
-        const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
-      return [];
-    }
-    const verifiedSubmissionEntity = (base44.entities as any).MemberVerifiedSubmission;
-    if (verifiedSubmissionEntity && typeof verifiedSubmissionEntity.list === 'function') {
-      console.log('[Base44 SDK] Fetching live MemberVerifiedSubmission entities from Base44...');
-      const records = await verifiedSubmissionEntity.list(undefined, 5000);
-      if (records && Array.isArray(records)) {
-        lastMemberVerifiedFetchTime = Date.now();
-        await safeWriteFile(MEMBER_VERIFIED_CACHE_FILE, JSON.stringify(records, null, 2), 'utf-8');
-        return records;
-      }
-    }
-  } catch (err: any) {
-    handleBase44Error(err);
-    console.info('[Base44 Cache Fallback] Active: serving cached MemberVerifiedSubmissions (API cooling down or offline).');
-    if (cacheExists) {
-      try {
-        const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      } catch (e) {
-        console.warn('[Base44 Cache] Failed to read fallback member verified cache file:', e);
-      }
     }
   }
   return [];
@@ -1257,58 +1146,12 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
 // Throttled fetch for SubmissionMessages from Base44 with cache fallback
 export async function getCachedSubmissionMessages(force: boolean = false): Promise<any[]> {
   const cacheExists = fs.existsSync(MESSAGES_CACHE_FILE);
-  const isRateLimited = checkRateLimit();
-  const cacheLifetime = 30000; // 30 seconds for highly responsive and active messaging
-  const isFresh = isCacheFreshEnough(MESSAGES_CACHE_FILE, 15000); // 15 seconds protective window for manual refresh spam protection
-
-  if (isRateLimited || (!force && cacheExists && (Date.now() - lastMessagesFetchTime < cacheLifetime)) || (force && cacheExists && isFresh)) {
+  if (cacheExists) {
     try {
-      if (cacheExists) {
-        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
+      const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
+      return JSON.parse(data);
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read messages cache file:', e);
-    }
-  }
-
-  try {
-    if (!trackAndCheckLocalRateLimit()) {
-      console.info('[Base44 Proactive Throttling] Serving cached SubmissionMessages (API protective window active).');
-      if (cacheExists) {
-        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
-      return [];
-    }
-    const messageEntity = (base44.entities as any).SubmissionMessage;
-    if (messageEntity && typeof messageEntity.list === 'function') {
-      console.log('[Base44 SDK] Fetching live SubmissionMessage entities from Base44...');
-      const records = await messageEntity.list(undefined, 5000);
-      if (records && Array.isArray(records)) {
-        lastMessagesFetchTime = Date.now();
-        await safeWriteFile(MESSAGES_CACHE_FILE, JSON.stringify(records, null, 2), 'utf-8');
-        return records;
-      }
-    } else {
-      // If SubmissionMessage is not dynamically supported on the Base44 server-side,
-      // seamlessly fall back to our local persistent JSON database file so messages work perfectly.
-      console.info('[Base44 Local Mode] SubmissionMessage entity not active on remote. Serving from local database.');
-      if (cacheExists) {
-        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
-    }
-  } catch (err: any) {
-    handleBase44Error(err);
-    console.info('[Base44 Cache Fallback] Active: serving cached SubmissionMessages (API cooling down or offline).');
-    if (cacheExists) {
-      try {
-        const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
-        return JSON.parse(data);
-      } catch (e) {
-        console.warn('[Base44 Cache] Failed to read fallback messages cache:', e);
-      }
     }
   }
   return [];
@@ -2755,40 +2598,41 @@ export async function editContact(
   return contactsCache[index];
 }
 
-// Delete a contact (Soft Delete - Update membership status to false instead of deleting)
+// Delete a contact permanently from the database and Google Sheets
 export async function deleteContact(id: number, username: string) {
-  const index = contactsCache.findIndex(c => c.id === id && !c.deleted_at && c.added_from_print_list !== false);
+  const index = contactsCache.findIndex(c => c.id === id);
   if (index === -1) {
     throw new Error('Contact not found or already removed from directory.');
   }
 
-  contactsCache[index].added_from_print_list = false;
-  contactsCache[index].updated_at = new Date().toISOString();
+  const deletedContact = contactsCache[index];
+  
+  // Remove permanently from contactsCache array
+  contactsCache.splice(index, 1);
 
   await saveContacts();
-  await addActivity(username, `Removed contact from Clinic Directory (marked inactive): "${contactsCache[index].full_name}"`);
+  await addActivity(username, `Permanently deleted contact from Clinic Directory: "${deletedContact.full_name}"`);
 
   if (sheetsConfig.syncEnabled) {
-    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync deletions to Google Sheets:', err));
+    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync permanent deletions to Google Sheets:', err));
   }
 
   return true;
 }
 
-// Delete an entire Barangay folder (Update all membership statuses in the folder to false and remove folder from barangays list)
+// Delete an entire Barangay folder permanently (Removes all contacts in the folder and removes folder from list)
 export async function deleteBarangayFolderContacts(barangay: string, username: string) {
   if (!barangay) throw new Error('Barangay name is required.');
   const target = barangay.trim().toLowerCase();
   
-  let count = 0;
-  for (let i = 0; i < contactsCache.length; i++) {
-    const c = contactsCache[i];
-    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && (isBarangayMatch(c.barangay, barangay) || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(target).toLowerCase())) {
-      contactsCache[i].added_from_print_list = false;
-      contactsCache[i].updated_at = new Date().toISOString();
-      count++;
-    }
-  }
+  const initialLength = contactsCache.length;
+  // Filter out any contacts in the target barangay permanently from the database array!
+  contactsCache = contactsCache.filter(c => {
+    const isTargetBarangay = c.barangay && (isBarangayMatch(c.barangay, barangay) || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(target).toLowerCase());
+    return !isTargetBarangay;
+  });
+  
+  const count = initialLength - contactsCache.length;
 
   // Remove barangay from barangaysCache so empty or deleted folder does not remain in directory
   barangaysCache = barangaysCache.filter(b => 
@@ -2799,7 +2643,7 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
   await saveContacts();
   await saveBarangays();
 
-  await addActivity(username, `Removed Barangay folder "${barangay}" (${count} households) from Clinic Directory.`);
+  await addActivity(username, `Permanently deleted Barangay folder "${barangay}" (${count} households) from Clinic Directory.`);
 
   if (sheetsConfig.syncEnabled) {
     try {
@@ -2812,7 +2656,7 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
     }
   }
 
-  return { success: true, count, message: `Barangay folder "${barangay}" deleted successfully.` };
+  return { success: true, count, message: `Barangay folder "${barangay}" permanently deleted successfully.` };
 }
 
 // Overwrite Google Sheets with all active (non-soft-deleted) contacts
@@ -6034,25 +5878,6 @@ export async function deleteExistingAccountFolder(barangay: string, username: st
     return accBarangay.trim().toUpperCase() === normalizedTarget;
   });
 
-  // For accounts synced to Base44, we can attempt to delete them
-  for (const acc of targetAccounts) {
-    if (acc.id && !acc.id.toString().startsWith('ext_')) {
-      const originalConsoleError = console.error;
-      try {
-        console.error = () => {}; // Suppress SDK 404 error logs
-        const submissionEntity = base44.entities.HouseholdSubmission;
-        if (submissionEntity && typeof submissionEntity.delete === 'function') {
-          console.log(`[Base44 SDK] Deleting HouseholdSubmission in Base44 for ID: ${acc.id}...`);
-          await submissionEntity.delete(acc.id.toString());
-        }
-      } catch (err: any) {
-        console.log(`[Base44 SDK Info] HouseholdSubmission already deleted or not found on Base44 side for ID: ${acc.id}`);
-      } finally {
-        console.error = originalConsoleError;
-      }
-    }
-  }
-
   // Remove completely from local cache
   existingAccountsCache = existingAccountsCache.filter(acc => {
     const accBarangay = acc.barangay || 'Unknown Barangay';
@@ -6072,23 +5897,6 @@ export async function deleteLocalExistingAccount(id: string, username: string): 
   const targetAcc = existingAccountsCache.find(acc => acc.id.toString() === id.toString());
   if (!targetAcc) {
     throw new Error(`Account with ID "${id}" not found.`);
-  }
-
-  // If synced with Base44, attempt to delete there too
-  if (targetAcc.id && !targetAcc.id.toString().startsWith('ext_')) {
-    const originalConsoleError = console.error;
-    try {
-      console.error = () => {}; // Suppress SDK 404 error logs
-      const submissionEntity = base44.entities.HouseholdSubmission;
-      if (submissionEntity && typeof submissionEntity.delete === 'function') {
-        console.log(`[Base44 SDK] Deleting HouseholdSubmission in Base44 for ID: ${targetAcc.id}...`);
-        await submissionEntity.delete(targetAcc.id.toString());
-      }
-    } catch (err: any) {
-      console.log(`[Base44 SDK Info] HouseholdSubmission already deleted or not found on Base44 side for ID: ${targetAcc.id}`);
-    } finally {
-      console.error = originalConsoleError;
-    }
   }
 
   // Remove from cache
