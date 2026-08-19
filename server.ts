@@ -73,35 +73,6 @@ export async function getApp() {
   // Initialize the fast file-backed database cache
   await initDb();
 
-  // Run initial sync from Base44 on startup (skip in serverless environments like Netlify to prevent cold-start gateway 502 timeouts)
-  if (process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
-    console.log('[Startup] Initiating startup synchronization with Base44 Database...');
-    syncBase44Contacts()
-      .then((success) => {
-        console.log('[Startup] Initial Base44 sync finished. Success:', success);
-      })
-      .catch((err) => {
-        console.error('[Startup] Initial Base44 sync error:', err);
-      });
-  } else {
-    console.log('[Startup] Serverless environment detected. Skipping startup Base44 sync to ensure instantaneous boot and avoid Netlify 502 errors.');
-  }
-
-  // Set up periodic background synchronization with Base44 Database every 10 minutes (only in non-serverless environments)
-  if (process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
-    const BASE44_SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-    setInterval(() => {
-      console.log('[Background Sync] Initiating background periodic sync with Base44 Database...');
-      syncBase44Contacts()
-        .then((success) => {
-          console.log('[Background Sync] Background Base44 sync finished. Success:', success);
-        })
-        .catch((err) => {
-          console.error('[Background Sync] Background Base44 sync error:', err);
-        });
-    }, BASE44_SYNC_INTERVAL_MS);
-  }
-
   const app = express();
   const PORT = 3000;
 

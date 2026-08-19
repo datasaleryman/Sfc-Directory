@@ -6,7 +6,6 @@ import {
   UserPlus, 
   FileSpreadsheet, 
   Printer, 
-  Database,
   BarChart3,
   PieChart as PieChartIcon,
   TrendingUp
@@ -43,7 +42,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSyncComplete,
   showToast
 }) => {
-  const [syncing, setSyncing] = React.useState(false);
   const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
 
   // Format Date in local friendly format
@@ -53,31 +51,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } catch {
       return isoString;
-    }
-  };
-
-  const handleBase44Sync = async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const res = await fetch('/api/contacts/sync-base44', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast?.('Base44 Database sync completed successfully!', 'success');
-        onSyncComplete?.();
-      } else {
-        showToast?.(data.error || 'Failed to sync with Base44 Database.', 'error');
-      }
-    } catch (err: any) {
-      showToast?.(err.message || 'Error executing sync.', 'error');
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -150,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       className="space-y-8"
     >
       {/* 3D Visual Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Total Contacts Card */}
         <motion.div 
@@ -244,66 +217,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           
           <div className="absolute right-0 bottom-0 w-36 h-36 bg-gradient-to-br from-amber-100/5 to-amber-200/10 rounded-full translate-x-12 translate-y-12 group-hover:scale-125 transition-transform duration-500 pointer-events-none" />
-        </motion.div>
-
-        {/* Base44 Sync Card */}
-        <motion.div 
-          variants={itemVariants}
-          whileHover={{ y: -6, shadow: "0 20px 40px rgba(0,0,0,0.08)" }}
-          className="bg-white border border-slate-100 rounded-3xl p-6 flex flex-col justify-between shadow-[0_8px_30px_rgb(0,0,0,0.02)] relative overflow-hidden group min-h-[160px] transition-shadow duration-300"
-        >
-          <div className="flex items-start justify-between z-10 w-full">
-            <div className="space-y-2.5 min-w-0">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                Base44 Database
-              </p>
-              <h3 className="text-4xl font-extrabold text-slate-800 font-display tracking-tight leading-none">
-                {loading ? (
-                  <span className="inline-block w-20 h-9 bg-slate-100 animate-pulse rounded-lg" />
-                ) : (
-                  stats?.base44SyncStatus?.count?.toLocaleString() ?? '864'
-                )}
-              </h3>
-              <p className="text-[10px] text-slate-400 font-medium truncate max-w-[150px]">
-                {stats?.base44SyncStatus?.lastSuccess ? `Synced: ${formatTime(stats.base44SyncStatus.lastSuccess)}` : 'Sync Active'}
-              </p>
-            </div>
-            
-            {/* Volumetric 3D Icon */}
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-[0_6px_15px_rgba(59,130,246,0.3),inset_0_-2.5px_0_rgba(0,0,0,0.2),inset_0_1.5px_1px_rgba(255,255,255,0.4)] border border-blue-400/20 transform group-hover:scale-105 group-hover:rotate-3 transition-all duration-300">
-              <Database className="w-5.5 h-5.5 drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.25)]" />
-            </div>
-          </div>
-
-          <div className="mt-4 z-10 flex items-center justify-between gap-2 border-t border-slate-50 pt-3">
-            <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse animate-duration-1000"></span>
-              Live Synced
-            </span>
-            <button
-              onClick={handleBase44Sync}
-              disabled={syncing || loading}
-              className={`px-3 py-1.5 text-[10px] font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer focus:outline-none ${
-                syncing 
-                  ? 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none' 
-                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100/80 border border-blue-100'
-              }`}
-            >
-              {syncing ? (
-                <>
-                  <svg className="animate-spin h-3 w-3 text-slate-400" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Syncing
-                </>
-              ) : (
-                'Sync Now'
-              )}
-            </button>
-          </div>
-          
-          <div className="absolute right-0 bottom-0 w-28 h-28 bg-gradient-to-br from-blue-100/5 to-blue-200/10 rounded-full translate-x-10 translate-y-10 group-hover:scale-125 transition-transform duration-500 pointer-events-none" />
         </motion.div>
       </div>
 

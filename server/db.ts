@@ -205,6 +205,77 @@ const LOGO_DATA_FILE = path.join(DATA_DIR, 'logo_data.txt');
 const FAVICON_DATA_FILE = path.join(DATA_DIR, 'favicon_data.txt');
 const BARANGAYS_FILE = path.join(DATA_DIR, 'barangays.json');
 
+const DELETED_CONTACTS_FILE = path.join(DATA_DIR, 'deleted_contacts.json');
+const DELETED_BARANGAYS_FILE = path.join(DATA_DIR, 'deleted_barangays.json');
+const DELETED_EXISTING_ACCOUNTS_FILE = path.join(DATA_DIR, 'deleted_existing_accounts.json');
+
+export interface DeletedContactRecord {
+  id?: number | string;
+  full_name: string;
+  barangay: string;
+  deletedAt: string;
+}
+
+export interface DeletedExistingAccountRecord {
+  id?: string;
+  full_name: string;
+  barangay: string;
+  deletedAt: string;
+}
+
+export let deletedContactsCache: DeletedContactRecord[] = [];
+export let deletedBarangaysCache: string[] = [];
+export let deletedExistingAccountsCache: DeletedExistingAccountRecord[] = [];
+
+export function isBarangayTombstoned(bg: string): boolean {
+  if (!bg || typeof bg !== 'string') return false;
+  const target = bg.trim().toLowerCase();
+  if (!target) return false;
+  return deletedBarangaysCache.some(deletedBg => {
+    if (!deletedBg) return false;
+    const del = deletedBg.trim().toLowerCase();
+    return del === target || isBarangayMatch(deletedBg, bg) || normalizeBarangayName(deletedBg).toLowerCase() === normalizeBarangayName(bg).toLowerCase();
+  });
+}
+
+export function isContactTombstoned(c: { id?: number | string; full_name?: string; barangay?: string }): boolean {
+  if (!c) return false;
+  if (c.barangay && isBarangayTombstoned(c.barangay)) return true;
+  const cName = (c.full_name || '').trim();
+  const cBarangay = (c.barangay || '').trim();
+  const cId = c.id !== undefined && c.id !== null ? c.id.toString() : '';
+
+  return deletedContactsCache.some(del => {
+    if (cId && del.id !== undefined && del.id !== null && del.id.toString() === cId) return true;
+    if (cName && del.full_name && normalizeCompareName(del.full_name, cName)) {
+      if (!cBarangay || !del.barangay) return true;
+      if (isBarangayMatch(del.barangay, cBarangay) || normalizeBarangayName(del.barangay).toLowerCase() === normalizeBarangayName(cBarangay).toLowerCase()) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+export function isExistingAccountTombstoned(acc: { id?: string; full_name?: string; barangay?: string }): boolean {
+  if (!acc) return false;
+  if (acc.barangay && isBarangayTombstoned(acc.barangay)) return true;
+  const aName = (acc.full_name || '').trim();
+  const aBarangay = (acc.barangay || '').trim();
+  const aId = acc.id !== undefined && acc.id !== null ? acc.id.toString() : '';
+
+  return deletedExistingAccountsCache.some(del => {
+    if (aId && del.id !== undefined && del.id !== null && del.id.toString() === aId) return true;
+    if (aName && del.full_name && normalizeCompareName(del.full_name, aName)) {
+      if (!aBarangay || !del.barangay) return true;
+      if (isBarangayMatch(del.barangay, aBarangay) || normalizeBarangayName(del.barangay).toLowerCase() === normalizeBarangayName(aBarangay).toLowerCase()) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
 export const DEFAULT_BARANGAYS: string[] = [
   'Navalan',
   'Kalingayan',
@@ -540,6 +611,46 @@ export async function initDb() {
     }
     safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2));
 
+    // Init Tombstones / Deleted Records
+    if (fs.existsSync(DELETED_CONTACTS_FILE)) {
+      try {
+        const raw = fs.readFileSync(DELETED_CONTACTS_FILE, 'utf-8');
+        deletedContactsCache = JSON.parse(raw);
+        if (!Array.isArray(deletedContactsCache)) deletedContactsCache = [];
+      } catch (e) {
+        deletedContactsCache = [];
+      }
+    } else {
+      deletedContactsCache = [];
+      safeWriteFileSync(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2));
+    }
+
+    if (fs.existsSync(DELETED_BARANGAYS_FILE)) {
+      try {
+        const raw = fs.readFileSync(DELETED_BARANGAYS_FILE, 'utf-8');
+        deletedBarangaysCache = JSON.parse(raw);
+        if (!Array.isArray(deletedBarangaysCache)) deletedBarangaysCache = [];
+      } catch (e) {
+        deletedBarangaysCache = [];
+      }
+    } else {
+      deletedBarangaysCache = [];
+      safeWriteFileSync(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2));
+    }
+
+    if (fs.existsSync(DELETED_EXISTING_ACCOUNTS_FILE)) {
+      try {
+        const raw = fs.readFileSync(DELETED_EXISTING_ACCOUNTS_FILE, 'utf-8');
+        deletedExistingAccountsCache = JSON.parse(raw);
+        if (!Array.isArray(deletedExistingAccountsCache)) deletedExistingAccountsCache = [];
+      } catch (e) {
+        deletedExistingAccountsCache = [];
+      }
+    } else {
+      deletedExistingAccountsCache = [];
+      safeWriteFileSync(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2));
+    }
+
     // Init Contacts
     if (!fs.existsSync(CONTACTS_FILE)) {
       // Start with empty contacts list as requested
@@ -593,8 +704,8 @@ export async function initDb() {
         if (updated) migrated = true;
         return anyC as Contact;
       });
-      // Filter out auto-synced base44 items; only keep contacts added locally/manually, from Print List, soft-deleted, or containing PCUs
-      contactsCache = contactsCache.filter(c => c && (c.added_locally || c.id >= 100000 || c.pcu_file_url || (c.deleted_at !== null && c.deleted_at !== undefined)));
+      // Filter out auto-synced base44 items & tombstoned contacts
+      contactsCache = contactsCache.filter(c => c && !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay));
       safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
     }
 
@@ -639,7 +750,7 @@ export async function initDb() {
       try {
         const parsed = JSON.parse(content);
         if (Array.isArray(parsed)) {
-          pcuUpdatesCache = parsed.filter(u => u && u.added_from_website);
+          pcuUpdatesCache = parsed.filter(u => u && u.added_from_website && !isBarangayTombstoned(u.barangay));
           safeWriteFileSync(PCU_UPDATES_FILE, JSON.stringify(pcuUpdatesCache, null, 2));
         } else {
           pcuUpdatesCache = [];
@@ -656,50 +767,7 @@ export async function initDb() {
 
     // Init Existing Accounts
     if (!fs.existsSync(EXISTING_ACCOUNTS_FILE)) {
-      const initialExistingAccounts: ExistingAccountItem[] = [
-        {
-          id: 'ext_1',
-          full_name: 'JUAN DELA CRUZ',
-          barangay: 'DAMPALAN',
-          purok: 'Mabuhay',
-          contact_number: '09171234567',
-          created_at: new Date().toISOString(),
-          existingAcc: true,
-          existingAccVerified: true,
-          existingAccVisited: true,
-          status: 'approved',
-          submittedBy: 'Admin',
-          pin: '12-345678901-2'
-        },
-        {
-          id: 'ext_2',
-          full_name: 'MARIA CLARA SANTOS',
-          barangay: 'KALINGAYAN',
-          purok: 'Orchid',
-          contact_number: '09187654321',
-          created_at: new Date().toISOString(),
-          existingAcc: true,
-          existingAccVerified: true,
-          existingAccVisited: true,
-          status: 'approved',
-          submittedBy: 'Admin',
-          pin: '98-765432109-8'
-        },
-        {
-          id: 'ext_3',
-          full_name: 'PEDRO SILANG',
-          barangay: 'SAN JOSE',
-          purok: 'Narra',
-          contact_number: '09223334444',
-          created_at: new Date().toISOString(),
-          existingAcc: true,
-          existingAccVerified: false,
-          existingAccVisited: false,
-          status: 'pending',
-          submittedBy: 'Admin',
-          pin: '44-332211009-8'
-        }
-      ];
+      const initialExistingAccounts: ExistingAccountItem[] = [];
       safeWriteFileSync(EXISTING_ACCOUNTS_FILE, JSON.stringify(initialExistingAccounts, null, 2));
       existingAccountsCache = initialExistingAccounts;
     } else {
@@ -712,7 +780,7 @@ export async function initDb() {
       try {
         const parsed = JSON.parse(content);
         if (Array.isArray(parsed)) {
-          existingAccountsCache = parsed.filter(acc => acc && (acc.added_from_website || acc.id === 'ext_1'));
+          existingAccountsCache = parsed.filter(acc => acc && acc.added_from_website && !isExistingAccountTombstoned(acc));
           safeWriteFileSync(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2));
         } else {
           existingAccountsCache = [];
@@ -728,16 +796,16 @@ export async function initDb() {
         const raw = fs.readFileSync(BARANGAYS_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          barangaysCache = parsed;
+          barangaysCache = parsed.filter((b: string) => !isBarangayTombstoned(b));
         } else {
-          barangaysCache = [...DEFAULT_BARANGAYS];
+          barangaysCache = [...DEFAULT_BARANGAYS].filter(b => !isBarangayTombstoned(b));
           safeWriteFileSync(BARANGAYS_FILE, JSON.stringify(barangaysCache, null, 2));
         }
       } catch (e) {
-        barangaysCache = [...DEFAULT_BARANGAYS];
+        barangaysCache = [...DEFAULT_BARANGAYS].filter(b => !isBarangayTombstoned(b));
       }
     } else {
-      barangaysCache = [...DEFAULT_BARANGAYS];
+      barangaysCache = [...DEFAULT_BARANGAYS].filter(b => !isBarangayTombstoned(b));
       safeWriteFileSync(BARANGAYS_FILE, JSON.stringify(barangaysCache, null, 2));
     }
 
@@ -1582,10 +1650,8 @@ export function isRealBarangay(name: string): boolean {
 }
 
 export function getBarangayList(): string[] {
-  if (Array.isArray(barangaysCache) && barangaysCache.length > 0) {
-    return normalizeAndDeduplicateBarangays(barangaysCache);
-  }
-  return normalizeAndDeduplicateBarangays(DEFAULT_BARANGAYS);
+  const list = (Array.isArray(barangaysCache) && barangaysCache.length > 0) ? barangaysCache : DEFAULT_BARANGAYS;
+  return normalizeAndDeduplicateBarangays(list.filter(b => !isBarangayTombstoned(b)));
 }
 
 export async function getBase44Roles(): Promise<string[]> {
@@ -2476,6 +2542,69 @@ function getNextLocalId(): number {
   return localContacts.length > 0 ? Math.max(...localContacts.map(c => c.id)) + 1 : localIdStart;
 }
 
+// Helper to save or update contact records in Base44 database
+export async function saveContactToBase44(contact: Contact, username: string): Promise<void> {
+  try {
+    const submissionEntity = (base44.entities as any).HouseholdSubmission;
+    if (!submissionEntity) return;
+
+    const userObj = findUser(username);
+    const uName = userObj?.fullName || userObj?.displayName || username;
+
+    const nameParts = (contact.full_name || '').trim().split(/\s+/);
+    let firstName = 'Unknown';
+    let lastName = 'Unknown';
+    if (nameParts.length > 1) {
+      firstName = nameParts.slice(0, -1).join(' ');
+      lastName = nameParts[nameParts.length - 1];
+    } else if (nameParts.length === 1 && nameParts[0] !== '') {
+      firstName = nameParts[0];
+      lastName = 'Unknown';
+    }
+
+    const payload: any = {
+      memberName: contact.full_name,
+      full_name: contact.full_name,
+      fullName: contact.full_name,
+      firstName,
+      lastName,
+      barangay: contact.barangay || '',
+      purok: contact.purok || '',
+      address: `${contact.purok ? contact.purok + ', ' : ''}${contact.barangay || ''}`.trim(),
+      contact: contact.contact_number || '',
+      contact_number: contact.contact_number || '',
+      contactNumber: contact.contact_number || '',
+      status: 'approved',
+      existingAcc: false,
+      submittedBy: uName,
+      "Submitted by": uName,
+      "Barangay": contact.barangay || '',
+      fpe: {
+        fullName: contact.full_name,
+        mobile: contact.contact_number || '',
+        purok: contact.purok || '',
+        barangay: contact.barangay || ''
+      },
+      pcsf: {
+        contact: contact.contact_number || '',
+        purok: contact.purok || '',
+        barangay: contact.barangay || ''
+      },
+      latitude: contact.latitude || null,
+      longitude: contact.longitude || null,
+      geotagged: contact.geotagged || false,
+      created_at: contact.created_at || new Date().toISOString(),
+      updated_at: contact.updated_at || new Date().toISOString()
+    };
+
+    console.log(`[Base44 SDK] Saving contact "${contact.full_name}" to Base44 HouseholdSubmission database...`);
+    await submissionEntity.create(payload);
+    console.log(`[Base44 SDK] Contact "${contact.full_name}" successfully saved to Base44 database.`);
+  } catch (err: any) {
+    console.warn(`[Base44 SDK Warning] Failed to save contact to Base44 database:`, err.message || err);
+  }
+}
+
 // Add a single contact with full validation and capitalization formatting
 export async function addContact(
   contact: { full_name: string; barangay: string; purok?: string; address?: string; contact_number: string },
@@ -2510,6 +2639,7 @@ export async function addContact(
       if (sheetsConfig.syncEnabled) {
         forwardToWebApp('edit', existing).catch(err => console.error('Failed to sync reactivated contact to Sheets:', err));
       }
+      saveContactToBase44(existing, username).catch(err => console.warn('Failed to save to Base44:', err));
       return existing;
     }
     throw new Error(`Duplicate contact: "${formattedName}" with number ${rawNumber} already exists.`);
@@ -2535,6 +2665,9 @@ export async function addContact(
 
   // Forward write operation to Apps Script Web App if configured
   forwardToWebApp('add', newContact).catch(err => console.error('Error forwarding add to Sheets Web App:', err));
+
+  // Save data to Base44 database
+  saveContactToBase44(newContact, username).catch(err => console.warn('Error saving new contact to Base44:', err));
 
   return newContact;
 }
@@ -2595,6 +2728,9 @@ export async function editContact(
   // Forward write operation to Apps Script Web App if configured
   forwardToWebApp('edit', contactsCache[index]).catch(err => console.error('Error forwarding edit to Sheets Web App:', err));
 
+  // Save update to Base44 database
+  saveContactToBase44(contactsCache[index], username).catch(err => console.warn('Error saving edited contact to Base44:', err));
+
   return contactsCache[index];
 }
 
@@ -2607,8 +2743,21 @@ export async function deleteContact(id: number, username: string) {
 
   const deletedContact = contactsCache[index];
   
+  // Record in tombstone cache so it is NEVER restored on Google Sheets refresh or reload
+  deletedContactsCache.push({
+    id: deletedContact.id,
+    full_name: deletedContact.full_name,
+    barangay: deletedContact.barangay,
+    deletedAt: new Date().toISOString()
+  });
+  await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+
   // Remove permanently from contactsCache array
   contactsCache.splice(index, 1);
+
+  // Also remove from PCU updates cache if any
+  pcuUpdatesCache = pcuUpdatesCache.filter(u => u && u.contactId !== id && !normalizeCompareName(u.fullName, deletedContact.full_name));
+  await safeWriteFile(PCU_UPDATES_FILE, JSON.stringify(pcuUpdatesCache, null, 2), 'utf-8');
 
   await saveContacts();
   await addActivity(username, `Permanently deleted contact from Clinic Directory: "${deletedContact.full_name}"`);
@@ -2625,14 +2774,41 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
   if (!barangay) throw new Error('Barangay name is required.');
   const target = barangay.trim().toLowerCase();
   
+  // Record Barangay in tombstone cache so it is NEVER restored on Google Sheets refresh or reload
+  if (!deletedBarangaysCache.some(b => isBarangayMatch(b, barangay) || normalizeBarangayName(b).toLowerCase() === normalizeBarangayName(target).toLowerCase())) {
+    deletedBarangaysCache.push(barangay.trim());
+    await safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8');
+  }
+
   const initialLength = contactsCache.length;
+  const removedContacts: Contact[] = [];
+
   // Filter out any contacts in the target barangay permanently from the database array!
   contactsCache = contactsCache.filter(c => {
     const isTargetBarangay = c.barangay && (isBarangayMatch(c.barangay, barangay) || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(target).toLowerCase());
+    if (isTargetBarangay) {
+      removedContacts.push(c);
+      return false;
+    }
     return !isTargetBarangay;
   });
+
+  // Record all removed contacts into deletedContactsCache
+  for (const c of removedContacts) {
+    deletedContactsCache.push({
+      id: c.id,
+      full_name: c.full_name,
+      barangay: c.barangay,
+      deletedAt: new Date().toISOString()
+    });
+  }
+  await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
   
   const count = initialLength - contactsCache.length;
+
+  // Remove matching PCU updates
+  pcuUpdatesCache = pcuUpdatesCache.filter(u => !u.barangay || (!isBarangayMatch(u.barangay, barangay) && normalizeBarangayName(u.barangay).toLowerCase() !== normalizeBarangayName(target).toLowerCase()));
+  await safeWriteFile(PCU_UPDATES_FILE, JSON.stringify(pcuUpdatesCache, null, 2), 'utf-8');
 
   // Remove barangay from barangaysCache so empty or deleted folder does not remain in directory
   barangaysCache = barangaysCache.filter(b => 
@@ -2651,9 +2827,7 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
     } catch (err: any) {
       console.error('Failed to sync updated Barangays list to Google Sheets:', err.message || err);
     }
-    if (count > 0) {
-      rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
-    }
+    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
   }
 
   return { success: true, count, message: `Barangay folder "${barangay}" permanently deleted successfully.` };
@@ -3034,6 +3208,13 @@ export async function saveBulkImport(
     pushBulkToSheets(appended, updated).catch(err => {
       console.error('Error during pushBulkToSheets background job:', err);
     });
+
+    // Save to Base44 database
+    (async () => {
+      for (const contact of [...appended, ...updated]) {
+        await saveContactToBase44(contact, username).catch(err => console.warn('[Base44 Bulk Save]', err));
+      }
+    })();
   }
 
   return {
@@ -4016,6 +4197,14 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const formattedName = capitalizeWords(rawName);
     const formattedBarangay = normalizeBarangayName(rawBarangay);
 
+    // Skip any contacts or barangays that have been permanently deleted by the administrator
+    if (isBarangayTombstoned(formattedBarangay)) {
+      continue;
+    }
+    if (isContactTombstoned({ id, full_name: formattedName, barangay: formattedBarangay })) {
+      continue;
+    }
+
     // Find if this contact already exists in local cache (matching either ID safely or case-insensitive name & barangay)
     const existingLocal = contactsCache.find(lc => 
       (lc.id && id && lc.id.toString() === id.toString()) || 
@@ -4065,6 +4254,10 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   const mergedContacts: Contact[] = [...newContacts];
   
   for (const lc of contactsCache) {
+    if (isContactTombstoned(lc) || isBarangayTombstoned(lc.barangay)) {
+      continue;
+    }
+
     const alreadyExists = mergedContacts.some(mc => 
       (mc.id && lc.id && mc.id.toString() === lc.id.toString()) || 
       (normalizeCompareName(mc.full_name, lc.full_name) && 
@@ -4098,7 +4291,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     }
   }
 
-  contactsCache = mergedContacts;
+  contactsCache = mergedContacts.filter(c => !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay));
   syncPCUFieldsToCache();
   await saveContacts();
 
@@ -4106,19 +4299,19 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   const rawSyncBarangays: string[] = [];
   if (Array.isArray(barangaysCache)) {
     barangaysCache.forEach(b => {
-      if (b && typeof b === 'string' && b.trim()) {
+      if (b && typeof b === 'string' && b.trim() && !isBarangayTombstoned(b)) {
         rawSyncBarangays.push(b.trim());
       }
     });
   }
 
   contactsCache.forEach(c => {
-    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && c.barangay.trim()) {
+    if (!c.deleted_at && c.added_from_print_list !== false && c.barangay && c.barangay.trim() && !isBarangayTombstoned(c.barangay)) {
       rawSyncBarangays.push(c.barangay.trim());
     }
   });
 
-  barangaysCache = normalizeAndDeduplicateBarangays(rawSyncBarangays);
+  barangaysCache = normalizeAndDeduplicateBarangays(rawSyncBarangays).filter(b => !isBarangayTombstoned(b));
   await saveBarangays();
 
   syncBarangaysToGoogleSheets().catch(err => console.error('Failed to sync Barangays in syncWithGoogleSheets:', err));
@@ -4315,13 +4508,13 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
     for (const row of rows.slice(1)) {
       if (!row || row.length === 0) continue;
       const bgName = (row[0] || '').toString().trim();
-      if (bgName && !pulled.includes(bgName)) {
+      if (bgName && !pulled.includes(bgName) && !isBarangayTombstoned(bgName)) {
         pulled.push(bgName);
       }
     }
 
     if (pulled.length > 0) {
-      barangaysCache = normalizeAndDeduplicateBarangays(pulled);
+      barangaysCache = normalizeAndDeduplicateBarangays(pulled).filter(b => !isBarangayTombstoned(b));
       await saveBarangays();
       console.log('[Google Sheets] Successfully pulled Barangays from Google Sheets. Total count:', barangaysCache.length);
       return true;
@@ -5266,7 +5459,7 @@ export async function removePCUFileFromContact(contactId: number, username: stri
 
 // Get local existing accounts
 export function getLocalExistingAccounts(): ExistingAccountItem[] {
-  return existingAccountsCache;
+  return existingAccountsCache.filter(acc => acc && !isExistingAccountTombstoned(acc) && !isBarangayTombstoned(acc.barangay));
 }
 
 // Add local existing account
@@ -5875,13 +6068,28 @@ export async function deleteExistingAccountFolder(barangay: string, username: st
   // Find all accounts in the target barangay folder
   const targetAccounts = existingAccountsCache.filter(acc => {
     const accBarangay = acc.barangay || 'Unknown Barangay';
-    return accBarangay.trim().toUpperCase() === normalizedTarget;
+    return accBarangay.trim().toUpperCase() === normalizedTarget || isBarangayMatch(accBarangay, barangay);
   });
+
+  // Record into tombstone cache
+  for (const acc of targetAccounts) {
+    deletedExistingAccountsCache.push({
+      id: acc.id,
+      full_name: acc.full_name,
+      barangay: acc.barangay,
+      deletedAt: new Date().toISOString()
+    });
+  }
+  if (!deletedBarangaysCache.some(b => isBarangayMatch(b, barangay) || normalizeBarangayName(b).toLowerCase() === normalizeBarangayName(normalizedTarget).toLowerCase())) {
+    deletedBarangaysCache.push(barangay.trim());
+    await safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8');
+  }
+  await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
 
   // Remove completely from local cache
   existingAccountsCache = existingAccountsCache.filter(acc => {
     const accBarangay = acc.barangay || 'Unknown Barangay';
-    return accBarangay.trim().toUpperCase() !== normalizedTarget;
+    return accBarangay.trim().toUpperCase() !== normalizedTarget && !isBarangayMatch(accBarangay, barangay);
   });
 
   // Persist locally
@@ -5898,6 +6106,15 @@ export async function deleteLocalExistingAccount(id: string, username: string): 
   if (!targetAcc) {
     throw new Error(`Account with ID "${id}" not found.`);
   }
+
+  // Record in tombstone cache so it is NEVER restored on refresh or reload
+  deletedExistingAccountsCache.push({
+    id: targetAcc.id,
+    full_name: targetAcc.full_name,
+    barangay: targetAcc.barangay,
+    deletedAt: new Date().toISOString()
+  });
+  await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
 
   // Remove from cache
   existingAccountsCache = existingAccountsCache.filter(acc => acc.id.toString() !== id.toString());

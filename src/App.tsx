@@ -435,50 +435,10 @@ export default function App() {
     }
   }, [authToken]);
 
-  // Initial automatic sync and background periodic polling
+  // Initial load and stats update
   useEffect(() => {
     if (!authToken) return;
-
-    let isMounted = true;
-
-    // Trigger initial automatic sync on load/login so the database is always updated immediately
-    const triggerInitialSync = async (retries = 2) => {
-      try {
-        console.log('[App Auto-Sync] Triggering initial automatic Base44 sync...');
-        const res = await fetch('/api/contacts/sync-base44', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`
-          }
-        });
-        if (!isMounted) return;
-        const data = await res.json();
-        if (res.ok) {
-          console.log('[App Auto-Sync] Initial Base44 sync completed successfully:', data);
-          setLastSyncTime(new Date().toISOString());
-          fetchStats();
-        } else {
-          console.warn('[App Auto-Sync] Initial sync completed with warning:', data?.error || 'Sync warning');
-        }
-      } catch (err: any) {
-        if (!isMounted) return;
-        if (retries > 0) {
-          console.log(`[App Auto-Sync] Retrying initial sync in 2s... (${retries} retries left)`);
-          setTimeout(() => {
-            if (isMounted) triggerInitialSync(retries - 1);
-          }, 2000);
-        } else {
-          console.warn('[App Auto-Sync] Initial Base44 sync deferred (server connection pending):', err?.message || err);
-        }
-      }
-    };
-
-    triggerInitialSync();
-
-    return () => {
-      isMounted = false;
-    };
+    fetchStats();
   }, [authToken]);
 
   const handleLoginSuccess = (token: string, user: { username: string; role: string }) => {

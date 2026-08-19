@@ -681,7 +681,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 ? `Showing member records stored inside ${activeFolder}`
                 : isLeaderOrCoLeader && userBarangay
                   ? `Assigned Barangay Folder for ${currentUser?.role || 'Leader'}: ${userBarangay}`
-                  : `Organized into ${barangayFolders.length} Barangay Folders from Base44 Database`}
+                  : `Organized into ${barangayFolders.length} Barangay Folders`}
             </p>
           </div>
         </div>
@@ -696,20 +696,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           >
             {syncingSheets ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 text-emerald-200" />}
             {syncingSheets ? 'Refreshing Sheets...' : 'Sync Google Sheets ↻'}
-          </button>
-
-          <button
-            onClick={handleSyncBase44}
-            disabled={syncing || loading}
-            className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
-            title="Force synchronization with Base44 Database"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
-            </span>
-            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5 text-emerald-300" />}
-            {syncing ? 'Syncing...' : 'Base44 Auto-Synced ✓'}
           </button>
         </div>
       </div>
