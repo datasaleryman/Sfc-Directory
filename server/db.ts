@@ -147,6 +147,7 @@ export interface PCUUpdate {
   fileData: string; // Base64 content
   uploadedAt: string;
   uploadedBy?: string;
+  added_from_website?: boolean;
 }
 
 export interface Activity {
@@ -190,6 +191,7 @@ export interface ExistingAccountItem {
   addedToFiles?: boolean;
   uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
   facebookLink?: string;
+  added_from_website?: boolean;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -635,7 +637,13 @@ export async function initDb() {
         console.warn('Failed to read PCU_UPDATES_FILE:', e.message);
       }
       try {
-        pcuUpdatesCache = JSON.parse(content);
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          pcuUpdatesCache = parsed.filter(u => u && u.added_from_website);
+          safeWriteFileSync(PCU_UPDATES_FILE, JSON.stringify(pcuUpdatesCache, null, 2));
+        } else {
+          pcuUpdatesCache = [];
+        }
       } catch (e) {
         pcuUpdatesCache = [];
       }
@@ -702,7 +710,13 @@ export async function initDb() {
         console.warn('Failed to read EXISTING_ACCOUNTS_FILE:', e.message);
       }
       try {
-        existingAccountsCache = JSON.parse(content);
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          existingAccountsCache = parsed.filter(acc => acc && (acc.added_from_website || acc.id === 'ext_1'));
+          safeWriteFileSync(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2));
+        } else {
+          existingAccountsCache = [];
+        }
       } catch (e) {
         existingAccountsCache = [];
       }
@@ -1378,119 +1392,11 @@ function safeParseUploadedFiles(files: any, fallbackFilesJson?: any): any[] {
 export async function syncBase44Contacts(force: boolean = false) {
   base44SyncStatus.lastAttempt = new Date().toISOString();
   try {
-    console.log('[Base44 Sync] Fetching HouseholdSubmissions (cache-enabled)...');
-    const submissions = await getCachedHouseholdSubmissions(force);
-    console.log(`[Base44 Sync] Successfully loaded submissions. Found ${submissions ? submissions.length : 0} submissions.`);
-    
-    if (submissions && Array.isArray(submissions)) {
-      submissions.forEach((sub: any) => {
-        const bg = getExactBarangay(sub);
-        if (bg && typeof bg === 'string') {
-          const bgUpper = bg.trim().toUpperCase();
-          if (isRealBarangay(bgUpper)) {
-            base44BarangaysCache.add(bgUpper);
-          }
-        }
-      });
-
-      // Synchronize live existing accounts from Base44 into local cache
-      const liveExistingSubmissions = submissions.filter((sub: any) => 
-        sub.existingAcc === true || 
-        sub.existingAcc === 'true' || 
-        sub.existingAccVerified === true ||
-        sub.existingAccVerified === 'true'
-      );
-
-      console.log(`[Base44 Sync] Synchronizing ${liveExistingSubmissions.length} live existing account submissions from Base44...`);
-      let cacheChanged = false;
-
-      liveExistingSubmissions.forEach((sub: any) => {
-        let name = sub.memberName || '';
-        if (!name && sub.fpe && sub.fpe.fullName) {
-          name = sub.fpe.fullName;
-        }
-        if (!name && sub.pmrf_front) {
-          name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
-        }
-        if (!name) {
-          name = 'Unnamed Household';
-        }
-
-        const contact_number = sub.pcsf?.contact || 
-                               sub.fpe?.mobile || 
-                               sub.pmrf_front?.mobile || 
-                               '';
-
-        const barangay = getExactBarangay(sub);
-        const purok = sub.purok || (sub.pcsf?.purok || '');
-
-        const hasGeo = sub.geoLocation && typeof sub.geoLocation.latitude === 'number' && typeof sub.geoLocation.longitude === 'number';
-
-        const existingIdx = existingAccountsCache.findIndex(acc => 
-          acc.id.toString() === sub.id.toString() ||
-          (normalizeCompareName(acc.full_name, name) && normalizeBarangayName(acc.barangay).toLowerCase() === normalizeBarangayName(barangay).toLowerCase())
-        );
-
-        const subFiles = safeParseUploadedFiles(sub.uploadedFiles, sub.uploadedFilesJson);
-
-        const extAcc: ExistingAccountItem = {
-          id: sub.id,
-          full_name: name.toUpperCase().trim(),
-          barangay: barangay.toUpperCase().trim(),
-          purok: purok,
-          contact_number: contact_number,
-          created_at: sub.created_date || new Date().toISOString(),
-          latitude: hasGeo ? sub.geoLocation.latitude : undefined,
-          longitude: hasGeo ? sub.geoLocation.longitude : undefined,
-          geotagged: hasGeo,
-          existingAcc: sub.existingAcc === true || sub.existingAcc === 'true',
-          existingAccVerified: sub.existingAccVerified === true || sub.existingAccVerified === 'true',
-          existingAccVisited: sub.existingAccVisited === true || sub.existingAccVisited === 'true',
-          status: sub.status || 'pending',
-          submittedBy: sub.submittedBy || 'Unknown',
-          pin: sub.fpe?.pin || sub.pcsf?.pin || '',
-          facebookLink: sub.facebookLink || '',
-          uploadedFiles: subFiles
-        };
-
-        if (existingIdx !== -1) {
-          const localItem = existingAccountsCache[existingIdx];
-          const localItemFiles = safeParseUploadedFiles(localItem.uploadedFiles);
-          
-          const updatedItem = {
-            ...localItem,
-            id: sub.id, // Update to the real Base44 ID
-            existingAcc: true,
-            existingAccVerified: sub.existingAccVerified === true || sub.existingAccVerified === 'true',
-            existingAccVisited: sub.existingAccVisited === true || sub.existingAccVisited === 'true',
-            status: sub.status || localItem.status || 'pending',
-            facebookLink: sub.facebookLink || localItem.facebookLink || '',
-            uploadedFiles: subFiles.length > 0 ? subFiles : localItemFiles,
-            pin: sub.fpe?.pin || sub.pcsf?.pin || localItem.pin || ''
-          };
-
-          if (JSON.stringify(localItem) !== JSON.stringify(updatedItem)) {
-            existingAccountsCache[existingIdx] = updatedItem;
-            cacheChanged = true;
-          }
-        } else {
-          existingAccountsCache.push(extAcc);
-          cacheChanged = true;
-        }
-      });
-
-      if (cacheChanged) {
-        await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
-        console.log(`[Base44 Sync] Successfully synchronized and saved existing accounts local cache to disk.`);
-      }
-
-      base44SyncStatus.lastSuccess = new Date().toISOString();
-      base44SyncStatus.count = submissions.length;
-      base44SyncStatus.error = null;
-      return true;
-    }
-    base44SyncStatus.error = 'No items found in Base44 cache/submissions.';
-    return false;
+    // Skip pulling pre-existing Base44 submissions for display on this website
+    base44SyncStatus.lastSuccess = new Date().toISOString();
+    base44SyncStatus.count = 0;
+    base44SyncStatus.error = null;
+    return true;
   } catch (err: any) {
     console.warn('[Base44 Sync Warning] Failed to connect or sync to Base44:', err.message);
     base44SyncStatus.error = null; // Do not show as active failure since we degrade gracefully
@@ -1582,16 +1488,7 @@ export async function fetchHouseholdSubmissionsFromBase44() {
     }
   }
 
-  const uniqueBase44Households: any[] = [];
-  for (const h of base44Households) {
-    const nameKey = (h.full_name || '').trim().toLowerCase();
-    if (nameKey && !seenNameKeys.has(nameKey)) {
-      seenNameKeys.add(nameKey);
-      uniqueBase44Households.push(h);
-    }
-  }
-
-  return [...directoryHouseholds, ...uniqueBase44Households];
+  return directoryHouseholds;
 }
 
 // Fetch all Household Submissions from Base44 that are marked as existing accounts
@@ -2650,7 +2547,7 @@ export async function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && isBarangayMatch(c.barangay, bg));
+    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -2663,7 +2560,7 @@ export async function getContacts(params: {
       purokCount: purokSet.size,
       geotaggedCount
     };
-  });
+  }).filter(f => f.count > 0);
 
   return {
     contacts: paginated,
@@ -4055,73 +3952,21 @@ export function normalizeCompareName(name1: string, name2: string): boolean {
 export let lastPCUSyncTime = 0;
 
 export async function syncPCUUpdatesFromBase44(force: boolean = false): Promise<boolean> {
-  if (!force && (Date.now() - lastPCUSyncTime < 60000)) { // 1-minute throttle
-    return false;
-  }
-  lastPCUSyncTime = Date.now();
-
-  try {
-    console.log('[Sync] Pulling live PCUUpdate records from Base44 (cache-enabled)...');
-    const records = await getCachedPCUUpdates(force);
-    if (!records || !Array.isArray(records)) {
-      return false;
-    }
-
-    let updatedAny = false;
-    records.forEach((rec: any) => {
-      // Reconstruct full name from firstName and lastName
-      const firstName = (rec.firstName || '').trim();
-      const lastName = (rec.lastName || '').trim();
-      let fullName = '';
-      if (firstName && lastName && lastName !== 'Unknown') {
-        fullName = `${lastName}, ${firstName}`;
-      } else {
-        fullName = firstName || lastName || 'Unknown Contact';
-      }
-
-      // Check if this update is already in our local cache by ID or combination of fullName and fileName
-      const existing = pcuUpdatesCache.find(p => 
-        (p.id && rec.id && p.id.toString() === rec.id.toString()) || 
-        (normalizeCompareName(p.fullName, fullName) && p.fileName === rec.fileName)
-      );
-
-      if (!existing) {
-        // Find matching contact in contactsCache by full name and optionally barangay
-        const matchedContact = contactsCache.find(c => 
-          normalizeCompareName(c.full_name, fullName) && 
-          (!rec.barangay || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(rec.barangay).toLowerCase())
-        );
-
-        const newUpdate: PCUUpdate = {
-          id: rec.id || crypto.randomBytes(8).toString('hex'),
-          contactId: matchedContact ? matchedContact.id : (rec.contactId ? parseInt(rec.contactId, 10) : 0),
-          fullName,
-          barangay: rec.barangay || (matchedContact ? matchedContact.barangay : ''),
-          purok: rec.purok || (matchedContact ? matchedContact.purok : ''),
-          fileName: rec.fileName || 'PCU_File.pdf',
-          fileData: rec.fileUrl || '',
-          uploadedAt: rec.uploadDate || rec.uploadedAt || new Date().toISOString(),
-          uploadedBy: rec.uploadedBy || 'Leader'
-        };
-        pcuUpdatesCache.push(newUpdate);
-        updatedAny = true;
-      }
-    });
-
-    if (updatedAny) {
-      pcuUpdatesCache.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-      await savePCUUpdates();
-      syncPCUFieldsToCache();
-    }
-    return true;
-  } catch (err: any) {
-    console.warn('[Sync Warning] Failed to sync PCU updates from Base44 DB:', err.message || err);
-    return false;
-  }
+  // Do not pull or display pre-existing PCU update records from Base44
+  return false;
 }
 
 export function syncPCUFieldsToCache() {
   if (!Array.isArray(contactsCache) || !Array.isArray(pcuUpdatesCache)) return;
+
+  // Clear existing PCU fields on all contacts to avoid stale synced states from previous sessions
+  contactsCache.forEach(c => {
+    if (c) {
+      delete c.pcu_file_url;
+      delete c.pcu_uploaded_by;
+      delete c.pcu_uploaded_at;
+    }
+  });
 
   pcuUpdatesCache.forEach(update => {
     if (!update) return;
@@ -5136,7 +4981,8 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
     fileName,
     fileData: finalFileUrlOrData, // Save the full URL (if success) or full base64 (if local fallback) in local cache
     uploadedAt: new Date().toISOString(),
-    uploadedBy: username
+    uploadedBy: username,
+    added_from_website: true
   };
 
   pcuUpdatesCache.unshift(newUpdate);
@@ -5254,7 +5100,8 @@ export async function addPCUUpdatesMultiple(contactId: number, fullName: string,
       fileName,
       fileData: finalFileUrlOrData, // Save the full URL (if success) or full base64 (if local fallback) in local cache
       uploadedAt: new Date().toISOString(),
-      uploadedBy: username
+      uploadedBy: username,
+      added_from_website: true
     };
 
     pcuUpdatesCache.unshift(newUpdate);
@@ -5596,7 +5443,8 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
     status: data.status || 'approved',
     submittedBy: username || 'Admin',
     pin: data.pin || '',
-    uploadedFiles: []
+    uploadedFiles: [],
+    added_from_website: true
   };
 
   const userObj = findUser(username);
@@ -5661,7 +5509,8 @@ export async function addLocalExistingAccountsBulk(dataList: any[], username: st
       existingAccVisited: data.existingAccVisited === true,
       status: data.status || 'approved',
       submittedBy: username || 'Admin',
-      pin: data.pin || ''
+      pin: data.pin || '',
+      added_from_website: true
     };
     newAccounts.push(newAccount);
     existingAccountsCache.push(newAccount);

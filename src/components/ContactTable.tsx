@@ -820,29 +820,29 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         <p className="text-xs text-slate-400 font-bold">Populating analytical data...</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
                         {[...barangayFolders].sort((a, b) => a.barangay.localeCompare(b.barangay)).map((f) => (
                           <div 
                             key={f.barangay} 
-                            className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all"
+                            className="flex items-center gap-2.5 py-3 px-2 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px]"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Folder className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <Folder className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                            <div className="flex flex-col min-w-0 gap-1">
                               <span className="font-extrabold text-slate-700 text-xs truncate" title={f.barangay}>
                                 {f.barangay}
                               </span>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0 text-[9px] font-black tracking-wide">
-                              {(chartMetric === 'all' || chartMetric === 'households') && (
-                                <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100/50" title={`${f.count} Members`}>
-                                  {f.count} M
-                                </span>
-                              )}
-                              {(chartMetric === 'all' || chartMetric === 'puroks') && (
-                                <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100/50" title={`${f.purokCount} Puroks`}>
-                                  {f.purokCount} P
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5 text-[9px] font-black tracking-wide leading-none">
+                                {(chartMetric === 'all' || chartMetric === 'households') && (
+                                  <span className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded-sm border border-emerald-100/50" title={`${f.count} Members`}>
+                                    {f.count} M
+                                  </span>
+                                )}
+                                {(chartMetric === 'all' || chartMetric === 'puroks') && (
+                                  <span className="text-amber-700 bg-amber-50 px-1 py-0.5 rounded-sm border border-amber-100/50" title={`${f.purokCount} Puroks`}>
+                                    {f.purokCount} P
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
