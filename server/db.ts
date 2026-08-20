@@ -1177,7 +1177,12 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
       const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
       return JSON.parse(data);
     } catch (e) {
-      console.warn('[Base44 Cache] Failed to read households cache file:', e);
+      console.warn('[Base44 Cache] Failed to read households cache file. Recovering automatically:', e);
+      try {
+        fs.writeFileSync(HOUSEHOLDS_CACHE_FILE, '[]', 'utf-8');
+      } catch (writeErr) {
+        // Ignore write error
+      }
     }
   }
   return [];
@@ -1191,7 +1196,12 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
       const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
       return JSON.parse(data);
     } catch (e) {
-      console.warn('[Base44 Cache] Failed to read PCUs cache file:', e);
+      console.warn('[Base44 Cache] Failed to read PCUs cache file. Recovering automatically:', e);
+      try {
+        fs.writeFileSync(PCUS_CACHE_FILE, '[]', 'utf-8');
+      } catch (writeErr) {
+        // Ignore write error
+      }
     }
   }
   return [];
@@ -1205,7 +1215,12 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
       const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
       return JSON.parse(data);
     } catch (e) {
-      console.warn('[Base44 Cache] Failed to read member verified cache file:', e);
+      console.warn('[Base44 Cache] Failed to read member verified cache file. Recovering automatically:', e);
+      try {
+        fs.writeFileSync(MEMBER_VERIFIED_CACHE_FILE, '[]', 'utf-8');
+      } catch (writeErr) {
+        // Ignore write error
+      }
     }
   }
   return [];
@@ -1219,7 +1234,12 @@ export async function getCachedSubmissionMessages(force: boolean = false): Promi
       const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
       return JSON.parse(data);
     } catch (e) {
-      console.warn('[Base44 Cache] Failed to read messages cache file:', e);
+      console.warn('[Base44 Cache] Failed to read messages cache file. Recovering automatically:', e);
+      try {
+        fs.writeFileSync(MESSAGES_CACHE_FILE, '[]', 'utf-8');
+      } catch (writeErr) {
+        // Ignore write error
+      }
     }
   }
   return [];
@@ -2403,12 +2423,20 @@ export async function getContacts(params: {
 
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
+  let hasNoPurokContacts = false;
   contactsCache.forEach(c => {
-    if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.purok) {
-      allPuroksSet.add(c.purok.trim());
+    if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url) {
+      if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
+        allPuroksSet.add(c.purok.trim());
+      } else {
+        hasNoPurokContacts = true;
+      }
     }
   });
   const allPuroks = Array.from(allPuroksSet).sort((a, b) => a.localeCompare(b));
+  if (hasNoPurokContacts) {
+    allPuroks.push("No Purok");
+  }
 
   // Apply Barangay Filter with flexible matching
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
@@ -2417,7 +2445,11 @@ export async function getContacts(params: {
 
   // Apply Purok Filter
   if (purok && purok !== 'All Puroks') {
-    filtered = filtered.filter(c => c.purok && c.purok.toLowerCase() === purok.toLowerCase());
+    if (purok === 'No Purok') {
+      filtered = filtered.filter(c => !c.purok || !c.purok.trim() || c.purok.toLowerCase() === 'no purok');
+    } else {
+      filtered = filtered.filter(c => c.purok && c.purok.toLowerCase() === purok.toLowerCase());
+    }
   }
 
   // Apply Search (Full Name, Barangay, Purok, Contact Number)
@@ -2427,7 +2459,7 @@ export async function getContacts(params: {
       c =>
          c.full_name.toLowerCase().includes(term) ||
          c.barangay.toLowerCase().includes(term) ||
-         (c.purok && c.purok.toLowerCase().includes(term)) ||
+         ((c.purok && c.purok.toLowerCase().includes(term)) || (!c.purok && 'no purok'.includes(term))) ||
          c.contact_number.includes(term)
     );
   }
@@ -2440,7 +2472,7 @@ export async function getContacts(params: {
     } else if (sortBy === 'barangay' || sortBy === 'address' as any) {
       comparison = a.barangay.localeCompare(b.barangay);
     } else if (sortBy === 'purok') {
-      comparison = (a.purok || '').localeCompare(b.purok || '');
+      comparison = (a.purok || 'No Purok').localeCompare(b.purok || 'No Purok');
     } else if (sortBy === 'date') {
       comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     }
@@ -2456,11 +2488,15 @@ export async function getContacts(params: {
 
   // Compute folder statistics for each barangay
   const barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && isBarangayMatch(c.barangay, bg));
+    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
-      if (c.purok) purokSet.add(c.purok.trim());
+      if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
+        purokSet.add(c.purok.trim());
+      } else {
+        purokSet.add('No Purok');
+      }
       if (c.geotagged) geotaggedCount++;
     });
     return {
@@ -2471,6 +2507,31 @@ export async function getContacts(params: {
     };
   }).filter(f => f.count > 0);
 
+  // Compute folder statistics for each purok sorted alphabetically
+  const purokFolders = allPuroks.map(purok => {
+    const isNoPurok = purok === 'No Purok';
+    const pContacts = contactsCache.filter(c => {
+      if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+      if (isNoPurok) {
+        return !c.purok || !c.purok.trim() || c.purok.trim().toLowerCase() === 'no purok';
+      }
+      return c.purok && c.purok.trim().toLowerCase() === purok.trim().toLowerCase();
+    });
+    const barangaySet = new Set<string>();
+    let geotaggedCount = 0;
+    pContacts.forEach(c => {
+      if (c.barangay) barangaySet.add(c.barangay.trim());
+      if (c.geotagged) geotaggedCount++;
+    });
+    return {
+      purok,
+      count: pContacts.length,
+      barangayCount: barangaySet.size,
+      geotaggedCount,
+      barangays: Array.from(barangaySet)
+    };
+  }).filter(f => f.count > 0);
+
   return {
     contacts: paginated,
     total,
@@ -2478,7 +2539,8 @@ export async function getContacts(params: {
     totalPages,
     allAddresses: allBarangays, // returning as allAddresses for backward compatibility with existing frontends
     allPuroks,
-    barangayFolders
+    barangayFolders,
+    purokFolders
   };
 }
 
@@ -2504,7 +2566,11 @@ export function getAllFilteredContacts(params: {
   }
 
   if (purok && purok !== 'All Puroks') {
-    filtered = filtered.filter(c => c.purok && c.purok.toLowerCase() === purok.toLowerCase());
+    if (purok === 'No Purok') {
+      filtered = filtered.filter(c => !c.purok || !c.purok.trim() || c.purok.toLowerCase() === 'no purok');
+    } else {
+      filtered = filtered.filter(c => c.purok && c.purok.toLowerCase() === purok.toLowerCase());
+    }
   }
 
   if (search) {
@@ -2513,7 +2579,7 @@ export function getAllFilteredContacts(params: {
       c =>
         c.full_name.toLowerCase().includes(term) ||
         c.barangay.toLowerCase().includes(term) ||
-        (c.purok && c.purok.toLowerCase().includes(term)) ||
+        ((c.purok && c.purok.toLowerCase().includes(term)) || (!c.purok && 'no purok'.includes(term))) ||
         c.contact_number.includes(term)
     );
   }
@@ -2525,7 +2591,7 @@ export function getAllFilteredContacts(params: {
     } else if (sortBy === 'barangay' || sortBy === 'address' as any) {
       comparison = a.barangay.localeCompare(b.barangay);
     } else if (sortBy === 'purok') {
-      comparison = (a.purok || '').localeCompare(b.purok || '');
+      comparison = (a.purok || 'No Purok').localeCompare(b.purok || 'No Purok');
     } else if (sortBy === 'date') {
       comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     }
@@ -2762,9 +2828,11 @@ export async function deleteContact(id: number, username: string) {
   await saveContacts();
   await addActivity(username, `Permanently deleted contact from Clinic Directory: "${deletedContact.full_name}"`);
 
-  if (sheetsConfig.syncEnabled) {
-    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync permanent deletions to Google Sheets:', err));
-  }
+  // Forward deletion directly using Google Sheets API row deletion
+  forwardToWebApp('delete', deletedContact).catch(err => console.error('Error forwarding delete to Sheets Web App:', err));
+
+  // Overwrite Sheets to ensure deleted contacts are fully scrubbed from Google Sheets
+  rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync permanent deletions to Google Sheets:', err));
 
   return true;
 }
@@ -2821,14 +2889,14 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
 
   await addActivity(username, `Permanently deleted Barangay folder "${barangay}" (${count} households) from Clinic Directory.`);
 
-  if (sheetsConfig.syncEnabled) {
-    try {
-      await syncBarangaysToGoogleSheets();
-    } catch (err: any) {
-      console.error('Failed to sync updated Barangays list to Google Sheets:', err.message || err);
-    }
-    rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
+  try {
+    await syncBarangaysToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync updated Barangays list to Google Sheets:', err.message || err);
   }
+  
+  // Overwrite Sheets to ensure all contacts in the deleted folder are fully scrubbed from Google Sheets
+  rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
 
   return { success: true, count, message: `Barangay folder "${barangay}" permanently deleted successfully.` };
 }
@@ -3371,7 +3439,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
 
 // Dashboard statistics
 export function getDashboardStats() {
-  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list === true);
+  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list === true && !c.pcu_file_url);
   
   // Total Contacts
   const totalContacts = activeContacts.length;
