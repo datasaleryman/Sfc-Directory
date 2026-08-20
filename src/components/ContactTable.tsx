@@ -41,6 +41,12 @@ interface ContactTableProps {
   } | null;
 }
 
+const formatPurokName = (name: string | null | undefined): string => {
+  if (!name) return '';
+  const cleaned = name.replace(/^(prk)\.?[\s\-_]*/i, '');
+  return cleaned.trim() || name;
+};
+
 export const ContactTable: React.FC<ContactTableProps> = ({
   authToken,
   onEdit,
@@ -691,7 +697,15 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           return false;
         }
       }
-      return f.barangay.toLowerCase().includes(folderSearch.toLowerCase().trim());
+      const searchLower = folderSearch.toLowerCase().trim();
+      if (!searchLower) return true;
+
+      const matchBarangay = f.barangay.toLowerCase().includes(searchLower);
+      const matchContact = contacts.some(c => 
+        c.barangay.toLowerCase() === f.barangay.toLowerCase() && 
+        c.full_name.toLowerCase().includes(searchLower)
+      );
+      return matchBarangay || matchContact;
     });
 
   const filteredFolders = (isLeaderOrCoLeader && userBarangay && rawFiltered.length === 0)
@@ -736,7 +750,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               ) : activePurokFolder ? (
                 <>
                   <FolderOpen className="w-5 h-5 text-emerald-600" />
-                  {activePurokFolder} Folder
+                  Purok {formatPurokName(activePurokFolder)} Folder
                 </>
               ) : (
                 `Saint Francis Clinic Directory (${folderGrouping === 'barangay' ? 'Barangay' : 'Purok'} Folders)`
@@ -746,7 +760,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               {activeFolder
                 ? `Showing member records stored inside ${activeFolder}`
                 : activePurokFolder
-                  ? `Showing member records stored inside ${activePurokFolder}`
+                  ? `Showing member records stored inside Purok ${formatPurokName(activePurokFolder)}`
                   : isLeaderOrCoLeader && userBarangay && folderGrouping === 'barangay'
                     ? `Assigned Barangay Folder for ${currentUser?.role || 'Leader'}: ${userBarangay}`
                     : folderGrouping === 'barangay'
@@ -1170,7 +1184,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     >
                       <div className="flex flex-col min-w-0 gap-1 w-full">
                         <span className="font-extrabold text-slate-700 text-xs truncate" title={f.purok}>
-                          {f.purok}
+                          Purok {formatPurokName(f.purok)}
                         </span>
                         <div className="flex items-center gap-1.5 text-[9px] font-black tracking-wide leading-none">
                           <span className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded-sm border border-emerald-100/50">
@@ -1201,7 +1215,19 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             <div className="flex items-center gap-3">
               <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600" />
-                <span>{filteredPurokFolders.filter(f => f.purok.toLowerCase().includes(purokSearch.toLowerCase())).length} Purok Folders</span>
+                <span>{filteredPurokFolders.filter(f => {
+                  const searchLower = purokSearch.toLowerCase().trim();
+                  if (!searchLower) return true;
+                  const matchPurok = f.purok.toLowerCase().includes(searchLower);
+                  const matchContact = contacts.some(c => {
+                    const matchesBarangayFilter = !associatedBarangayForPuroks || 
+                      c.barangay.toLowerCase() === associatedBarangayForPuroks.toLowerCase();
+                    return matchesBarangayFilter &&
+                      c.purok.toLowerCase() === f.purok.toLowerCase() && 
+                      c.full_name.toLowerCase().includes(searchLower);
+                  });
+                  return matchPurok || matchContact;
+                }).length} Purok Folders</span>
               </div>
             </div>
           </div>
@@ -1209,7 +1235,19 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           {/* Purok Folders Cards Grid arranged alphabetically */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
             {filteredPurokFolders
-              .filter(f => f.purok.toLowerCase().includes(purokSearch.toLowerCase().trim()))
+              .filter(f => {
+                const searchLower = purokSearch.toLowerCase().trim();
+                if (!searchLower) return true;
+                const matchPurok = f.purok.toLowerCase().includes(searchLower);
+                const matchContact = contacts.some(c => {
+                  const matchesBarangayFilter = !associatedBarangayForPuroks || 
+                    c.barangay.toLowerCase() === associatedBarangayForPuroks.toLowerCase();
+                  return matchesBarangayFilter &&
+                    c.purok.toLowerCase() === f.purok.toLowerCase() && 
+                    c.full_name.toLowerCase().includes(searchLower);
+                });
+                return matchPurok || matchContact;
+              })
               .sort((a, b) => a.purok.localeCompare(b.purok))
               .map((folder) => (
                 <motion.div
@@ -1234,7 +1272,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         Purok Folder
                       </span>
                       <h3 className="text-base font-extrabold text-slate-800 font-display group-hover:text-emerald-800 transition-colors truncate">
-                        {folder.purok}
+                        {formatPurokName(folder.purok)}
                       </h3>
                       <p className="text-[11px] font-bold text-emerald-800 mt-1 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1 w-fit flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>

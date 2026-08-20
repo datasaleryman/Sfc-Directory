@@ -2828,11 +2828,20 @@ export async function deleteContact(id: number, username: string) {
   await saveContacts();
   await addActivity(username, `Permanently deleted contact from Clinic Directory: "${deletedContact.full_name}"`);
 
-  // Forward deletion directly using Google Sheets API row deletion
-  forwardToWebApp('delete', deletedContact).catch(err => console.error('Error forwarding delete to Sheets Web App:', err));
-
-  // Overwrite Sheets to ensure deleted contacts are fully scrubbed from Google Sheets
-  rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync permanent deletions to Google Sheets:', err));
+  if (sheetsConfig.syncEnabled) {
+    (async () => {
+      try {
+        console.log(`[Google Sheets] Attempting row-level deletion for contact: "${deletedContact.full_name}"...`);
+        const deletedRow = await forwardToWebApp('delete', deletedContact);
+        // If row-level deletion succeeds or we want to ensure everything is perfectly synced, we can run rewrite occasionally,
+        // but to prevent race conditions and double writes, we only do row-level deletion when possible.
+        // If it was skipped or we want extra safety, we fallback/sync.
+      } catch (err: any) {
+        console.error('[Google Sheets] Row-level deletion failed, falling back to full sheet rewrite:', err.message || err);
+        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed to sync permanent deletions to Google Sheets:', err2));
+      }
+    })();
+  }
 
   return true;
 }
@@ -3776,13 +3785,25 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
         if (rows && rows.length > 0) {
           const headers = rows[0].map((h: any) => h.toString().toLowerCase().trim());
           const idColIdx = headers.findIndex((h: string) => h.includes('id'));
-          const targetColIdx = idColIdx !== -1 ? idColIdx : 0;
+          const nameIdx = headers.findIndex((h: string) => h.includes('name') || h.includes('full'));
+          const barangayIdx = headers.findIndex((h: string) => h.includes('barangay') || h.includes('address'));
 
           let targetRowIdx = -1;
           for (let i = 1; i < rows.length; i++) {
-            if (parseInt(rows[i][targetColIdx], 10) === parseInt(data.id, 10)) {
+            // 1. Try matching by ID first if we have a valid ID column
+            if (idColIdx !== -1 && rows[i][idColIdx] && !isNaN(parseInt(rows[i][idColIdx], 10)) && parseInt(rows[i][idColIdx], 10) === parseInt(data.id, 10)) {
               targetRowIdx = i + 1; // 1-based row number
               break;
+            }
+            // 2. Try matching by Name and Barangay as a robust fallback
+            if (nameIdx !== -1 && barangayIdx !== -1) {
+              const rName = rows[i][nameIdx] || '';
+              const rBarangay = rows[i][barangayIdx] || '';
+              if (normalizeCompareName(rName, data.full_name) && 
+                  normalizeBarangayName(rBarangay).toLowerCase() === normalizeBarangayName(data.barangay).toLowerCase()) {
+                targetRowIdx = i + 1;
+                break;
+              }
             }
           }
 
