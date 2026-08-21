@@ -246,10 +246,16 @@ export function isContactTombstoned(c: { id?: number | string; full_name?: strin
   const cId = c.id !== undefined && c.id !== null ? c.id.toString() : '';
 
   return deletedContactsCache.some(del => {
+    // 1. Match by exact ID if available
     if (cId && del.id !== undefined && del.id !== null && del.id.toString() === cId) return true;
+    
+    // 2. Match by Name and Barangay (extremely robust / case-insensitive / word-order insensitive)
     if (cName && del.full_name && normalizeCompareName(del.full_name, cName)) {
       if (!cBarangay || !del.barangay) return true;
-      if (isBarangayMatch(del.barangay, cBarangay) || normalizeBarangayName(del.barangay).toLowerCase() === normalizeBarangayName(cBarangay).toLowerCase()) {
+      
+      const b1 = normalizeBarangayName(del.barangay).toLowerCase().trim();
+      const b2 = normalizeBarangayName(cBarangay).toLowerCase().trim();
+      if (b1 === b2 || isBarangayMatch(del.barangay, cBarangay) || b1.includes(b2) || b2.includes(b1)) {
         return true;
       }
     }
@@ -3857,6 +3863,8 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
               });
               console.log('Successfully updated contact row in Google Sheets using Service Account!');
             }
+          } else {
+            throw new Error(`Row matching ID "${data.id}" or Name "${data.full_name}" in Barangay "${data.barangay}" was not found in the Google Sheet.`);
           }
         }
       }
@@ -3864,6 +3872,7 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
     } catch (err: any) {
       console.error('Service Account direct write to Google Sheets failed:', err.message || err);
       handleGoogleSheetsError(err, 'forwardToWebApp');
+      throw err;
     }
   }
 

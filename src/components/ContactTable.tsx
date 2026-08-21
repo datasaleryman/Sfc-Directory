@@ -89,6 +89,15 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const [folderGrouping, setFolderGrouping] = useState<'barangay' | 'purok'>('barangay');
   const [associatedBarangayForPuroks, setAssociatedBarangayForPuroks] = useState<string | null>(null);
   const [activePurokFolder, setActivePurokFolder] = useState<string | null>(null);
+  const [lastOpenedBarangay, setLastOpenedBarangay] = useState<string | null>(null);
+  const [lastOpenedPurok, setLastOpenedPurok] = useState<string | null>(null);
+
+  const handleSetActivePurokFolder = (purok: string | null) => {
+    setActivePurokFolder(purok);
+    if (purok) {
+      setLastOpenedPurok(purok);
+    }
+  };
   const [purokSearch, setPurokSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -598,7 +607,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setFolderGrouping('purok');
       setAssociatedBarangayForPuroks(overrideBarangay);
       setActiveFolder(null); // Clear active Barangay folder view
-      setActivePurokFolder(null); // Return to overview of Purok folders
+      handleSetActivePurokFolder(null); // Return to overview of Purok folders
       showToast(`Switched to Purok folders associated with Barangay: ${overrideBarangay}`, 'success');
       return;
     }
@@ -610,9 +619,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setFolderGrouping('purok');
       setActiveFolder(null); // Clear active Barangay folder view
       if (overridePurok) {
-        setActivePurokFolder(overridePurok);
+        handleSetActivePurokFolder(overridePurok);
       } else if (!activePurokFolder) {
-        setActivePurokFolder(null); // Return to overview of Purok folders
+        handleSetActivePurokFolder(null); // Return to overview of Purok folders
       }
 
       const data = await fetchAllMatchingForExport(undefined, overridePurok);
@@ -681,10 +690,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       showToast(`Access restricted: Your account is assigned to Barangay ${userBarangay}`, 'warning');
       return;
     }
+    setLastOpenedBarangay(barangayName);
     setFolderGrouping('purok');
     setAssociatedBarangayForPuroks(barangayName);
     setActiveFolder(null); // Clear active Barangay folder view
-    setActivePurokFolder(null); // Return to overview of Purok folders
+    handleSetActivePurokFolder(null); // Return to overview of Purok folders
     showToast(`Switched to Purok folders associated with Barangay: ${barangayName}`, 'success');
   };
 
@@ -727,7 +737,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   setActiveFolder(null);
                   setAddressFilter(isLeaderOrCoLeader && userBarangay ? userBarangay : 'All Barangays');
                 } else {
-                  setActivePurokFolder(null);
+                  handleSetActivePurokFolder(null);
                 }
               }}
               className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
@@ -778,7 +788,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               onClick={() => {
                 setFolderGrouping('barangay');
                 setActiveFolder(null);
-                setActivePurokFolder(null);
+                handleSetActivePurokFolder(null);
               }}
               className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                 folderGrouping === 'barangay'
@@ -793,7 +803,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               onClick={() => {
                 setFolderGrouping('purok');
                 setActiveFolder(null);
-                setActivePurokFolder(null);
+                handleSetActivePurokFolder(null);
               }}
               className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                 folderGrouping === 'purok'
@@ -1019,82 +1029,64 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
 
           {/* Barangay Folders Cards Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pt-4">
             {filteredFolders.map((folder) => {
               const assignedAccounts = userAccounts.filter(
                 u => u.barangay && u.barangay.trim().toLowerCase() === folder.barangay.trim().toLowerCase()
               );
               const assignedCount = assignedAccounts.length;
               const isUserDesignated = userBarangay && userBarangay.trim().toLowerCase() === folder.barangay.trim().toLowerCase();
-
+              const isHighlighted = lastOpenedBarangay === folder.barangay;
+              
               return (
                 <motion.div
                   key={folder.barangay}
-                  whileHover={{ y: -3, transition: { duration: 0.12 } }}
+                  whileHover={{ y: -2, transition: { duration: 0.12 } }}
                   onClick={() => openFolder(folder.barangay)}
-                  className="relative cursor-pointer group pt-5 flex flex-col h-full min-h-[155px] sm:max-w-[250px] w-full select-none"
+                  className="relative cursor-pointer group flex flex-col h-full min-h-[110px] w-full select-none"
                 >
-                  {/* Skeuomorphic Folder Tab on Top */}
-                  <div className="absolute top-0 left-4 h-6 w-32 bg-amber-100/90 border-t border-x border-amber-300/70 rounded-t-lg group-hover:bg-emerald-50 group-hover:border-emerald-300/80 transition-all duration-300 shadow-2xs flex items-center justify-start px-2.5 z-10">
-                    <Folder className="w-3 h-3 text-amber-700 group-hover:text-emerald-700 fill-amber-300/30 group-hover:fill-emerald-300/20 mr-1 shrink-0" />
-                    <span className="text-[9px] font-extrabold text-amber-800 group-hover:text-emerald-800 tracking-wider uppercase truncate">
-                      {folder.count} {folder.count === 1 ? 'Member' : 'Members'}
-                    </span>
-                  </div>
-
                   {/* Physical Folder Body */}
-                  <div className="flex-1 bg-amber-50/15 hover:bg-amber-50/35 border border-amber-300/50 rounded-b-2xl rounded-tr-2xl rounded-tl-sm shadow-2xs group-hover:shadow-xs group-hover:border-emerald-400/70 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden z-0">
+                  <div className={`flex-1 rounded-xl shadow-2xs group-hover:shadow-xs group-hover:border-emerald-300 transition-all duration-300 p-3 flex flex-col justify-between relative overflow-hidden z-0 ${
+                    isHighlighted
+                      ? 'folder-highlight-active bg-emerald-50/25 border-emerald-500 shadow-md scale-[1.015]'
+                      : 'bg-amber-50/10 hover:bg-amber-50/25 border border-amber-300/40'
+                  }`}>
                     {/* Barangay Details */}
-                    <div className="space-y-1">
-                      <span className="text-[8px] font-extrabold text-amber-800/60 group-hover:text-emerald-800/60 tracking-wider uppercase block">
-                        Barangay Folder
-                      </span>
-                      <h3 className="text-base font-extrabold text-slate-800 font-display group-hover:text-emerald-800 transition-colors truncate">
+                    <div className="space-y-2">
+                      <h3 className={`text-sm font-extrabold font-display transition-colors truncate ${
+                        isHighlighted
+                          ? 'text-emerald-900 group-hover:text-emerald-800'
+                          : 'text-slate-800 group-hover:text-emerald-800'
+                      }`}>
                         {folder.barangay}
                       </h3>
+                      
+                      {/* Count Badge matching the user's uploaded image */}
+                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 border rounded-full text-[11px] font-bold w-fit ${
+                        isHighlighted
+                          ? 'bg-emerald-100 border-emerald-300 text-emerald-900 animate-pulse-subtle'
+                          : 'bg-emerald-50/80 border border-emerald-200/60 text-emerald-800'
+                      }`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block shrink-0"></span>
+                        <span>{folder.count} {folder.count === 1 ? 'Contact' : 'Contacts'}</span>
+                      </div>
                     </div>
 
                     {/* Folder Action Bar */}
-                    <div className="mt-4 pt-2 border-t border-amber-200/30 group-hover:border-emerald-200/30 flex items-center justify-between gap-2 z-10">
-                      <div className="flex items-center gap-1">
-
+                    {isAdmin && (
+                      <div className="mt-2 pt-1.5 border-t border-amber-200/20 group-hover:border-emerald-200/20 flex items-center justify-end z-10">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleExportPDF(folder.barangay);
+                            setDeleteFolderTarget(folder.barangay);
                           }}
-                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer border border-transparent hover:border-emerald-200/40"
-                          title={`Export ${folder.barangay} to PDF`}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                          title={`Delete folder ${folder.barangay} & all its members`}
                         >
-                          <FileText className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                        {isAdmin && (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenDesignateModal(folder.barangay);
-                              }}
-                              className="p-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/80 bg-emerald-50 border border-emerald-200/70 rounded-lg transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold"
-                              title={`Designate ${folder.barangay} folder to accounts`}
-                            >
-                              <UserCheck className="w-3 h-3 text-emerald-600" />
-                              <span className="hidden sm:inline">Designate</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteFolderTarget(folder.barangay);
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                              title={`Delete folder ${folder.barangay} & all its members`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
                       </div>
-                    </div>
+                    )}
                   </div>
                 </motion.div>
               );
@@ -1179,15 +1171,25 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   {[...filteredPurokFolders].sort((a, b) => a.purok.localeCompare(b.purok)).map((f) => (
                     <div 
                       key={f.purok} 
-                      onClick={() => setActivePurokFolder(f.purok)}
-                      className="flex items-center px-3 py-3 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px] cursor-pointer"
+                      onClick={() => handleSetActivePurokFolder(f.purok)}
+                      className={`flex items-center px-3 py-3 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px] cursor-pointer ${
+                        lastOpenedPurok === f.purok
+                          ? 'folder-highlight-active bg-emerald-50/25 border-emerald-500 shadow-md scale-[1.015]'
+                          : 'bg-white border border-slate-100'
+                      }`}
                     >
                       <div className="flex flex-col min-w-0 gap-1 w-full">
-                        <span className="font-extrabold text-slate-700 text-xs truncate" title={f.purok}>
+                        <span className={`font-extrabold text-xs truncate ${
+                          lastOpenedPurok === f.purok ? 'text-emerald-900 font-black' : 'text-slate-700'
+                        }`} title={f.purok}>
                           Purok {formatPurokName(f.purok)}
                         </span>
                         <div className="flex items-center gap-1.5 text-[9px] font-black tracking-wide leading-none">
-                          <span className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded-sm border border-emerald-100/50">
+                          <span className={`px-1 py-0.5 rounded-sm border ${
+                            lastOpenedPurok === f.purok
+                              ? 'text-emerald-800 bg-emerald-100 border-emerald-200'
+                              : 'text-emerald-700 bg-emerald-50 border-emerald-100/50'
+                          }`}>
                             {f.count} Members
                           </span>
                         </div>
@@ -1200,36 +1202,47 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
 
           {/* Purok Folders Search & Toolbar */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
-            <div className="relative w-full sm:max-w-md">
-              <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
-              <input
-                type="text"
-                value={purokSearch}
-                onChange={(e) => setPurokSearch(e.target.value)}
-                placeholder="Search Purok Folder name or contact name alphabetically..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
-              />
-            </div>
+          <div className="space-y-2">
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
+              <div className="relative w-full sm:max-w-md">
+                <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={purokSearch}
+                  onChange={(e) => setPurokSearch(e.target.value)}
+                  placeholder="Search Purok Folder name or contact name alphabetically..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
+                />
+              </div>
 
-            <div className="flex items-center gap-3">
-              <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-600" />
-                <span>{filteredPurokFolders.filter(f => {
-                  const searchLower = purokSearch.toLowerCase().trim();
-                  if (!searchLower) return true;
-                  const matchPurok = f.purok.toLowerCase().includes(searchLower);
-                  const matchContact = contacts.some(c => {
-                    const matchesBarangayFilter = !associatedBarangayForPuroks || 
-                      c.barangay.toLowerCase() === associatedBarangayForPuroks.toLowerCase();
-                    return matchesBarangayFilter &&
-                      c.purok.toLowerCase() === f.purok.toLowerCase() && 
-                      c.full_name.toLowerCase().includes(searchLower);
-                  });
-                  return matchPurok || matchContact;
-                }).length} Purok Folders</span>
+              <div className="flex items-center gap-3">
+                <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-emerald-600" />
+                  <span>{filteredPurokFolders.filter(f => {
+                    const searchLower = purokSearch.toLowerCase().trim();
+                    if (!searchLower) return true;
+                    const matchPurok = f.purok.toLowerCase().includes(searchLower);
+                    const matchContact = contacts.some(c => {
+                      const matchesBarangayFilter = !associatedBarangayForPuroks || 
+                        c.barangay.toLowerCase() === associatedBarangayForPuroks.toLowerCase();
+                      return matchesBarangayFilter &&
+                        c.purok.toLowerCase() === f.purok.toLowerCase() && 
+                        c.full_name.toLowerCase().includes(searchLower);
+                    });
+                    return matchPurok || matchContact;
+                  }).length} Purok Folders</span>
+                </div>
               </div>
             </div>
+
+            {associatedBarangayForPuroks && (
+              <div className="flex items-center gap-2 px-1 pb-1">
+                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md text-[10px] uppercase font-black tracking-wider">
+                  Associated Barangay:
+                </span>
+                <span className="text-sm font-black text-slate-800">{associatedBarangayForPuroks}</span>
+              </div>
+            )}
           </div>
 
           {/* Purok Folders Cards Grid arranged alphabetically */}
@@ -1249,56 +1262,45 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 return matchPurok || matchContact;
               })
               .sort((a, b) => a.purok.localeCompare(b.purok))
-              .map((folder) => (
-                <motion.div
-                  key={folder.purok}
-                  whileHover={{ y: -3, transition: { duration: 0.12 } }}
-                  onClick={() => setActivePurokFolder(folder.purok)}
-                  className="relative cursor-pointer group pt-5 flex flex-col h-full min-h-[155px] sm:max-w-[250px] w-full select-none"
-                >
-                  {/* Skeuomorphic Folder Tab on Top */}
-                  <div className="absolute top-0 left-4 h-6 w-32 bg-amber-100/90 border-t border-x border-amber-300/70 rounded-t-lg group-hover:bg-emerald-50 group-hover:border-emerald-300/80 transition-all duration-300 shadow-2xs flex items-center justify-start px-2.5 z-10">
-                    <Folder className="w-3 h-3 text-amber-700 group-hover:text-emerald-700 fill-amber-300/30 group-hover:fill-emerald-300/20 mr-1 shrink-0" />
-                    <span className="text-[9px] font-extrabold text-amber-800 group-hover:text-emerald-800 tracking-wider uppercase truncate">
-                      {folder.count} {folder.count === 1 ? 'Member' : 'Members'}
-                    </span>
-                  </div>
-
-                  {/* Physical Folder Body */}
-                  <div className="flex-1 bg-amber-50/15 hover:bg-amber-50/35 border border-amber-300/50 rounded-b-2xl rounded-tr-2xl rounded-tl-sm shadow-2xs group-hover:shadow-xs group-hover:border-emerald-400/70 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden z-0">
-                    {/* Purok Details */}
-                    <div className="space-y-1">
-                      <span className="text-[8px] font-extrabold text-amber-800/60 group-hover:text-emerald-800/60 tracking-wider uppercase block">
-                        Purok Folder
-                      </span>
-                      <h3 className="text-base font-extrabold text-slate-800 font-display group-hover:text-emerald-800 transition-colors truncate">
-                        {formatPurokName(folder.purok)}
-                      </h3>
-                      <p className="text-[11px] font-bold text-emerald-800 mt-1 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1 w-fit flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                        <span>{folder.count} {folder.count === 1 ? 'Contact' : 'Contacts'}</span>
-                      </p>
-                    </div>
-
-                    {/* Folder Action Bar */}
-                    <div className="mt-4 pt-2 border-t border-amber-200/30 group-hover:border-emerald-200/30 flex items-center justify-between gap-2 z-10">
-                      <div className="flex items-center gap-1">
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExportPDF(undefined, folder.purok);
-                          }}
-                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer border border-transparent hover:border-emerald-200/40"
-                          title={`Export ${folder.purok} to PDF`}
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                        </button>
+              .map((folder) => {
+                const isHighlighted = lastOpenedPurok === folder.purok;
+                return (
+                  <motion.div
+                    key={folder.purok}
+                    whileHover={{ y: -2, transition: { duration: 0.12 } }}
+                    onClick={() => handleSetActivePurokFolder(folder.purok)}
+                    className="relative cursor-pointer group flex flex-col h-full min-h-[110px] w-full select-none"
+                  >
+                    {/* Physical Folder Body */}
+                    <div className={`flex-1 rounded-xl shadow-2xs group-hover:shadow-xs group-hover:border-emerald-300 transition-all duration-300 p-3 flex flex-col justify-between relative overflow-hidden z-0 ${
+                      isHighlighted
+                        ? 'folder-highlight-active bg-emerald-50/25 border-emerald-500 shadow-md scale-[1.015]'
+                        : 'bg-amber-50/10 hover:bg-amber-50/25 border border-amber-300/40'
+                    }`}>
+                      {/* Purok Details */}
+                      <div className="space-y-2">
+                        <h3 className={`text-sm font-extrabold font-display transition-colors truncate ${
+                          isHighlighted
+                            ? 'text-emerald-900 group-hover:text-emerald-800'
+                            : 'text-slate-800 group-hover:text-emerald-800'
+                        }`}>
+                          {formatPurokName(folder.purok)}
+                        </h3>
+                        
+                        {/* Count Badge matching the user's uploaded image */}
+                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 border rounded-full text-[11px] font-bold w-fit ${
+                          isHighlighted
+                            ? 'bg-emerald-100 border-emerald-300 text-emerald-900 animate-pulse-subtle'
+                            : 'bg-emerald-50/80 border border-emerald-200/60 text-emerald-800'
+                        }`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block shrink-0"></span>
+                          <span>{folder.count} {folder.count === 1 ? 'Contact' : 'Contacts'}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
           </div>
         </div>
       )}
