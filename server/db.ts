@@ -957,6 +957,12 @@ export async function initDb() {
           console.log('[Startup] Syncing database tables with Google Sheets...');
           await pullSiteSettingsFromGoogleSheets();
           
+          try {
+            await pullDeletedRecordsFromGoogleSheets();
+          } catch (e: any) {
+            console.error('[Startup] Failed to pull deleted records tombstones:', e.message);
+          }
+          
           const adminsPulled = await pullAdminsFromGoogleSheets();
           if (!adminsPulled) {
             console.log('[Startup] Administrators table missing or empty on Sheets. Creating and matching administrators table...');
@@ -2823,6 +2829,7 @@ export async function deleteContact(id: number, username: string) {
     deletedAt: new Date().toISOString()
   });
   await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
 
   // Remove permanently from contactsCache array
   contactsCache.splice(index, 1);
@@ -2886,6 +2893,7 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
     });
   }
   await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
   
   const count = initialLength - contactsCache.length;
 
@@ -4113,7 +4121,14 @@ export function syncPCUFieldsToCache() {
 export async function syncWithGoogleSheets(username: string): Promise<{ success: boolean; message: string; count?: number }> {
   lastSyncStatus.lastAttempt = new Date().toISOString();
 
-  // 1. Pull latest Barangays list from Google Sheets first if available
+  // 1. Pull latest deleted records and tombstones first
+  try {
+    await pullDeletedRecordsFromGoogleSheets();
+  } catch (err: any) {
+    console.warn('[Sync] Failed to pull deleted records in syncWithGoogleSheets:', err.message || err);
+  }
+
+  // 2. Pull latest Barangays list from Google Sheets first if available
   try {
     await pullBarangaysFromGoogleSheets();
   } catch (err: any) {
@@ -4506,6 +4521,208 @@ export async function syncAdminsToGoogleSheets() {
     console.error('Failed to sync administrators to Google Sheets:', err.message || err);
     handleGoogleSheetsError(err, 'syncAdminsToGoogleSheets');
     markSheetsDisconnected(err);
+  }
+}
+
+export async function syncDeletedRecordsToGoogleSheets() {
+  const sheets = getSheetsClient();
+  if (!sheets) return;
+
+  if (Date.now() < googleSheetsQuotaCooldownUntil) {
+    return;
+  }
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return;
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+
+    const existingSheets = await getExistingSheets(sheets, spreadsheetId);
+    markSheetsConnected();
+
+    // 1. Sync DeletedBarangays
+    const bgSheetName = 'DeletedBarangays';
+    if (!existingSheets.has(bgSheetName)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: bgSheetName } } }]
+        }
+      });
+      existingSheets.add(bgSheetName);
+    }
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${bgSheetName}!A:Z` });
+    const bgRows = [['Barangay Name'], ...deletedBarangaysCache.map(b => [b])];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${bgSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: bgRows }
+    });
+
+    // 2. Sync DeletedContacts
+    const contactSheetName = 'DeletedContacts';
+    if (!existingSheets.has(contactSheetName)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: contactSheetName } } }]
+        }
+      });
+      existingSheets.add(contactSheetName);
+    }
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${contactSheetName}!A:Z` });
+    const contactRows = [
+      ['ID', 'Full Name', 'Barangay', 'Deleted At'],
+      ...deletedContactsCache.map(c => [c.id || '', c.full_name || '', c.barangay || '', c.deletedAt || ''])
+    ];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${contactSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: contactRows }
+    });
+
+    // 3. Sync DeletedExistingAccounts
+    const existSheetName = 'DeletedExistingAccounts';
+    if (!existingSheets.has(existSheetName)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: existSheetName } } }]
+        }
+      });
+      existingSheets.add(existSheetName);
+    }
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${existSheetName}!A:Z` });
+    const existRows = [
+      ['ID', 'Full Name', 'Barangay', 'Deleted At'],
+      ...deletedExistingAccountsCache.map(c => [c.id || '', c.full_name || '', c.barangay || '', c.deletedAt || ''])
+    ];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${existSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: existRows }
+    });
+
+    console.log('[Google Sheets] Successfully synchronized deleted records lists!');
+  } catch (err: any) {
+    console.error('Failed to sync deleted records to Google Sheets:', err.message || err);
+    handleGoogleSheetsError(err, 'syncDeletedRecordsToGoogleSheets');
+  }
+}
+
+export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
+  const sheets = getSheetsClient();
+  if (!sheets) return false;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+
+    const existingSheets = await getExistingSheets(sheets, spreadsheetId);
+    markSheetsConnected();
+
+    let loadedAny = false;
+
+    // 1. Pull DeletedBarangays
+    const bgSheetName = 'DeletedBarangays';
+    if (existingSheets.has(bgSheetName)) {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${bgSheetName}!A:A` });
+      const rows = res.data.values || [];
+      if (rows.length > 1) {
+        const pulledBgs = rows.slice(1).map(r => (r[0] || '').toString().trim()).filter(Boolean);
+        // Merge into cache
+        pulledBgs.forEach(bg => {
+          if (!deletedBarangaysCache.some(localBg => localBg.trim().toLowerCase() === bg.toLowerCase())) {
+            deletedBarangaysCache.push(bg);
+          }
+        });
+        await safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8');
+        loadedAny = true;
+      }
+    }
+
+    // 2. Pull DeletedContacts
+    const contactSheetName = 'DeletedContacts';
+    if (existingSheets.has(contactSheetName)) {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${contactSheetName}!A:D` });
+      const rows = res.data.values || [];
+      if (rows.length > 1) {
+        const pulledContacts = rows.slice(1).map(row => ({
+          id: row[0] ? (isNaN(parseInt(row[0], 10)) ? row[0] : parseInt(row[0], 10)) : '',
+          full_name: (row[1] || '').toString().trim(),
+          barangay: (row[2] || '').toString().trim(),
+          deletedAt: (row[3] || '').toString().trim() || new Date().toISOString()
+        })).filter(c => c.full_name);
+
+        pulledContacts.forEach(pc => {
+          const alreadyLocal = deletedContactsCache.some(lc => 
+            (pc.id && lc.id && pc.id.toString() === lc.id.toString()) ||
+            (normalizeCompareName(pc.full_name, lc.full_name) && 
+             normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
+          );
+          if (!alreadyLocal) {
+            deletedContactsCache.push(pc);
+          }
+        });
+        await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+        loadedAny = true;
+      }
+    }
+
+    // 3. Pull DeletedExistingAccounts
+    const existSheetName = 'DeletedExistingAccounts';
+    if (existingSheets.has(existSheetName)) {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${existSheetName}!A:D` });
+      const rows = res.data.values || [];
+      if (rows.length > 1) {
+        const pulledExists = rows.slice(1).map(row => ({
+          id: (row[0] || '').toString().trim(),
+          full_name: (row[1] || '').toString().trim(),
+          barangay: (row[2] || '').toString().trim(),
+          deletedAt: (row[3] || '').toString().trim() || new Date().toISOString()
+        })).filter(c => c.full_name);
+
+        pulledExists.forEach(pe => {
+          const alreadyLocal = deletedExistingAccountsCache.some(lc => 
+            (pe.id && lc.id && pe.id.toString() === lc.id.toString()) ||
+            (normalizeCompareName(pe.full_name, lc.full_name) && 
+             normalizeBarangayName(pe.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
+          );
+          if (!alreadyLocal) {
+            deletedExistingAccountsCache.push(pe);
+          }
+        });
+        await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
+        loadedAny = true;
+      }
+    }
+
+    if (loadedAny) {
+      console.log('[Google Sheets] Pulled deleted records and tombstones successfully!');
+      // Apply filtering to local active cache immediately to scrub deleted records
+      contactsCache = contactsCache.filter(c => !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay));
+      barangaysCache = barangaysCache.filter(b => !isBarangayTombstoned(b));
+      await saveContacts();
+      await saveBarangays();
+    }
+    return loadedAny;
+  } catch (err: any) {
+    if (!err.message?.includes('Precondition')) {
+      console.error('Failed to pull deleted records from Google Sheets:', err.message || err);
+    }
+    handleGoogleSheetsError(err, 'pullDeletedRecordsFromGoogleSheets');
+    return false;
   }
 }
 
@@ -6191,6 +6408,7 @@ export async function deleteExistingAccountFolder(barangay: string, username: st
     await safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8');
   }
   await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
+  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted existing accounts to Google Sheets:', err));
 
   // Remove completely from local cache
   existingAccountsCache = existingAccountsCache.filter(acc => {
@@ -6221,6 +6439,7 @@ export async function deleteLocalExistingAccount(id: string, username: string): 
     deletedAt: new Date().toISOString()
   });
   await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
+  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted existing accounts to Google Sheets:', err));
 
   // Remove from cache
   existingAccountsCache = existingAccountsCache.filter(acc => acc.id.toString() !== id.toString());
