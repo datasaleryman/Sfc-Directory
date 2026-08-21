@@ -2524,6 +2524,9 @@ export async function getContacts(params: {
     const isNoPurok = purok === 'No Purok';
     const pContacts = contactsCache.filter(c => {
       if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+      if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
+        if (!isBarangayMatch(c.barangay, filterBarangay)) return false;
+      }
       if (isNoPurok) {
         return !c.purok || !c.purok.trim() || c.purok.trim().toLowerCase() === 'no purok';
       }

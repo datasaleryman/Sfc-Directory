@@ -388,6 +388,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       let currentPurok = activePurokFolder ? activePurokFolder : (purokFilter === 'All Puroks' ? 'All Puroks' : purokFilter);
       if (activePurokFolder) {
         currentBarangay = associatedBarangayForPuroks || 'All Addresses';
+      } else if (folderGrouping === 'purok' && associatedBarangayForPuroks) {
+        currentBarangay = associatedBarangayForPuroks;
       }
 
       const queryParams = new URLSearchParams({
@@ -1062,11 +1064,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       </h3>
                       
                       {/* Count Badge matching the user's uploaded image */}
-                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 border rounded-full text-[11px] font-bold w-fit ${
-                        isHighlighted
-                          ? 'bg-emerald-100 border-emerald-300 text-emerald-900 animate-pulse-subtle'
-                          : 'bg-emerald-50/80 border border-emerald-200/60 text-emerald-800'
-                      }`}>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 border rounded-full text-[11px] font-bold w-fit bg-emerald-50/80 border-emerald-200/60 text-emerald-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block shrink-0"></span>
                         <span>{folder.count} {folder.count === 1 ? 'Contact' : 'Contacts'}</span>
                       </div>
@@ -1123,83 +1121,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             </div>
           )}
 
-          {/* Purok Summary & Analytics Panel */}
-          <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs transition-all">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center border border-emerald-200/50 shadow-inner">
-                  <BarChart3 className="w-5 h-5 text-emerald-700" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-slate-800 font-display">
-                    Purok Summary Analytics
-                  </h3>
-                  <p className="text-xs text-slate-400 font-medium">
-                    Overview of members and barangay associations across all Puroks arranged alphabetically
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Executive Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Alphabetical Puroks</p>
-                <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
-                  {filteredPurokFolders.length}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Active organized Purok groups</p>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Registered Members</p>
-                <p className="text-2xl font-extrabold text-slate-800 font-display mt-1">
-                  {filteredPurokFolders.reduce((sum, f) => sum + f.count, 0)}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Deducted and fully-indexed</p>
-              </div>
-            </div>
-
-            {/* Ultra-compact Purok Folders list */}
-            <div className="mt-5 w-full bg-slate-50/30 rounded-2xl border border-slate-100 p-3 sm:p-4">
-              {filteredPurokFolders.length === 0 ? (
-                <div className="h-[120px] flex flex-col items-center justify-center gap-2">
-                  <p className="text-xs text-slate-400 font-bold">No associated Purok folders found.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
-                  {[...filteredPurokFolders].sort((a, b) => a.purok.localeCompare(b.purok)).map((f) => (
-                    <div 
-                      key={f.purok} 
-                      onClick={() => handleSetActivePurokFolder(f.purok)}
-                      className={`flex items-center px-3 py-3 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px] cursor-pointer ${
-                        lastOpenedPurok === f.purok
-                          ? 'folder-highlight-active bg-emerald-50/25 border-emerald-500 shadow-md scale-[1.015]'
-                          : 'bg-white border border-slate-100'
-                      }`}
-                    >
-                      <div className="flex flex-col min-w-0 gap-1 w-full">
-                        <span className={`font-extrabold text-xs truncate ${
-                          lastOpenedPurok === f.purok ? 'text-emerald-900 font-black' : 'text-slate-700'
-                        }`} title={f.purok}>
-                          Purok {formatPurokName(f.purok)}
-                        </span>
-                        <div className="flex items-center gap-1.5 text-[9px] font-black tracking-wide leading-none">
-                          <span className={`px-1 py-0.5 rounded-sm border ${
-                            lastOpenedPurok === f.purok
-                              ? 'text-emerald-800 bg-emerald-100 border-emerald-200'
-                              : 'text-emerald-700 bg-emerald-50 border-emerald-100/50'
-                          }`}>
-                            {f.count} Members
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Purok Folders Search & Toolbar */}
           <div className="space-y-2">
@@ -1288,11 +1209,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         </h3>
                         
                         {/* Count Badge matching the user's uploaded image */}
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 border rounded-full text-[11px] font-bold w-fit ${
-                          isHighlighted
-                            ? 'bg-emerald-100 border-emerald-300 text-emerald-900 animate-pulse-subtle'
-                            : 'bg-emerald-50/80 border border-emerald-200/60 text-emerald-800'
-                        }`}>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 border rounded-full text-[11px] font-bold w-fit bg-emerald-50/80 border-emerald-200/60 text-emerald-800">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block shrink-0"></span>
                           <span>{folder.count} {folder.count === 1 ? 'Contact' : 'Contacts'}</span>
                         </div>
