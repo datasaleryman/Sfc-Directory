@@ -965,7 +965,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 type="text"
                 value={folderSearch}
                 onChange={(e) => setFolderSearch(e.target.value)}
-                placeholder="Search Barangay Folder name..."
+                placeholder="Search Barangay Folder name or contact name..."
                 className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
               />
             </div>
@@ -1207,7 +1207,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 type="text"
                 value={purokSearch}
                 onChange={(e) => setPurokSearch(e.target.value)}
-                placeholder="Search Purok Folder name alphabetically..."
+                placeholder="Search Purok Folder name or contact name alphabetically..."
                 className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
               />
             </div>

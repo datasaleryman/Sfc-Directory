@@ -4333,13 +4333,12 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       pcu_file_url: pcuFileUrl || undefined,
       pcu_uploaded_by: pcuUploadedBy || undefined,
       pcu_uploaded_at: pcuUploadedAt || undefined,
-      added_locally: existingLocal ? existingLocal.added_locally : true,
+      added_locally: false, // Pulled from Google Sheets, so it is officially synced!
       added_from_print_list: addedFromPrintList
     });
   }
 
   // Merge the pulled contacts from Google Sheets into our local contactsCache.
-  // We NEVER discard contacts that were added locally or from the print list but aren't in Google Sheets.
   const mergedContacts: Contact[] = [...newContacts];
   
   for (const lc of contactsCache) {
@@ -4354,8 +4353,17 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     );
     
     if (!alreadyExists) {
-      // Keep local contacts that are not in Google Sheets so they never disappear!
-      mergedContacts.push(lc);
+      // If sync is enabled, we only keep local contacts that were added very recently (e.g. less than 5 minutes ago)
+      // to allow them time to upload/sync. Otherwise, if it is missing from Google Sheets, it was deleted!
+      const isPendingLocalSync = sheetsConfig.syncEnabled 
+        ? (lc.added_locally && (Date.now() - new Date(lc.created_at).getTime() < 300000))
+        : true;
+
+      if (isPendingLocalSync) {
+        mergedContacts.push(lc);
+      } else {
+        console.log(`[Sync] Permanent deletion: Discarding contact "${lc.full_name}" as it is missing from Google Sheets.`);
+      }
     } else {
       // If it already exists in Google Sheets, preserve local-only fields
       const targetIndex = mergedContacts.findIndex(mc => 
