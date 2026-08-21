@@ -713,10 +713,15 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       if (!searchLower) return true;
 
       const matchBarangay = f.barangay.toLowerCase().includes(searchLower);
-      const matchContact = contacts.some(c => 
-        c.barangay.toLowerCase() === f.barangay.toLowerCase() && 
-        c.full_name.toLowerCase().includes(searchLower)
-      );
+      const matchContact = contacts.some(c => {
+        const cBg = (c.barangay || '').trim().toLowerCase();
+        const fBg = f.barangay.trim().toLowerCase();
+        const isNoAddressFolder = fBg === 'no address';
+        const isContactNoAddress = !cBg || cBg === 'no address' || cBg === 'no barangay';
+        
+        const isFolderMatch = isNoAddressFolder ? isContactNoAddress : (cBg === fBg);
+        return isFolderMatch && c.full_name.toLowerCase().includes(searchLower);
+      });
       return matchBarangay || matchContact;
     });
 
@@ -1144,10 +1149,18 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     if (!searchLower) return true;
                     const matchPurok = f.purok.toLowerCase().includes(searchLower);
                     const matchContact = contacts.some(c => {
+                      const cBg = (c.barangay || '').trim().toLowerCase();
+                      const fBg = associatedBarangayForPuroks ? associatedBarangayForPuroks.trim().toLowerCase() : '';
+                      const isNoAddressFolder = fBg === 'no address';
+                      const isContactNoAddress = !cBg || cBg === 'no address' || cBg === 'no barangay';
+                      
                       const matchesBarangayFilter = !associatedBarangayForPuroks || 
-                        c.barangay.toLowerCase() === associatedBarangayForPuroks.toLowerCase();
+                        (isNoAddressFolder ? isContactNoAddress : (cBg === fBg));
+
+                      const cPur = (c.purok || '').trim().toLowerCase();
+                      const fPur = f.purok.trim().toLowerCase();
                       return matchesBarangayFilter &&
-                        c.purok.toLowerCase() === f.purok.toLowerCase() && 
+                        cPur === fPur && 
                         c.full_name.toLowerCase().includes(searchLower);
                     });
                     return matchPurok || matchContact;
@@ -1174,10 +1187,18 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 if (!searchLower) return true;
                 const matchPurok = f.purok.toLowerCase().includes(searchLower);
                 const matchContact = contacts.some(c => {
+                  const cBg = (c.barangay || '').trim().toLowerCase();
+                  const fBg = associatedBarangayForPuroks ? associatedBarangayForPuroks.trim().toLowerCase() : '';
+                  const isNoAddressFolder = fBg === 'no address';
+                  const isContactNoAddress = !cBg || cBg === 'no address' || cBg === 'no barangay';
+                  
                   const matchesBarangayFilter = !associatedBarangayForPuroks || 
-                    c.barangay.toLowerCase() === associatedBarangayForPuroks.toLowerCase();
+                    (isNoAddressFolder ? isContactNoAddress : (cBg === fBg));
+
+                  const cPur = (c.purok || '').trim().toLowerCase();
+                  const fPur = f.purok.trim().toLowerCase();
                   return matchesBarangayFilter &&
-                    c.purok.toLowerCase() === f.purok.toLowerCase() && 
+                    cPur === fPur && 
                     c.full_name.toLowerCase().includes(searchLower);
                 });
                 return matchPurok || matchContact;

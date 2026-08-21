@@ -55,20 +55,46 @@ try {
   console.warn('[Console Warning] Could not globally patch console methods:', e.message);
 }
 
-// Safe filesystem wrappers for serverless platforms like Netlify
+// Safe filesystem wrappers for serverless platforms like Netlify - modified to use atomic writes to prevent JSON corruption
 export function safeWriteFileSync(file: string, data: string, options: any = 'utf-8') {
+  const tmpFile = file + '.' + Math.random().toString(36).substring(2) + '.tmp';
   try {
-    fs.writeFileSync(file, data, options);
+    fs.writeFileSync(tmpFile, data, options);
+    fs.renameSync(tmpFile, file);
   } catch (err: any) {
-    console.warn(`[FileSystem Warning] Synchronous write to "${file}" skipped (likely read-only serverless environment):`, err.message);
+    // Fallback to standard synchronous write if rename fails
+    try {
+      fs.writeFileSync(file, data, options);
+    } catch (fallbackErr: any) {
+      console.warn(`[FileSystem Warning] Synchronous write to "${file}" skipped (likely read-only serverless environment):`, fallbackErr.message);
+    }
+  } finally {
+    try {
+      if (fs.existsSync(tmpFile)) {
+        fs.unlinkSync(tmpFile);
+      }
+    } catch (e) {}
   }
 }
 
 export async function safeWriteFile(file: string, data: string, options: any = 'utf-8') {
+  const tmpFile = file + '.' + Math.random().toString(36).substring(2) + '.tmp';
   try {
-    await fs.promises.writeFile(file, data, options);
+    await fs.promises.writeFile(tmpFile, data, options);
+    await fs.promises.rename(tmpFile, file);
   } catch (err: any) {
-    console.warn(`[FileSystem Warning] Asynchronous write to "${file}" skipped (likely read-only serverless environment):`, err.message);
+    // Fallback to standard asynchronous write if rename fails
+    try {
+      await fs.promises.writeFile(file, data, options);
+    } catch (fallbackErr: any) {
+      console.warn(`[FileSystem Warning] Asynchronous write to "${file}" skipped (likely read-only serverless environment):`, fallbackErr.message);
+    }
+  } finally {
+    try {
+      if (fs.existsSync(tmpFile)) {
+        await fs.promises.unlink(tmpFile);
+      }
+    } catch (e) {}
   }
 }
 
@@ -1191,7 +1217,7 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read households cache file. Recovering automatically:', e);
       try {
-        fs.writeFileSync(HOUSEHOLDS_CACHE_FILE, '[]', 'utf-8');
+        safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
         // Ignore write error
       }
@@ -1210,7 +1236,7 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read PCUs cache file. Recovering automatically:', e);
       try {
-        fs.writeFileSync(PCUS_CACHE_FILE, '[]', 'utf-8');
+        safeWriteFileSync(PCUS_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
         // Ignore write error
       }
@@ -1229,7 +1255,7 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read member verified cache file. Recovering automatically:', e);
       try {
-        fs.writeFileSync(MEMBER_VERIFIED_CACHE_FILE, '[]', 'utf-8');
+        safeWriteFileSync(MEMBER_VERIFIED_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
         // Ignore write error
       }
@@ -1248,7 +1274,7 @@ export async function getCachedSubmissionMessages(force: boolean = false): Promi
     } catch (e) {
       console.warn('[Base44 Cache] Failed to read messages cache file. Recovering automatically:', e);
       try {
-        fs.writeFileSync(MESSAGES_CACHE_FILE, '[]', 'utf-8');
+        safeWriteFileSync(MESSAGES_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
         // Ignore write error
       }
@@ -2433,6 +2459,18 @@ export async function getContacts(params: {
 
   const allBarangays = normalizeAndDeduplicateBarangays(rawBarangaysList);
 
+  // Compute NO ADDRESS folder statistics if there are contacts without address
+  const noAddressContacts = contactsCache.filter(c => 
+    !c.deleted_at && 
+    (c.added_from_print_list !== false) && 
+    !c.pcu_file_url && 
+    (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
+  );
+
+  if (noAddressContacts.length > 0 && !allBarangays.includes('NO ADDRESS')) {
+    allBarangays.push('NO ADDRESS');
+  }
+
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
   let hasNoPurokContacts = false;
@@ -2452,7 +2490,11 @@ export async function getContacts(params: {
 
   // Apply Barangay Filter with flexible matching
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
-    filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
+    if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
+      filtered = filtered.filter(c => !c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay');
+    } else {
+      filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
+    }
   }
 
   // Apply Purok Filter
@@ -2469,10 +2511,10 @@ export async function getContacts(params: {
     const term = search.toLowerCase().trim();
     filtered = filtered.filter(
       c =>
-         c.full_name.toLowerCase().includes(term) ||
-         c.barangay.toLowerCase().includes(term) ||
+         (c.full_name || '').toLowerCase().includes(term) ||
+         (c.barangay || '').toLowerCase().includes(term) ||
          ((c.purok && c.purok.toLowerCase().includes(term)) || (!c.purok && 'no purok'.includes(term))) ||
-         c.contact_number.includes(term)
+         (c.contact_number || '').includes(term)
     );
   }
 
@@ -2480,9 +2522,9 @@ export async function getContacts(params: {
   filtered.sort((a, b) => {
     let comparison = 0;
     if (sortBy === 'name') {
-      comparison = a.full_name.localeCompare(b.full_name);
+      comparison = (a.full_name || '').localeCompare(b.full_name || '');
     } else if (sortBy === 'barangay' || sortBy === 'address' as any) {
-      comparison = a.barangay.localeCompare(b.barangay);
+      comparison = (a.barangay || '').localeCompare(b.barangay || '');
     } else if (sortBy === 'purok') {
       comparison = (a.purok || 'No Purok').localeCompare(b.purok || 'No Purok');
     } else if (sortBy === 'date') {
@@ -2519,13 +2561,40 @@ export async function getContacts(params: {
     };
   }).filter(f => f.count > 0);
 
+  // If we have any no-address contacts, ensure the NO ADDRESS folder is part of barangayFolders
+  if (noAddressContacts.length > 0) {
+    const hasFolder = barangayFolders.some(f => f.barangay.toUpperCase() === 'NO ADDRESS');
+    if (!hasFolder) {
+      const purokSet = new Set<string>();
+      let geotaggedCount = 0;
+      noAddressContacts.forEach(c => {
+        if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
+          purokSet.add(c.purok.trim());
+        } else {
+          purokSet.add('No Purok');
+        }
+        if (c.geotagged) geotaggedCount++;
+      });
+      barangayFolders.push({
+        barangay: 'NO ADDRESS',
+        count: noAddressContacts.length,
+        purokCount: purokSet.size,
+        geotaggedCount
+      });
+    }
+  }
+
   // Compute folder statistics for each purok sorted alphabetically
   const purokFolders = allPuroks.map(purok => {
     const isNoPurok = purok === 'No Purok';
     const pContacts = contactsCache.filter(c => {
       if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
       if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
-        if (!isBarangayMatch(c.barangay, filterBarangay)) return false;
+        if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
+          if (c.barangay && c.barangay.trim() && c.barangay.trim().toLowerCase() !== 'no address' && c.barangay.trim().toLowerCase() !== 'no barangay') return false;
+        } else {
+          if (!isBarangayMatch(c.barangay, filterBarangay)) return false;
+        }
       }
       if (isNoPurok) {
         return !c.purok || !c.purok.trim() || c.purok.trim().toLowerCase() === 'no purok';
@@ -2577,7 +2646,11 @@ export function getAllFilteredContacts(params: {
   let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
-    filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
+    if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
+      filtered = filtered.filter(c => !c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay');
+    } else {
+      filtered = filtered.filter(c => isBarangayMatch(c.barangay, filterBarangay));
+    }
   }
 
   if (purok && purok !== 'All Puroks') {
@@ -2592,19 +2665,19 @@ export function getAllFilteredContacts(params: {
     const term = search.toLowerCase().trim();
     filtered = filtered.filter(
       c =>
-        c.full_name.toLowerCase().includes(term) ||
-        c.barangay.toLowerCase().includes(term) ||
+        (c.full_name || '').toLowerCase().includes(term) ||
+        (c.barangay || '').toLowerCase().includes(term) ||
         ((c.purok && c.purok.toLowerCase().includes(term)) || (!c.purok && 'no purok'.includes(term))) ||
-        c.contact_number.includes(term)
+        (c.contact_number || '').includes(term)
     );
   }
 
   filtered.sort((a, b) => {
     let comparison = 0;
     if (sortBy === 'name') {
-      comparison = a.full_name.localeCompare(b.full_name);
+      comparison = (a.full_name || '').localeCompare(b.full_name || '');
     } else if (sortBy === 'barangay' || sortBy === 'address' as any) {
-      comparison = a.barangay.localeCompare(b.barangay);
+      comparison = (a.barangay || '').localeCompare(b.barangay || '');
     } else if (sortBy === 'purok') {
       comparison = (a.purok || 'No Purok').localeCompare(b.purok || 'No Purok');
     } else if (sortBy === 'date') {
@@ -6058,7 +6131,7 @@ function removeIdFromHouseholdCache(id: string): void {
       const submissions = JSON.parse(data);
       if (Array.isArray(submissions)) {
         const filtered = submissions.filter((sub: any) => sub.id !== id);
-        fs.writeFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+        safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
         console.log(`[Base44 Cache] Successfully removed stale ID ${id} from HouseholdSubmission cache.`);
       }
     }
@@ -6213,7 +6286,7 @@ export async function syncToBase44HouseholdSubmission(existingAccount: ExistingA
             const submissions = JSON.parse(data);
             if (Array.isArray(submissions)) {
               submissions.push(newSubmission);
-              fs.writeFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(submissions, null, 2), 'utf-8');
+              safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(submissions, null, 2), 'utf-8');
             }
           }
         } catch (cacheErr: any) {
