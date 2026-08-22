@@ -160,6 +160,7 @@ export interface Contact {
   pcu_file_url?: string;
   pcu_uploaded_by?: string;
   pcu_uploaded_at?: string;
+  isExistingAccount?: boolean;
   uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
 }
 
@@ -218,6 +219,7 @@ export interface ExistingAccountItem {
   uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
   facebookLink?: string;
   added_from_website?: boolean;
+  isBulkEntry?: boolean;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -812,7 +814,7 @@ export async function initDb() {
       try {
         const parsed = JSON.parse(content);
         if (Array.isArray(parsed)) {
-          existingAccountsCache = parsed.filter(acc => acc && acc.added_from_website && !isExistingAccountTombstoned(acc));
+          existingAccountsCache = parsed.filter(acc => acc && !isExistingAccountTombstoned(acc));
           safeWriteFileSync(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2));
         } else {
           existingAccountsCache = [];
@@ -999,6 +1001,12 @@ export async function initDb() {
           if (!barangaysPulled) {
             console.log('[Startup] Barangays table missing or empty on Sheets. Creating and matching barangays table...');
             await syncBarangaysToGoogleSheets();
+          }
+
+          const existPulled = await pullExistingAccountsFromGoogleSheets();
+          if (!existPulled) {
+            console.log('[Startup] Existing accounts table missing or empty on Sheets. Creating table...');
+            await syncExistingAccountsToGoogleSheets();
           }
         } catch (err: any) {
           console.error('[Startup] Failed to sync startup configurations with Google Sheets:', err.message || err);
@@ -1213,9 +1221,13 @@ export async function getCachedHouseholdSubmissions(force: boolean = false): Pro
   if (cacheExists) {
     try {
       const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+      if (!data || !data.trim()) {
+        safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, '[]', 'utf-8');
+        return [];
+      }
       return JSON.parse(data);
-    } catch (e) {
-      console.warn('[Base44 Cache] Failed to read households cache file. Recovering automatically:', e);
+    } catch (e: any) {
+      console.warn('[Base44 Cache] Households cache file was corrupted. Resetting automatically.');
       try {
         safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
@@ -1232,9 +1244,13 @@ export async function getCachedPCUUpdates(force: boolean = false): Promise<any[]
   if (cacheExists) {
     try {
       const data = fs.readFileSync(PCUS_CACHE_FILE, 'utf-8');
+      if (!data || !data.trim()) {
+        safeWriteFileSync(PCUS_CACHE_FILE, '[]', 'utf-8');
+        return [];
+      }
       return JSON.parse(data);
-    } catch (e) {
-      console.warn('[Base44 Cache] Failed to read PCUs cache file. Recovering automatically:', e);
+    } catch (e: any) {
+      console.warn('[Base44 Cache] PCUs cache file was corrupted. Resetting automatically.');
       try {
         safeWriteFileSync(PCUS_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
@@ -1251,9 +1267,13 @@ export async function getCachedMemberVerifiedSubmissions(force: boolean = false)
   if (cacheExists) {
     try {
       const data = fs.readFileSync(MEMBER_VERIFIED_CACHE_FILE, 'utf-8');
+      if (!data || !data.trim()) {
+        safeWriteFileSync(MEMBER_VERIFIED_CACHE_FILE, '[]', 'utf-8');
+        return [];
+      }
       return JSON.parse(data);
-    } catch (e) {
-      console.warn('[Base44 Cache] Failed to read member verified cache file. Recovering automatically:', e);
+    } catch (e: any) {
+      console.warn('[Base44 Cache] Member verified cache file was corrupted. Resetting automatically.');
       try {
         safeWriteFileSync(MEMBER_VERIFIED_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
@@ -1270,9 +1290,13 @@ export async function getCachedSubmissionMessages(force: boolean = false): Promi
   if (cacheExists) {
     try {
       const data = fs.readFileSync(MESSAGES_CACHE_FILE, 'utf-8');
+      if (!data || !data.trim()) {
+        safeWriteFileSync(MESSAGES_CACHE_FILE, '[]', 'utf-8');
+        return [];
+      }
       return JSON.parse(data);
-    } catch (e) {
-      console.warn('[Base44 Cache] Failed to read messages cache file. Recovering automatically:', e);
+    } catch (e: any) {
+      console.warn('[Base44 Cache] Messages cache file was corrupted. Resetting automatically.');
       try {
         safeWriteFileSync(MESSAGES_CACHE_FILE, '[]', 'utf-8');
       } catch (writeErr) {
@@ -5257,6 +5281,214 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
   return false;
 }
 
+export async function syncExistingAccountsToGoogleSheets() {
+  const sheets = getSheetsClient();
+  if (!sheets) return;
+
+  if (Date.now() < googleSheetsQuotaCooldownUntil) {
+    return;
+  }
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const existSheetName = 'ExistingAccounts';
+
+    // Verify sheet exists, if not create it
+    const existingSheets = await getExistingSheets(sheets, spreadsheetId);
+    markSheetsConnected();
+    const exists = existingSheets.has(existSheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${existSheetName}" not found. Creating ExistingAccounts table automatically...`);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: {
+                title: existSheetName
+              }
+            }
+          }]
+        }
+      });
+      existingSheets.add(existSheetName);
+    }
+
+    // Clear the sheet first to write the fresh state
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${existSheetName}!A:Z`
+    });
+
+    // Write headers and data
+    const headers = [
+      'ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At',
+      'Latitude', 'Longitude', 'Geotagged', 'ExistingAcc', 'Verified',
+      'Visited', 'Status', 'Submitted By', 'PIN', 'Facebook Link',
+      'Uploaded Files JSON', 'Added To Files'
+    ];
+    
+    const rowsToPut = [
+      headers,
+      ...existingAccountsCache.map(acc => [
+        acc.id || '',
+        acc.full_name || '',
+        acc.barangay || '',
+        acc.purok || '',
+        acc.contact_number || '',
+        acc.created_at || '',
+        acc.latitude !== undefined ? acc.latitude.toString() : '',
+        acc.longitude !== undefined ? acc.longitude.toString() : '',
+        acc.geotagged ? 'TRUE' : 'FALSE',
+        acc.existingAcc ? 'TRUE' : 'FALSE',
+        acc.existingAccVerified ? 'TRUE' : 'FALSE',
+        acc.existingAccVisited ? 'TRUE' : 'FALSE',
+        acc.status || 'approved',
+        acc.submittedBy || 'Admin',
+        acc.pin || '',
+        acc.facebookLink || '',
+        JSON.stringify(acc.uploadedFiles || []),
+        acc.addedToFiles ? 'TRUE' : 'FALSE'
+      ])
+    ];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${existSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: sanitizeRowsForSheets(rowsToPut)
+      }
+    });
+    console.log('[Google Sheets] Synchronized existing accounts list successfully!');
+  } catch (err: any) {
+    console.error('Failed to sync existing accounts to Google Sheets:', err.message || err);
+    handleGoogleSheetsError(err, 'syncExistingAccountsToGoogleSheets');
+    markSheetsDisconnected(err);
+  }
+}
+
+export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
+  const sheets = getSheetsClient();
+  if (!sheets) return false;
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const existSheetName = 'ExistingAccounts';
+
+    // Verify sheet exists
+    const existingSheets = await getExistingSheets(sheets, spreadsheetId);
+    markSheetsConnected();
+    const exists = existingSheets.has(existSheetName);
+
+    if (!exists) {
+      console.log(`Sheet "${existSheetName}" not found. No remote existing accounts to pull.`);
+      return false;
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${existSheetName}!A:R`
+    });
+
+    const rows = res.data.values || [];
+    if (rows.length <= 1) {
+      console.log('ExistingAccounts sheet is empty or only contains headers.');
+      return false;
+    }
+
+    const remoteAccounts: ExistingAccountItem[] = [];
+    for (const row of rows.slice(1)) {
+      if (!row || row.length < 2) continue;
+      
+      const id = row[0]?.trim();
+      const full_name = (row[1] || '').trim().toUpperCase();
+      const barangay = (row[2] || '').trim().toUpperCase();
+      const purok = (row[3] || '').trim();
+      const contact_number = (row[4] || '').trim();
+      const created_at = row[5]?.trim() || new Date().toISOString();
+      const latitude = row[6]?.trim() ? parseFloat(row[6].trim()) : undefined;
+      const longitude = row[7]?.trim() ? parseFloat(row[7].trim()) : undefined;
+      const geotagged = row[8]?.trim().toUpperCase() === 'TRUE';
+      const existingAcc = row[9]?.trim().toUpperCase() !== 'FALSE';
+      const existingAccVerified = row[10]?.trim().toUpperCase() === 'TRUE';
+      const existingAccVisited = row[11]?.trim().toUpperCase() === 'TRUE';
+      const status = row[12]?.trim() || 'approved';
+      const submittedBy = row[13]?.trim() || 'Admin';
+      const pin = row[14]?.trim() || '';
+      const facebookLink = row[15]?.trim() || '';
+      
+      let uploadedFiles: any[] = [];
+      try {
+        if (row[16]?.trim()) {
+          uploadedFiles = JSON.parse(row[16].trim());
+          if (!Array.isArray(uploadedFiles)) uploadedFiles = [];
+        }
+      } catch (e) {}
+
+      const addedToFiles = row[17]?.trim().toUpperCase() === 'TRUE';
+
+      if (!full_name || isExistingAccountTombstoned({ id, full_name, barangay })) {
+        continue;
+      }
+
+      remoteAccounts.push({
+        id,
+        full_name,
+        barangay,
+        purok,
+        contact_number,
+        created_at,
+        latitude,
+        longitude,
+        geotagged,
+        existingAcc,
+        existingAccVerified,
+        existingAccVisited,
+        status,
+        submittedBy,
+        pin,
+        facebookLink,
+        uploadedFiles,
+        addedToFiles
+      });
+    }
+
+    // Merge remote and local cache
+    const merged: ExistingAccountItem[] = [...remoteAccounts];
+    for (const local of existingAccountsCache) {
+      if (isExistingAccountTombstoned(local)) continue;
+      const alreadyMerged = merged.some(m => m.id === local.id || (m.full_name === local.full_name && m.barangay === local.barangay));
+      if (!alreadyMerged) {
+        merged.push(local);
+      }
+    }
+
+    existingAccountsCache = merged;
+    await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+    console.log('[Google Sheets] Successfully pulled existing accounts from Google Sheets. Total count:', existingAccountsCache.length);
+    return true;
+  } catch (err: any) {
+    if (!err.message?.includes('Precondition')) {
+      console.error('Failed to pull existing accounts from Google Sheets:', err.message || err);
+    }
+    handleGoogleSheetsError(err, 'pullExistingAccountsFromGoogleSheets');
+    markSheetsDisconnected(err);
+  }
+  return false;
+}
+
 export async function appendActivityToGoogleSheets(activity: Activity) {
   const sheets = getSheetsClient();
   if (!sheets) return;
@@ -5922,6 +6154,9 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
 
   await syncToBase44MemberVerifiedSubmission(newAccount, username);
 
+  // Sync to Google Sheets
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing account to Sheets:', err));
+
   return newAccount;
 }
 
@@ -5929,7 +6164,8 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
 export async function addLocalExistingAccountsBulk(dataList: any[], username: string): Promise<ExistingAccountItem[]> {
   const newAccounts: ExistingAccountItem[] = [];
   const now = Date.now();
-  dataList.forEach((data, index) => {
+  for (let index = 0; index < dataList.length; index++) {
+    const data = dataList[index];
     const newAccount: ExistingAccountItem = {
       id: `ext_man_${now}_${index}`,
       full_name: (data.full_name || '').toUpperCase().trim(),
@@ -5946,14 +6182,32 @@ export async function addLocalExistingAccountsBulk(dataList: any[], username: st
       status: data.status || 'approved',
       submittedBy: username || 'Admin',
       pin: data.pin || '',
-      added_from_website: true
+      added_from_website: true,
+      isBulkEntry: true
     };
     newAccounts.push(newAccount);
     existingAccountsCache.push(newAccount);
-  });
+
+    // Sync to base44 HouseholdSubmission and MemberVerifiedSubmission databases
+    try {
+      const realId = await syncToBase44HouseholdSubmission(newAccount, username);
+      if (realId && realId !== newAccount.id) {
+        newAccount.id = realId;
+        const lastIdx = existingAccountsCache.length - 1;
+        existingAccountsCache[lastIdx].id = realId;
+      }
+      await syncToBase44MemberVerifiedSubmission(newAccount, username);
+    } catch (err: any) {
+      console.error(`[Base44 Sync Warning] Bulk sync failed for ${newAccount.full_name}:`, err.message);
+    }
+  }
 
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
   await addActivity(username, `Manually registered ${newAccounts.length} new existing account records in bulk`);
+
+  // Sync to Google Sheets
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing accounts to Sheets:', err));
+
   return newAccounts;
 }
 
@@ -6362,6 +6616,9 @@ export async function updateLocalExistingAccount(id: string, updates: Partial<Ex
     console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record on verification save:', err.message);
   }
 
+  // Sync to Google Sheets
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing account to Sheets on update:', err));
+
   return updatedAccount;
 }
 
@@ -6457,6 +6714,9 @@ export async function uploadFilesForExistingAccount(
   // Also sync member verification files & data to Base44 MemberVerifiedSubmission table
   await syncToBase44MemberVerifiedSubmission(existingAccount, username);
 
+  // Sync to Google Sheets
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing account files update to Sheets:', err));
+
   return existingAccount;
 }
 
@@ -6497,6 +6757,9 @@ export async function deleteExistingAccountFolder(barangay: string, username: st
   
   await addActivity(username, `Deleted Barangay folder "${barangay}" completely, removing all ${targetAccounts.length} accounts.`);
   
+  // Sync to Google Sheets
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing accounts to Sheets on folder deletion:', err));
+
   return { updatedAccounts: existingAccountsCache, deletedAccounts: targetAccounts };
 }
 
@@ -6525,8 +6788,233 @@ export async function deleteLocalExistingAccount(id: string, username: string): 
 
   await addActivity(username, `Permanently deleted existing account record of "${targetAcc.full_name}" (Barangay ${targetAcc.barangay || 'N/A'}).`);
 
+  // Sync to Google Sheets
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing accounts to Sheets on deletion:', err));
+
   return existingAccountsCache;
 }
+
+// --- DATA MATCHING UTILITIES ---
+
+export interface MatchingGroup {
+  contact: Contact;
+  account: ExistingAccountItem;
+  matchType: 'perfect' | 'fuzzy';
+  reason?: string;
+}
+
+export function getMatchingAnalysis() {
+  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list !== false && !c.pcu_file_url);
+  const activeAccounts = existingAccountsCache.filter(acc => !isExistingAccountTombstoned(acc));
+
+  const perfectMatches: MatchingGroup[] = [];
+  const fuzzyMatches: MatchingGroup[] = [];
+  const matchedContactIds = new Set<string | number>();
+  const matchedAccountIds = new Set<string>();
+
+  // 1. Identify Perfect Matches (Exact Name + Barangay match, or name-only match for bulk entries)
+  for (const contact of activeContacts) {
+    const contactName = (contact.full_name || '').trim().toUpperCase();
+    for (const acc of activeAccounts) {
+      const accName = (acc.full_name || '').trim().toUpperCase();
+      const isNameMatchOnlyAllowed = acc.isBulkEntry || acc.id?.startsWith('ext_man_');
+      const matchesLocation = isBarangayMatch(contact.barangay, acc.barangay) || isNameMatchOnlyAllowed;
+
+      if (contactName === accName && matchesLocation) {
+        perfectMatches.push({
+          contact,
+          account: acc,
+          matchType: 'perfect'
+        });
+        matchedContactIds.add(contact.id);
+        matchedAccountIds.add(acc.id);
+      }
+    }
+  }
+
+  // 2. Identify Fuzzy Matches (Name match but different/missing Barangay, or sub-string name match)
+  for (const contact of activeContacts) {
+    if (matchedContactIds.has(contact.id)) continue;
+    const contactName = (contact.full_name || '').trim().toUpperCase();
+    
+    for (const acc of activeAccounts) {
+      if (matchedAccountIds.has(acc.id)) continue;
+      const accName = (acc.full_name || '').trim().toUpperCase();
+
+      if (contactName === accName) {
+        fuzzyMatches.push({
+          contact,
+          account: acc,
+          matchType: 'fuzzy',
+          reason: `Name matched exactly but Barangays differ ("${contact.barangay || 'N/A'}" vs "${acc.barangay || 'N/A'}")`
+        });
+        matchedContactIds.add(contact.id);
+        matchedAccountIds.add(acc.id);
+        break;
+      } else if (contactName.includes(accName) || accName.includes(contactName)) {
+        // Only if length is substantial to avoid false positives on tiny strings
+        if (contactName.length > 5 && accName.length > 5) {
+          fuzzyMatches.push({
+            contact,
+            account: acc,
+            matchType: 'fuzzy',
+            reason: `Fuzzy Name match ("${contact.full_name}" ~ "${acc.full_name}")`
+          });
+          matchedContactIds.add(contact.id);
+          matchedAccountIds.add(acc.id);
+          break;
+        }
+      }
+    }
+  }
+
+  const unmatchedContacts = activeContacts.filter(c => !matchedContactIds.has(c.id));
+  const unmatchedAccounts = activeAccounts.filter(acc => !matchedAccountIds.has(acc.id));
+
+  return {
+    perfectMatches,
+    fuzzyMatches,
+    unmatchedContacts,
+    unmatchedAccounts,
+    summary: {
+      perfectCount: perfectMatches.length,
+      fuzzyCount: fuzzyMatches.length,
+      unmatchedContactsCount: unmatchedContacts.length,
+      unmatchedAccountsCount: unmatchedAccounts.length,
+      totalContacts: activeContacts.length,
+      totalAccounts: activeAccounts.length
+    }
+  };
+}
+
+export async function mergeAccountToContact(contactId: string | number, accountId: string, username: string) {
+  const contactIdx = contactsCache.findIndex(c => c.id.toString() === contactId.toString());
+  const accountIdx = existingAccountsCache.findIndex(acc => acc.id.toString() === accountId.toString());
+
+  if (contactIdx === -1) throw new Error('Contact not found');
+  if (accountIdx === -1) throw new Error('Existing Account not found');
+
+  const contact = contactsCache[contactIdx];
+  const acc = existingAccountsCache[accountIdx];
+
+  // Merge files
+  const contactFiles = contact.uploadedFiles || [];
+  const accFiles = acc.uploadedFiles || [];
+  const mergedFiles = [...contactFiles];
+
+  for (const file of accFiles) {
+    if (!mergedFiles.some(f => f.url === file.url)) {
+      mergedFiles.push(file);
+    }
+  }
+
+  // Merge attributes
+  const updatedContact: Contact = {
+    ...contact,
+    isExistingAccount: true,
+    uploadedFiles: mergedFiles,
+    updated_at: new Date().toISOString()
+  };
+
+  if (!contact.contact_number && acc.contact_number) {
+    updatedContact.contact_number = acc.contact_number;
+  }
+  if (!contact.purok && acc.purok) {
+    updatedContact.purok = acc.purok;
+  }
+  if (!contact.latitude && acc.latitude) {
+    updatedContact.latitude = acc.latitude;
+    updatedContact.longitude = acc.longitude;
+    updatedContact.geotagged = true;
+  }
+
+  // Mark account as added/merged
+  const updatedAccount: ExistingAccountItem = {
+    ...acc,
+    addedToFiles: true,
+    status: 'approved'
+  };
+
+  contactsCache[contactIdx] = updatedContact;
+  existingAccountsCache[accountIdx] = updatedAccount;
+
+  // Persist
+  await safeWriteFile(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
+  await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+
+  await addActivity(username, `Merged Existing Account profile for "${acc.full_name}" into Patient directory ID ${contact.id}`);
+
+  // Sync both to Google Sheets
+  syncWithGoogleSheets(username).catch(err => console.error('[Sheets Sync Error] Failed to sync merged contact:', err));
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('[Sheets Sync Error] Failed to sync merged existing account:', err));
+
+  return { contact: updatedContact, account: updatedAccount };
+}
+
+export async function createContactFromAccount(accountId: string, username: string) {
+  const accountIdx = existingAccountsCache.findIndex(acc => acc.id.toString() === accountId.toString());
+  if (accountIdx === -1) throw new Error('Existing Account not found');
+
+  const acc = existingAccountsCache[accountIdx];
+  const now = new Date().toISOString();
+
+  // Create new contact
+  const newContactId = Date.now() + Math.floor(Math.random() * 1000);
+  const newContact: Contact = {
+    id: newContactId,
+    full_name: acc.full_name,
+    barangay: acc.barangay,
+    purok: acc.purok || '',
+    contact_number: acc.contact_number || '',
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+    latitude: acc.latitude,
+    longitude: acc.longitude,
+    geotagged: !!acc.latitude,
+    isExistingAccount: true,
+    uploadedFiles: acc.uploadedFiles || []
+  };
+
+  // Mark account as merged/added
+  const updatedAccount: ExistingAccountItem = {
+    ...acc,
+    addedToFiles: true,
+    status: 'approved'
+  };
+
+  contactsCache.unshift(newContact);
+  existingAccountsCache[accountIdx] = updatedAccount;
+
+  // Persist
+  await safeWriteFile(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
+  await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+
+  await addActivity(username, `Created new Patient directory record for "${acc.full_name}" from Existing Account`);
+
+  // Sync both to Google Sheets
+  syncWithGoogleSheets(username).catch(err => console.error('[Sheets Sync Error] Failed to sync newly created contact:', err));
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('[Sheets Sync Error] Failed to sync updated existing account:', err));
+
+  return { contact: newContact, account: updatedAccount };
+}
+
+export async function autoMergeAllPerfectMatches(username: string) {
+  const analysis = getMatchingAnalysis();
+  const mergedGroups: { contactId: string | number; accountId: string }[] = [];
+
+  for (const match of analysis.perfectMatches) {
+    try {
+      await mergeAccountToContact(match.contact.id, match.account.id, username);
+      mergedGroups.push({ contactId: match.contact.id, accountId: match.account.id });
+    } catch (e) {
+      console.error(`[Auto Match] Failed to merge contact ${match.contact.id} with account ${match.account.id}:`, e);
+    }
+  }
+
+  return { mergedCount: mergedGroups.length, mergedGroups };
+}
+
 
 
 

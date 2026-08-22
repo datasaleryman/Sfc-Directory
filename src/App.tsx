@@ -21,7 +21,8 @@ import {
   Database,
   Mail,
   Bell,
-  MessageSquare
+  MessageSquare,
+  GitMerge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, DashboardStats } from './types.js';
@@ -40,6 +41,7 @@ import { ClinicMap } from './components/ClinicMap.js';
 import { RecentUpload } from './components/RecentUpload.js';
 import { ExistingAccount } from './components/ExistingAccount.js';
 import { Inbox } from './components/Inbox.js';
+import { DataMatching } from './components/DataMatching.js';
 
 export const DEFAULT_SITE_LOGO = 'https://www.image2url.com/r2/default/images/1785037750375-501bcf0e-4b15-4e0e-8be2-610bc89d072e.png';
 
@@ -52,7 +54,7 @@ export default function App() {
   });
 
   // Navigation Panel Routing
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'data-matching' | 'admins' | 'settings'>('dashboard');
   
   // Mobile Navigation Drawer Open State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -73,7 +75,7 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleTabChange = (tab: 'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'admins' | 'settings') => {
+  const handleTabChange = (tab: 'dashboard' | 'inbox' | 'map' | 'directory' | 'recent-upload' | 'accounts' | 'bulk' | 'print' | 'existing-account' | 'exist-acc-files' | 'data-matching' | 'admins' | 'settings') => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
@@ -119,6 +121,9 @@ export default function App() {
 
   const hasTabPermission = (tabId: string) => {
     let targetTabId = tabId === 'exist-acc-files' ? 'existing-account' : tabId;
+    if (targetTabId === 'data-matching') {
+      targetTabId = 'existing-account';
+    }
     if (targetTabId === 'inbox') {
       targetTabId = 'dashboard';
     }
@@ -215,7 +220,7 @@ export default function App() {
   // Redirect if current active tab is not permitted for user's role
   useEffect(() => {
     if (adminUser && !hasTabPermission(activeTab)) {
-      const allTabs = ['dashboard', 'inbox', 'map', 'directory', 'exist-acc-files', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
+      const allTabs = ['dashboard', 'inbox', 'map', 'directory', 'exist-acc-files', 'data-matching', 'recent-upload', 'accounts', 'bulk', 'print', 'existing-account'];
       const allowed = allTabs.find(t => hasTabPermission(t));
       if (allowed) {
         setActiveTab(allowed as any);
@@ -603,6 +608,7 @@ export default function App() {
             { id: 'map', label: siteSettings.navMap || 'Clinic Map', icon: MapPin },
             { id: 'directory', label: siteSettings.navDirectory || 'Patient List', icon: Users },
             { id: 'exist-acc-files', label: siteSettings.navExistAccFiles || 'Exist. Acc. Files', icon: UserCheck },
+            { id: 'data-matching', label: 'Data Matching', icon: GitMerge },
             { id: 'recent-upload', label: siteSettings.navRecentUpload || 'Recent Upload', icon: UploadCloud },
             { id: 'accounts', label: siteSettings.navAccounts || 'Account Management', icon: ShieldCheck },
           ] as const)
@@ -790,6 +796,8 @@ export default function App() {
                             ? (siteSettings.navExistingAccount || 'Existing Account')
                           : activeTab === 'exist-acc-files'
                             ? (siteSettings.navExistAccFiles || 'Exist. Acc. Files')
+                          : activeTab === 'data-matching'
+                            ? 'Data Matching & Reconciliation'
                           : activeTab === 'admins' 
                             ? (siteSettings.navAdmins || 'Admin Credentials') 
                             : activeTab === 'settings'
@@ -1038,6 +1046,14 @@ export default function App() {
                   showToast={showToast}
                   activeTab={activeTab}
                   currentUser={adminUser}
+                />
+              )}
+
+              {activeTab === 'data-matching' && (
+                <DataMatching
+                  authToken={authToken}
+                  showToast={showToast}
+                  onSyncComplete={fetchStats}
                 />
               )}
 

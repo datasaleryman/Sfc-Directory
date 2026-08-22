@@ -47,6 +47,7 @@ import {
   uploadFilesForExistingAccount,
   addHouseholdToDirectory,
   clearAllDirectoryContacts,
+  isBarangayMatch,
   uploadContactPhoto,
   addPCUUpdate,
   addPCUUpdatesMultiple,
@@ -60,7 +61,11 @@ import {
   syncPCUUpdatesFromBase44,
   resetGoogleSheetsCooldown,
   getCachedSubmissionMessages,
-  createSubmissionMessage
+  createSubmissionMessage,
+  getMatchingAnalysis,
+  mergeAccountToContact,
+  createContactFromAccount,
+  autoMergeAllPerfectMatches
 } from './server/db.js';
 import {
   createToken,
@@ -415,18 +420,19 @@ export async function getApp() {
     try {
       const existing = getLocalExistingAccounts();
       
-      const userRole = (req.user?.role || 'Staff').toUpperCase();
-      const isSuperUser = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(userRole) || req.user?.username.toLowerCase() === 'admin';
+      const userObj = req.user ? findUser(req.user.username) : null;
+      const userRole = (userObj?.role || req.user?.role || 'Staff').toUpperCase();
+      const userBarangay = userObj?.barangay || '';
+      const isAdminRole = ['MASTER ADMIN', 'IT', 'ADMIN', 'ADMINISTRATOR'].includes(userRole) || req.user?.username.toLowerCase() === 'admin';
       
-      if (!isSuperUser && req.user?.username) {
-        const usernameLower = req.user.username.toLowerCase();
-        const filtered = existing.filter(item => {
-          return (item.submittedBy || '').toLowerCase() === usernameLower;
+      let filtered = [...existing];
+      if (!isAdminRole && userBarangay) {
+        filtered = filtered.filter(item => {
+          return isBarangayMatch(item.barangay, userBarangay);
         });
-        return res.json(filtered);
       }
       
-      res.json(existing);
+      res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1073,6 +1079,59 @@ export async function getApp() {
       res.json({ success: true, message: `Administrator "${targetUsername}" deleted.` });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- DATA MATCHING ENDPOINTS ---
+
+  app.get('/api/matching/analysis', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const analysis = getMatchingAnalysis();
+      res.json(analysis);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/matching/merge', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { contactId, accountId } = req.body;
+      const username = req.user?.username || 'admin';
+      
+      if (!contactId || !accountId) {
+        return res.status(400).json({ error: 'Both contactId and accountId are required' });
+      }
+
+      const result = await mergeAccountToContact(contactId, accountId, username);
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/matching/create', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { accountId } = req.body;
+      const username = req.user?.username || 'admin';
+
+      if (!accountId) {
+        return res.status(400).json({ error: 'accountId is required' });
+      }
+
+      const result = await createContactFromAccount(accountId, username);
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/matching/auto', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'admin';
+      const result = await autoMergeAllPerfectMatches(username);
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
