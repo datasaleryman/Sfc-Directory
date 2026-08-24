@@ -16,7 +16,9 @@ import {
   Trash2,
   ChevronRight,
   UserCheck2,
-  Users2
+  Users2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Contact, ExistingAccountItem } from '../types.js';
 
@@ -73,6 +75,7 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'perfect' | 'unmatched_contacts' | 'bulk_entry'>('perfect');
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedMatches, setExpandedMatches] = useState<Record<number, boolean>>({});
 
   // Bulk Entry states
   const [bulkText, setBulkText] = useState('');
@@ -422,60 +425,119 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    {filteredPerfectMatches.map((item, index) => (
-                      <div
-                        key={`perfect_${index}`}
-                        className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-md transition-shadow"
-                      >
-                        {/* Patient Column */}
-                        <div className="flex-1 w-full space-y-2">
-                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[9px] uppercase tracking-wider">
-                            Patient Directory File
-                          </div>
-                          <div className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">{item.contact.full_name}</div>
-                          <div className="text-xs text-slate-500 space-y-1">
-                            <div><strong className="text-slate-700">Barangay:</strong> {item.contact.barangay}</div>
-                            <div><strong className="text-slate-700">Purok:</strong> {item.contact.purok || 'N/A'}</div>
-                            <div><strong className="text-slate-700">Contact No:</strong> {item.contact.contact_number || 'None'}</div>
-                          </div>
-                        </div>
+                  <div className="grid grid-cols-1 gap-6">
+                    {filteredPerfectMatches.map((item, index) => {
+                      const isExpanded = !!expandedMatches[index];
+                      return (
+                        <div
+                          key={`perfect_${index}`}
+                          className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs hover:shadow-md transition-all space-y-4"
+                        >
+                          {/* Header Block: ONLY Displays the Names & Toggle */}
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                              <div>
+                                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Submitted Name</span>
+                                <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
+                                  {item.account.full_name}
+                                </span>
+                              </div>
+                              <div className="hidden sm:block text-slate-300">
+                                <ArrowRight className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">PATIENT NAME FROM DATABASE</span>
+                                <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
+                                  {item.contact.full_name}
+                                </span>
+                              </div>
+                            </div>
 
-                        {/* Interactive Connector */}
-                        <div className="hidden md:flex flex-col items-center shrink-0">
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white font-extrabold text-[9px] uppercase tracking-widest shadow-xs">
-                            Perfect
-                          </span>
-                          <div className="h-8 w-0.5 border-l border-dashed border-slate-300 my-1" />
-                          <ArrowRight className="w-5 h-5 text-emerald-600" />
-                        </div>
-
-                        {/* Submitted Account Column */}
-                        <div className="flex-1 w-full space-y-2 md:pl-4">
-                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[9px] uppercase tracking-wider">
-                            Submitted Account Profile
+                            <button
+                              type="button"
+                              onClick={() => setExpandedMatches(prev => ({ ...prev, [index]: !prev[index] }))}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider cursor-pointer transition-colors"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                                  Hide Details
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                                  View Details
+                                </>
+                              )}
+                            </button>
                           </div>
-                          <div className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">{item.account.full_name}</div>
-                          <div className="text-xs text-slate-500 space-y-1">
-                            <div><strong className="text-slate-700">Barangay:</strong> {item.account.barangay}</div>
-                            <div><strong className="text-slate-700">Purok:</strong> {item.account.purok || 'N/A'}</div>
-                            <div><strong className="text-slate-700">Files Available:</strong> {item.account.uploadedFiles?.length || 0} attachments</div>
+
+                          {/* Collapsible Details Content (Dropdown/Accordion style) */}
+                          <AnimatePresence initial={false}>
+                            {isExpanded && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="overflow-hidden pt-4 border-t border-slate-100"
+                              >
+                                {/* Two-Column Comparison Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                                  
+                                  {/* Column 1: Data Inserted to Match */}
+                                  <div className="space-y-3">
+                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[10px] uppercase tracking-wider">
+                                      Data Inserted to Match
+                                    </div>
+                                    <div className="font-extrabold font-display text-slate-800 text-base tracking-wide uppercase">
+                                      {item.account.full_name}
+                                    </div>
+                                    <div className="text-xs text-slate-600 space-y-1.5">
+                                      <div><strong className="text-slate-700">Barangay:</strong> {item.account.barangay}</div>
+                                      <div><strong className="text-slate-700">Purok:</strong> {item.account.purok || 'N/A'}</div>
+                                      <div><strong className="text-slate-700">Contact No:</strong> {item.account.contact_number || 'None'}</div>
+                                      <div><strong className="text-slate-700">Files Available:</strong> {item.account.uploadedFiles?.length || 0} attachments</div>
+                                    </div>
+                                  </div>
+
+                                  {/* Column 2: Data Matched from Google Sheet Database */}
+                                  <div className="space-y-3 pt-4 md:pt-0 md:pl-6">
+                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-800 font-bold text-[10px] uppercase tracking-wider">
+                                      Data Matched from Google Sheet Database
+                                    </div>
+                                    <div className="font-extrabold font-display text-slate-800 text-base tracking-wide uppercase">
+                                      {item.contact.full_name}
+                                    </div>
+                                    <div className="text-xs text-slate-600 space-y-1.5">
+                                      <div><strong className="text-slate-700">Barangay:</strong> {item.contact.barangay}</div>
+                                      <div><strong className="text-slate-700">Purok:</strong> {item.contact.purok || 'N/A'}</div>
+                                      <div><strong className="text-slate-700">Contact No:</strong> {item.contact.contact_number || 'None'}</div>
+                                    </div>
+                                  </div>
+
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                          {/* Action Bar */}
+                          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div className="flex items-center gap-2 text-xs text-emerald-600 font-bold">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                              <span>System auto-reconciled based on Full Name match</span>
+                            </div>
+                            <button
+                              onClick={() => handleMerge(item.contact.id, item.account.id)}
+                              disabled={actionLoadingId !== null}
+                              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none shadow-xs"
+                            >
+                              <GitMerge className="w-3.5 h-3.5" />
+                              {actionLoadingId === `merge_${item.contact.id}_${item.account.id}` ? 'Merging...' : 'Merge Profiles'}
+                            </button>
                           </div>
                         </div>
-
-                        {/* Merge Actions Column */}
-                        <div className="shrink-0 w-full md:w-auto text-right">
-                          <button
-                            onClick={() => handleMerge(item.contact.id, item.account.id)}
-                            disabled={actionLoadingId !== null}
-                            className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-3 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none shadow-xs"
-                          >
-                            <GitMerge className="w-3.5 h-3.5" />
-                            {actionLoadingId === `merge_${item.contact.id}_${item.account.id}` ? 'Merging...' : 'Merge Profiles'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </motion.div>

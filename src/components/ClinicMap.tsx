@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, MapPin, Eye, Phone, User, RefreshCw, Navigation } from 'lucide-react';
+import { Loader2, MapPin, Eye, Phone, User, RefreshCw, Navigation, ArrowLeft } from 'lucide-react';
 import { Contact } from '../types.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -10,6 +10,7 @@ interface ClinicMapProps {
   initialNavigateContact?: Contact | null;
   onClearInitialNavigateContact?: () => void;
   lastSyncTime?: string | null;
+  onBack?: () => void;
 }
 
 export const ClinicMap: React.FC<ClinicMapProps> = ({
@@ -17,7 +18,8 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
   showToast,
   initialNavigateContact,
   onClearInitialNavigateContact,
-  lastSyncTime
+  lastSyncTime,
+  onBack
 }) => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
@@ -527,9 +529,20 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
   return (
     <div className="space-y-6">
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-slate-800">Geotagged Household Map</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Showing real-time locations of geotagged households registered in Saint Francis Clinic Directory</p>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-950 rounded-xl transition-all cursor-pointer flex items-center justify-center shadow-xs group"
+              title="Back to Directory"
+            >
+              <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
+            </button>
+          )}
+          <div>
+            <h3 className="text-lg font-bold text-slate-800">Geotagged Household Map</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Showing real-time locations of geotagged households registered in Saint Francis Clinic Directory</p>
+          </div>
         </div>
         <button
           onClick={fetchGeotaggedContacts}

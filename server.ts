@@ -686,14 +686,17 @@ export async function getApp() {
   app.put('/api/contacts/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const { full_name, barangay, purok, address, contact_number } = req.body;
+      const { full_name, barangay, purok, address, contact_number, latitude, longitude, geotagged } = req.body;
       const username = req.user?.username || 'Admin';
 
       const contact = await editContact(id, {
         full_name,
         barangay: barangay || address || '',
         purok,
-        contact_number
+        contact_number,
+        latitude: latitude !== undefined ? (latitude === null ? null : parseFloat(latitude)) : undefined,
+        longitude: longitude !== undefined ? (longitude === null ? null : parseFloat(longitude)) : undefined,
+        geotagged: geotagged !== undefined ? !!geotagged : undefined
       }, username);
       res.json(contact);
     } catch (err: any) {

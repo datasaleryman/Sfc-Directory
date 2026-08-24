@@ -2565,7 +2565,7 @@ export async function getContacts(params: {
   const totalPages = Math.ceil(total / limit);
 
   // Compute folder statistics for each barangay
-  const barangayFolders = allBarangays.map(bg => {
+  let barangayFolders = allBarangays.map(bg => {
     const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
@@ -2609,7 +2609,7 @@ export async function getContacts(params: {
   }
 
   // Compute folder statistics for each purok sorted alphabetically
-  const purokFolders = allPuroks.map(purok => {
+  let purokFolders = allPuroks.map(purok => {
     const isNoPurok = purok === 'No Purok';
     const pContacts = contactsCache.filter(c => {
       if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
@@ -2639,6 +2639,55 @@ export async function getContacts(params: {
       barangays: Array.from(barangaySet)
     };
   }).filter(f => f.count > 0);
+
+  // Apply Search to folders so that we only return matching folders or folders containing matching contacts
+  if (search) {
+    const term = search.toLowerCase().trim();
+    
+    barangayFolders = barangayFolders.filter(f => {
+      // 1. Folder name matches search query
+      if (f.barangay.toLowerCase().includes(term)) return true;
+      // 2. OR any active contact in this folder matches search query
+      return contactsCache.some(c => {
+        if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+        
+        const matchesFolder = f.barangay.toUpperCase() === 'NO ADDRESS'
+          ? (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
+          : isBarangayMatch(c.barangay, f.barangay);
+        if (!matchesFolder) return false;
+
+        return (c.full_name || '').toLowerCase().includes(term) ||
+               (c.contact_number || '').includes(term) ||
+               (c.purok || '').toLowerCase().includes(term);
+      });
+    });
+
+    purokFolders = purokFolders.filter(f => {
+      // 1. Folder name matches search query
+      if (f.purok.toLowerCase().includes(term)) return true;
+      // 2. OR any active contact in this folder matches search query
+      return contactsCache.some(c => {
+        if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+        
+        if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
+          const isNoAddressFolder = filterBarangay.toUpperCase() === 'NO ADDRESS';
+          const matchesBg = isNoAddressFolder
+            ? (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
+            : isBarangayMatch(c.barangay, filterBarangay);
+          if (!matchesBg) return false;
+        }
+
+        const isNoPurokFolder = f.purok === 'No Purok';
+        const matchesPurok = isNoPurokFolder
+          ? (!c.purok || !c.purok.trim() || c.purok.toLowerCase() === 'no purok')
+          : (c.purok && c.purok.toLowerCase() === f.purok.toLowerCase());
+        if (!matchesPurok) return false;
+
+        return (c.full_name || '').toLowerCase().includes(term) ||
+               (c.contact_number || '').includes(term);
+      });
+    });
+  }
 
   return {
     contacts: paginated,
@@ -2853,7 +2902,16 @@ export async function addContact(
 // Edit a contact
 export async function editContact(
   id: number,
-  contact: { full_name: string; barangay: string; purok?: string; address?: string; contact_number: string },
+  contact: { 
+    full_name: string; 
+    barangay: string; 
+    purok?: string; 
+    address?: string; 
+    contact_number: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    geotagged?: boolean;
+  },
   username: string
 ) {
   const index = contactsCache.findIndex(c => c.id === id && !c.deleted_at);
@@ -2888,12 +2946,21 @@ export async function editContact(
   }
 
   const original = contactsCache[index];
+  
+  // Conditionally process geotag values if they are provided
+  const updateGeotag = contact.geotagged !== undefined ? contact.geotagged : original.geotagged;
+  const updateLat = contact.latitude !== undefined ? contact.latitude : original.latitude;
+  const updateLng = contact.longitude !== undefined ? contact.longitude : original.longitude;
+
   contactsCache[index] = {
     ...original,
     full_name: formattedName,
     barangay: formattedBarangay,
     purok: formattedPurok,
     contact_number: rawNumber,
+    geotagged: updateGeotag,
+    latitude: updateLat,
+    longitude: updateLng,
     updated_at: new Date().toISOString()
   };
 
@@ -6812,15 +6879,13 @@ export function getMatchingAnalysis() {
   const matchedContactIds = new Set<string | number>();
   const matchedAccountIds = new Set<string>();
 
-  // 1. Identify Perfect Matches (Exact Name + Barangay match, or name-only match for bulk entries)
+  // 1. Identify Perfect Matches (Exact Full Name match)
   for (const contact of activeContacts) {
     const contactName = (contact.full_name || '').trim().toUpperCase();
     for (const acc of activeAccounts) {
       const accName = (acc.full_name || '').trim().toUpperCase();
-      const isNameMatchOnlyAllowed = acc.isBulkEntry || acc.id?.startsWith('ext_man_');
-      const matchesLocation = isBarangayMatch(contact.barangay, acc.barangay) || isNameMatchOnlyAllowed;
 
-      if (contactName === accName && matchesLocation) {
+      if (contactName === accName && contactName.length > 0) {
         perfectMatches.push({
           contact,
           account: acc,

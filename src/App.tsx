@@ -969,40 +969,41 @@ export default function App() {
                   initialNavigateContact={mapNavigateContact}
                   onClearInitialNavigateContact={() => setMapNavigateContact(null)}
                   lastSyncTime={lastSyncTime}
+                  onBack={() => setActiveTab('directory')}
                 />
               )}
 
-              {activeTab === 'directory' && (
-                <div className="space-y-6">
-                  {/* Single Contact Registration / Edit Slide Drawer Form */}
-                  {isFormOpen && (
-                    <ContactForm
-                      editTarget={editTarget}
-                      onSave={handleSaveContact}
-                      onCancel={() => {
-                        setIsFormOpen(false);
-                        setEditTarget(null);
-                      }}
-                      showToast={showToast}
-                    />
-                  )}
-
-                  {/* Main Database Grid View */}
-                  <ContactTable
-                    authToken={authToken}
-                    lastSyncTime={lastSyncTime}
-                    onEdit={handleEditTrigger}
-                    onDeleted={fetchStats}
-                    showToast={showToast}
-                    siteSettings={siteSettings}
-                    currentUser={adminUser}
-                    onNavigateToMap={(contact) => {
-                      setMapNavigateContact(contact);
-                      setActiveTab('map');
+              <div className={activeTab === 'directory' ? "space-y-6" : "hidden"}>
+                {/* Single Contact Registration / Edit Slide Drawer Form */}
+                {isFormOpen && (
+                  <ContactForm
+                    editTarget={editTarget}
+                    onSave={handleSaveContact}
+                    onCancel={() => {
+                      setIsFormOpen(false);
+                      setEditTarget(null);
                     }}
+                    showToast={showToast}
                   />
-                </div>
-              )}
+                )}
+
+                {/* Main Database Grid View */}
+                <ContactTable
+                  authToken={authToken}
+                  lastSyncTime={lastSyncTime}
+                  onEdit={handleEditTrigger}
+                  onDeleted={fetchStats}
+                  showToast={showToast}
+                  siteSettings={siteSettings}
+                  currentUser={adminUser}
+                  onNavigateToMap={(contact) => {
+                    setMapNavigateContact(contact);
+                    setActiveTab('map');
+                  }}
+                  backNavigateContact={mapNavigateContact}
+                  onClearBackNavigateContact={() => setMapNavigateContact(null)}
+                />
+              </div>
 
               {activeTab === 'recent-upload' && (
                 <RecentUpload

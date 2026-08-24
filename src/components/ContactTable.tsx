@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3, Compass } from 'lucide-react';
 import { Contact } from '../types.js';
+import { GeotagPopupModal } from './GeotagPopupModal.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -39,6 +40,8 @@ interface ContactTableProps {
     role: string;
     barangay?: string;
   } | null;
+  backNavigateContact?: Contact | null;
+  onClearBackNavigateContact?: () => void;
 }
 
 const formatPurokName = (name: string | null | undefined): string => {
@@ -55,7 +58,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   siteSettings,
   onNavigateToMap,
   lastSyncTime,
-  currentUser
+  currentUser,
+  backNavigateContact,
+  onClearBackNavigateContact
 }) => {
   // Role permissions check for LEADER and CO-LEADER
   const userRoleNormalized = (currentUser?.role || '').toUpperCase();
@@ -118,6 +123,32 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   // Active Modals state
   const [viewContact, setViewContact] = useState<Contact | null>(null);
+  const [isEditingContactInModal, setIsEditingContactInModal] = useState(false);
+  const [modalEditFullName, setModalEditFullName] = useState('');
+  const [modalEditBarangay, setModalEditBarangay] = useState('');
+  const [modalEditPurok, setModalEditPurok] = useState('');
+  const [modalEditContactNumber, setModalEditContactNumber] = useState('');
+  const [modalEditLatitude, setModalEditLatitude] = useState<string>('');
+  const [modalEditLongitude, setModalEditLongitude] = useState<string>('');
+  const [modalEditGeotagged, setModalEditGeotagged] = useState(false);
+  const [modalIsSaving, setModalIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (viewContact) {
+      setModalEditFullName(viewContact.full_name || '');
+      setModalEditBarangay(viewContact.barangay || '');
+      setModalEditPurok(viewContact.purok || '');
+      setModalEditContactNumber(viewContact.contact_number || '');
+      setModalEditLatitude(viewContact.latitude !== undefined && viewContact.latitude !== null ? String(viewContact.latitude) : '');
+      setModalEditLongitude(viewContact.longitude !== undefined && viewContact.longitude !== null ? String(viewContact.longitude) : '');
+      setModalEditGeotagged(!!viewContact.geotagged);
+      setIsEditingContactInModal(false);
+    } else {
+      setIsEditingContactInModal(false);
+    }
+  }, [viewContact]);
+
+  const [geotagMapTarget, setGeotagMapTarget] = useState<Contact | null>(null);
   const [highlightedContactId, setHighlightedContactId] = useState<number | string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -392,8 +423,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         currentBarangay = associatedBarangayForPuroks;
       }
 
+      const activeSearch = (activeFolder || activePurokFolder)
+        ? search
+        : (folderGrouping === 'barangay' ? folderSearch : purokSearch);
+
       const queryParams = new URLSearchParams({
-        search,
+        search: activeSearch,
         address: currentBarangay,
         purok: currentPurok,
         sortBy,
@@ -442,15 +477,33 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     }
   };
 
+  // Handle back-navigation focus to the correct Purok and Barangay folder
+  useEffect(() => {
+    if (backNavigateContact) {
+      const bg = backNavigateContact.barangay || 'No Address';
+      const pur = backNavigateContact.purok || 'No Purok';
+      
+      setFolderGrouping('purok');
+      setAssociatedBarangayForPuroks(bg);
+      setActiveFolder(null);
+      handleSetActivePurokFolder(pur);
+      
+      // Clear the back navigate contact at the root state to prevent repeat triggering
+      if (onClearBackNavigateContact) {
+        onClearBackNavigateContact();
+      }
+    }
+  }, [backNavigateContact, onClearBackNavigateContact]);
+
   // Trigger loading on filter changes
   useEffect(() => {
     fetchContacts();
-  }, [search, addressFilter, purokFilter, sortBy, sortOrder, page, activeFolder, activePurokFolder, associatedBarangayForPuroks, lastSyncTime]);
+  }, [search, folderSearch, purokSearch, addressFilter, purokFilter, sortBy, sortOrder, page, activeFolder, activePurokFolder, associatedBarangayForPuroks, lastSyncTime]);
 
   // Reset page index on filter updates
   useEffect(() => {
     setPage(1);
-  }, [search, addressFilter, purokFilter, activeFolder, activePurokFolder, associatedBarangayForPuroks]);
+  }, [search, folderSearch, purokSearch, addressFilter, purokFilter, activeFolder, activePurokFolder, associatedBarangayForPuroks]);
 
   // Sync on initial mount
   useEffect(() => {
@@ -481,6 +534,105 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     } catch {
       return isoString;
     }
+  };
+
+  // Perform save operation for the inline details editor
+  const handleSaveContactFromModal = async () => {
+    if (!viewContact) return;
+    if (!modalEditFullName.trim()) {
+      showToast('Full Name is required.', 'error');
+      return;
+    }
+    if (!modalEditBarangay.trim()) {
+      showToast('Barangay is required.', 'error');
+      return;
+    }
+    if (!modalEditContactNumber.trim()) {
+      showToast('Contact Number is required.', 'error');
+      return;
+    }
+
+    let latNum: number | null = null;
+    let lngNum: number | null = null;
+
+    if (modalEditLatitude.trim()) {
+      const parsed = parseFloat(modalEditLatitude);
+      if (isNaN(parsed)) {
+        showToast('Latitude must be a valid number.', 'error');
+        return;
+      }
+      latNum = parsed;
+    }
+
+    if (modalEditLongitude.trim()) {
+      const parsed = parseFloat(modalEditLongitude);
+      if (isNaN(parsed)) {
+        showToast('Longitude must be a valid number.', 'error');
+        return;
+      }
+      lngNum = parsed;
+    }
+
+    setModalIsSaving(true);
+
+    try {
+      const res = await fetch(`/api/contacts/${viewContact.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          full_name: modalEditFullName.trim(),
+          barangay: modalEditBarangay.trim(),
+          purok: modalEditPurok.trim(),
+          contact_number: modalEditContactNumber.trim(),
+          latitude: latNum,
+          longitude: lngNum,
+          geotagged: modalEditGeotagged || (latNum !== null && lngNum !== null)
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update member record.');
+      }
+
+      showToast(`Member record for "${modalEditFullName}" updated successfully!`, 'success');
+      
+      // Update local view states to reflect updated values
+      setViewContact(data);
+      setIsEditingContactInModal(false);
+      
+      // Refresh list to keep parent sync
+      fetchContacts();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setModalIsSaving(false);
+    }
+  };
+
+  const handleAutoGeotagInModal = () => {
+    if (!navigator.geolocation) {
+      showToast('Geolocation is not supported by your browser.', 'error');
+      return;
+    }
+
+    showToast('Retrieving GPS coordinates...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setModalEditLatitude(position.coords.latitude.toFixed(6));
+        setModalEditLongitude(position.coords.longitude.toFixed(6));
+        setModalEditGeotagged(true);
+        showToast('Successfully locked current GPS coordinates!', 'success');
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        showToast(`Failed to fetch location: ${error.message}. Please input coordinates manually.`, 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   // Perform soft delete operations
@@ -709,20 +861,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           return false;
         }
       }
-      const searchLower = folderSearch.toLowerCase().trim();
-      if (!searchLower) return true;
-
-      const matchBarangay = f.barangay.toLowerCase().includes(searchLower);
-      const matchContact = contacts.some(c => {
-        const cBg = (c.barangay || '').trim().toLowerCase();
-        const fBg = f.barangay.trim().toLowerCase();
-        const isNoAddressFolder = fBg === 'no address';
-        const isContactNoAddress = !cBg || cBg === 'no address' || cBg === 'no barangay';
-        
-        const isFolderMatch = isNoAddressFolder ? isContactNoAddress : (cBg === fBg);
-        return isFolderMatch && c.full_name.toLowerCase().includes(searchLower);
-      });
-      return matchBarangay || matchContact;
+      // Server-side has already filtered the folders list based on the search term (including contact names).
+      return true;
     });
 
   const filteredFolders = (isLeaderOrCoLeader && userBarangay && rawFiltered.length === 0)
@@ -975,8 +1115,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
 
           {/* Folders Search & Toolbar */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
-            <div className="relative w-full sm:max-w-md">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
+            <div className="relative w-full md:max-w-xs lg:max-w-md">
               <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
               <input
                 type="text"
@@ -987,10 +1127,10 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               />
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-              <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+            <div className="flex flex-row flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+              <div className="flex items-center gap-3">
                 {/* Barangay Quick Select Dropdown fetched from Google Sheet database */}
-                <div className="relative min-w-[150px] flex-1 sm:flex-none">
+                <div className="relative min-w-[150px]">
                   <select
                     value={addressFilter === 'All Addresses' ? 'All Barangays' : addressFilter}
                     onChange={(e) => {
@@ -1025,7 +1165,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               {isAdmin && (
                 <button
                   onClick={() => handleOpenDesignateModal()}
-                  className="w-full sm:w-auto px-3.5 py-2.5 sm:py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs shrink-0"
+                  className="px-3.5 py-2.5 sm:py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs shrink-0 ml-auto md:ml-0"
                   title="Select a designated barangay and make it available to assigned user accounts"
                 >
                   <UserCheck className="w-4 h-4 text-emerald-200" />
@@ -1183,25 +1323,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
             {filteredPurokFolders
               .filter(f => {
-                const searchLower = purokSearch.toLowerCase().trim();
-                if (!searchLower) return true;
-                const matchPurok = f.purok.toLowerCase().includes(searchLower);
-                const matchContact = contacts.some(c => {
-                  const cBg = (c.barangay || '').trim().toLowerCase();
-                  const fBg = associatedBarangayForPuroks ? associatedBarangayForPuroks.trim().toLowerCase() : '';
-                  const isNoAddressFolder = fBg === 'no address';
-                  const isContactNoAddress = !cBg || cBg === 'no address' || cBg === 'no barangay';
-                  
-                  const matchesBarangayFilter = !associatedBarangayForPuroks || 
-                    (isNoAddressFolder ? isContactNoAddress : (cBg === fBg));
-
-                  const cPur = (c.purok || '').trim().toLowerCase();
-                  const fPur = f.purok.trim().toLowerCase();
-                  return matchesBarangayFilter &&
-                    cPur === fPur && 
-                    c.full_name.toLowerCase().includes(searchLower);
-                });
-                return matchPurok || matchContact;
+                // Server-side has already filtered the folders list based on the search term (including contact names).
+                return true;
               })
               .sort((a, b) => a.purok.localeCompare(b.purok))
               .map((folder) => {
@@ -1493,7 +1616,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               </button>
                               {onNavigateToMap && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); onNavigateToMap(contact); }}
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    if (contact.geotagged && contact.latitude && contact.longitude) {
+                                      setGeotagMapTarget(contact);
+                                    } else {
+                                      showToast(`This member record has not been geotagged yet. Please edit the member record to add GPS coordinates.`, 'warning');
+                                    }
+                                  }}
                                   className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
                                   title="Locate on Map"
                                 >
@@ -1624,7 +1754,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           </button>
                           {onNavigateToMap && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); onNavigateToMap(contact); }}
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (contact.geotagged && contact.latitude && contact.longitude) {
+                                  setGeotagMapTarget(contact);
+                                } else {
+                                  showToast(`This member record has not been geotagged yet. Please edit the member record to add GPS coordinates.`, 'warning');
+                                }
+                              }}
                               className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
                               title="Locate on Map"
                             >
@@ -1683,150 +1820,306 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-100 relative max-h-[90vh] overflow-y-auto my-auto"
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-100 relative max-h-[95vh] overflow-y-auto my-auto"
             >
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xl overflow-hidden border border-emerald-200/60 shadow-inner shrink-0">
-                  {viewContact.photo_url ? (
-                    <img src={viewContact.photo_url} alt={viewContact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    viewContact.full_name.charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-slate-800 font-display">{viewContact.full_name}</h3>
-                  <p className="text-xs text-slate-400">Directory Member Record Details</p>
-                </div>
-              </div>
-
-              <div className="space-y-3 text-sm">
-                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Barangay</span>
-                  <span className="font-bold text-slate-800 text-right">{viewContact.barangay}</span>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Purok</span>
-                  <span className="font-bold text-slate-800 text-right">{viewContact.purok || 'Not specified'}</span>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Contact Number</span>
-                  <span className="font-mono font-bold text-slate-800">{viewContact.contact_number}</span>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Geotagged</span>
-                  <span className="font-bold text-emerald-600">{viewContact.geotagged ? 'Yes' : 'No'}</span>
-                </div>
-                {viewContact.pcu_file_url && (
-                  <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-blue-600 uppercase flex items-center gap-1 shrink-0">
-                      <Check className="w-3.5 h-3.5 text-blue-600 animate-pulse" /> PCU File Saved
-                    </span>
-                    {viewContact.pcu_file_url.startsWith('http') ? (
-                      <a 
-                        href={viewContact.pcu_file_url} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="font-bold text-blue-700 hover:underline text-xs truncate max-w-[150px] sm:max-w-[200px] flex items-center gap-1 cursor-pointer"
-                        title="Click to view file"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <FileText className="w-3.5 h-3.5 shrink-0" /> View File
-                      </a>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xl overflow-hidden border border-emerald-200/60 shadow-inner shrink-0">
+                    {viewContact.photo_url ? (
+                      <img src={viewContact.photo_url} alt={viewContact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
-                      <span className="font-semibold text-blue-900 text-xs truncate max-w-[150px] sm:max-w-[200px]" title={viewContact.pcu_file_url}>{viewContact.pcu_file_url}</span>
+                      viewContact.full_name.charAt(0).toUpperCase()
                     )}
                   </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-800 font-display">
+                      {isEditingContactInModal ? 'Edit Member Record' : viewContact.full_name}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {isEditingContactInModal ? 'Update Barangay, Purok, Contact & GPS coordinates' : 'Directory Member Record Details'}
+                    </p>
+                  </div>
+                </div>
+                {!isEditingContactInModal && (
+                  <button
+                    onClick={() => setIsEditingContactInModal(true)}
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 border border-indigo-100"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" /> Edit Info
+                  </button>
                 )}
               </div>
 
-              {/* File Upload Zone */}
-              <div className="mt-5 pt-4 border-t border-slate-100 space-y-3">
-                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Upload Directory Files</h4>
-                
-                <div>
-                  {/* Upload PCU Section */}
-                  <label className="flex flex-col items-center justify-center p-4 sm:p-5 border border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/10 rounded-2xl cursor-pointer transition-all text-center group w-full">
-                    <input 
-                      type="file" 
-                      multiple
-                      onChange={handlePCUFileChange} 
-                      disabled={pcuUploading} 
-                      className="hidden" 
+              {isEditingContactInModal ? (
+                /* EDIT FORM VIEW */
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                    <input
+                      type="text"
+                      value={modalEditFullName}
+                      onChange={(e) => setModalEditFullName(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
+                      placeholder="Enter full name"
                     />
-                    {pcuUploading ? (
-                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin mb-1.5" />
-                    ) : (
-                      <Upload className="w-5 h-5 text-slate-400 mb-1.5 group-hover:text-blue-600 transition-colors" />
-                    )}
-                    <span className="text-xs font-bold text-slate-700">Select PCU Files</span>
-                    <span className="text-[10px] text-slate-400 mt-0.5">Supports multiple files selection</span>
-                  </label>
-                </div>
+                  </div>
 
-                {/* Staged Files List */}
-                {stagedPcuFiles.length > 0 && (
-                  <div className="space-y-2 mt-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
-                        Staged for Upload ({stagedPcuFiles.length})
-                      </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Barangay</label>
+                      <select
+                        value={modalEditBarangay}
+                        onChange={(e) => setModalEditBarangay(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs cursor-pointer transition-all"
+                      >
+                        <option value="">Select Barangay</option>
+                        {allAddresses.filter(a => a && a !== 'All Barangays').map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Purok</label>
+                      <input
+                        type="text"
+                        value={modalEditPurok}
+                        onChange={(e) => setModalEditPurok(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
+                        placeholder="e.g. Purok 1"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Contact Number</label>
+                    <input
+                      type="text"
+                      value={modalEditContactNumber}
+                      onChange={(e) => setModalEditContactNumber(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
+                      placeholder="e.g. 09123456789"
+                    />
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider">Geotag Coordinates</label>
                       <button
                         type="button"
-                        onClick={() => setStagedPcuFiles([])}
-                        className="text-[10px] font-bold text-red-500 hover:underline cursor-pointer"
+                        onClick={handleAutoGeotagInModal}
+                        className="flex items-center gap-1 text-[11px] font-bold text-teal-600 hover:text-teal-800 transition-colors cursor-pointer"
+                        title="Auto-detect using device GPS"
                       >
-                        Clear All
+                        <Compass className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '6s' }} /> Geotag Device GPS
                       </button>
                     </div>
-                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                      {stagedPcuFiles.map((f, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-100 rounded-xl text-xs">
-                          <span className="font-medium text-emerald-900 truncate max-w-[180px] font-mono" title={f.fileName}>
-                            {f.fileName}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-emerald-700">
-                              {(f.size / 1024).toFixed(1)} KB
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeStagedPcuFile(idx)}
-                              className="text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-all cursor-pointer"
-                              title="Remove file"
-                            >
-                              &times;
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      <div>
+                        <input
+                          type="text"
+                          value={modalEditLatitude}
+                          onChange={(e) => setModalEditLatitude(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
+                          placeholder="Latitude (e.g. 14.1234)"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          value={modalEditLongitude}
+                          onChange={(e) => setModalEditLongitude(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
+                          placeholder="Longitude (e.g. 121.1234)"
+                        />
+                      </div>
                     </div>
 
+                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={modalEditGeotagged}
+                        onChange={(e) => setModalEditGeotagged(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 border-slate-300"
+                      />
+                      <span className="text-xs text-slate-500 font-medium select-none">Mark explicitly as geotagged</span>
+                    </label>
+                  </div>
+
+                  <div className="pt-4 flex gap-3">
                     <button
-                      type="button"
-                      onClick={handlePCUSubmit}
-                      disabled={pcuUploading}
-                      className="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px] flex items-center justify-center gap-2 shadow-sm font-display"
+                      onClick={() => setIsEditingContactInModal(false)}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
                     >
-                      {pcuUploading ? (
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveContactFromModal}
+                      disabled={modalIsSaving}
+                      className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px]"
+                    >
+                      {modalIsSaving ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin" /> Saving to Base44 DB...
+                          <Loader2 className="w-4 h-4 animate-spin" /> Saving...
                         </>
                       ) : (
-                        'Submit'
+                        'Save Changes'
                       )}
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                /* READ-ONLY INFORMATION VIEW */
+                <>
+                  <div className="space-y-3 text-sm">
+                    <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase">Barangay</span>
+                      <span className="font-bold text-slate-800 text-right">{viewContact.barangay}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase">Purok</span>
+                      <span className="font-bold text-slate-800 text-right">{viewContact.purok || 'Not specified'}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase">Contact Number</span>
+                      <span className="font-mono font-bold text-slate-800">{viewContact.contact_number}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase">Geotagged</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-emerald-600">{viewContact.geotagged ? 'Yes' : 'No'}</span>
+                        {!viewContact.geotagged && (
+                          <button
+                            onClick={() => setIsEditingContactInModal(true)}
+                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer"
+                          >
+                            Add Geotag
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {viewContact.geotagged && viewContact.latitude && viewContact.longitude && (
+                      <div className="p-3 bg-teal-50/60 border border-teal-100 rounded-2xl flex items-center justify-between">
+                        <span className="text-xs font-bold text-teal-600 uppercase">GPS Lock</span>
+                        <span className="font-mono text-xs text-slate-600 font-semibold">
+                          {viewContact.latitude.toFixed(5)}, {viewContact.longitude.toFixed(5)}
+                        </span>
+                      </div>
+                    )}
+                    {viewContact.pcu_file_url && (
+                      <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-blue-600 uppercase flex items-center gap-1 shrink-0">
+                          <Check className="w-3.5 h-3.5 text-blue-600 animate-pulse" /> PCU File Saved
+                        </span>
+                        {viewContact.pcu_file_url.startsWith('http') ? (
+                          <a 
+                            href={viewContact.pcu_file_url} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="font-bold text-blue-700 hover:underline text-xs truncate max-w-[150px] sm:max-w-[200px] flex items-center gap-1 cursor-pointer"
+                            title="Click to view file"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <FileText className="w-3.5 h-3.5 shrink-0" /> View File
+                          </a>
+                        ) : (
+                          <span className="font-semibold text-blue-900 text-xs truncate max-w-[150px] sm:max-w-[200px]" title={viewContact.pcu_file_url}>{viewContact.pcu_file_url}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
-              <div className="pt-5">
-                <button
-                  onClick={() => setViewContact(null)}
-                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
-                >
-                  Close
-                </button>
-              </div>
+                  {/* File Upload Zone */}
+                  <div className="mt-5 pt-4 border-t border-slate-100 space-y-3">
+                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Upload Directory Files</h4>
+                    
+                    <div>
+                      {/* Upload PCU Section */}
+                      <label className="flex flex-col items-center justify-center p-4 sm:p-5 border border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/10 rounded-2xl cursor-pointer transition-all text-center group w-full">
+                        <input 
+                          type="file" 
+                          multiple
+                          onChange={handlePCUFileChange} 
+                          disabled={pcuUploading} 
+                          className="hidden" 
+                        />
+                        {pcuUploading ? (
+                          <Loader2 className="w-5 h-5 text-blue-600 animate-spin mb-1.5" />
+                        ) : (
+                          <Upload className="w-5 h-5 text-slate-400 mb-1.5 group-hover:text-blue-600 transition-colors" />
+                        )}
+                        <span className="text-xs font-bold text-slate-700">Select PCU Files</span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">Supports multiple files selection</span>
+                      </label>
+                    </div>
+
+                    {/* Staged Files List */}
+                    {stagedPcuFiles.length > 0 && (
+                      <div className="space-y-2 mt-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
+                            Staged for Upload ({stagedPcuFiles.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setStagedPcuFiles([])}
+                            className="text-[10px] font-bold text-red-500 hover:underline cursor-pointer"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                          {stagedPcuFiles.map((f, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-100 rounded-xl text-xs">
+                              <span className="font-medium text-emerald-900 truncate max-w-[180px] font-mono" title={f.fileName}>
+                                {f.fileName}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-emerald-700">
+                                  {(f.size / 1024).toFixed(1)} KB
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeStagedPcuFile(idx)}
+                                  className="text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-all cursor-pointer"
+                                  title="Remove file"
+                                >
+                                  &times;
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handlePCUSubmit}
+                          disabled={pcuUploading}
+                          className="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px] flex items-center justify-center gap-2 shadow-sm font-display"
+                        >
+                          {pcuUploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" /> Saving to Base44 DB...
+                            </>
+                          ) : (
+                            'Submit'
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-5">
+                    <button
+                      onClick={() => setViewContact(null)}
+                      className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
             </motion.div>
           </div>
         )}
@@ -2097,6 +2390,21 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modal: Geotag Map Quick Tracker */}
+      {geotagMapTarget && (
+        <GeotagPopupModal
+          contact={geotagMapTarget}
+          onClose={() => setGeotagMapTarget(null)}
+          onTrackInFullMap={() => {
+            if (onNavigateToMap) {
+              onNavigateToMap(geotagMapTarget);
+            }
+            setGeotagMapTarget(null);
+          }}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 };
