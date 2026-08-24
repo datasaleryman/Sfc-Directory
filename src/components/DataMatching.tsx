@@ -73,7 +73,7 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
   const [analysis, setAnalysis] = useState<MatchingAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'perfect' | 'unmatched_contacts' | 'bulk_entry'>('perfect');
+  const [activeTab, setActiveTab] = useState<'perfect' | 'unmatched_contacts' | 'unmatched_accounts' | 'bulk_entry'>('perfect');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedMatches, setExpandedMatches] = useState<Record<number, boolean>>({});
 
@@ -358,8 +358,9 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {[
-            { id: 'perfect', label: 'Match Patients', count: analysis?.summary.perfectCount ?? 0 },
+            { id: 'perfect', label: 'Match Patients', count: (analysis?.summary.perfectCount ?? 0) + (analysis?.summary.fuzzyCount ?? 0) },
             { id: 'unmatched_contacts', label: 'Unmatched Patients', count: analysis?.summary.unmatchedContactsCount ?? 0 },
+            { id: 'unmatched_accounts', label: 'Data No Match Found', count: analysis?.summary.unmatchedAccountsCount ?? 0 },
             { id: 'bulk_entry', label: 'Bulk Entry', count: 0 }
           ].map(tab => (
             <button
@@ -407,16 +408,16 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
       ) : (
         <div className="min-h-[400px]">
           <AnimatePresence mode="wait">
-            {/* TAB 1: PERFECT MATCHES */}
+            {/* TAB 1: MATCH PATIENTS (PERFECT & FUZZY MATCHES) */}
             {activeTab === 'perfect' && (
               <motion.div
                 key="perfect"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-4"
+                className="space-y-6"
               >
-                {filteredPerfectMatches.length === 0 ? (
+                {filteredPerfectMatches.length === 0 && filteredFuzzyMatches.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 bg-white border border-slate-200 rounded-3xl text-center space-y-3">
                     <CheckCircle2 className="w-10 h-10 text-emerald-500" />
                     <p className="text-slate-800 font-extrabold text-sm uppercase tracking-wider">No Matching Patients Found</p>
@@ -425,119 +426,86 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-6">
-                    {filteredPerfectMatches.map((item, index) => {
-                      const isExpanded = !!expandedMatches[index];
-                      return (
-                        <div
-                          key={`perfect_${index}`}
-                          className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs hover:shadow-md transition-all space-y-4"
-                        >
-                          {/* Header Block: ONLY Displays the Names & Toggle */}
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                              <div>
-                                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Submitted Name</span>
-                                <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
-                                  {item.account.full_name}
-                                </span>
-                              </div>
-                              <div className="hidden sm:block text-slate-300">
-                                <ArrowRight className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">PATIENT NAME FROM DATABASE</span>
-                                <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
-                                  {item.contact.full_name}
-                                </span>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setExpandedMatches(prev => ({ ...prev, [index]: !prev[index] }))}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider cursor-pointer transition-colors"
-                            >
-                              {isExpanded ? (
-                                <>
-                                  <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
-                                  Hide Details
-                                </>
-                              ) : (
-                                <>
-                                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                                  View Details
-                                </>
-                              )}
-                            </button>
-                          </div>
-
-                          {/* Collapsible Details Content (Dropdown/Accordion style) */}
-                          <AnimatePresence initial={false}>
-                            {isExpanded && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="overflow-hidden pt-4 border-t border-slate-100"
-                              >
-                                {/* Two-Column Comparison Grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                                  
-                                  {/* Column 1: Data Inserted to Match */}
-                                  <div className="space-y-3">
-                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[10px] uppercase tracking-wider">
-                                      Data Inserted to Match
-                                    </div>
-                                    <div className="font-extrabold font-display text-slate-800 text-base tracking-wide uppercase">
-                                      {item.account.full_name}
-                                    </div>
-                                    <div className="text-xs text-slate-600 space-y-1.5">
-                                      <div><strong className="text-slate-700">Barangay:</strong> {item.account.barangay}</div>
-                                      <div><strong className="text-slate-700">Purok:</strong> {item.account.purok || 'N/A'}</div>
-                                      <div><strong className="text-slate-700">Contact No:</strong> {item.account.contact_number || 'None'}</div>
-                                      <div><strong className="text-slate-700">Files Available:</strong> {item.account.uploadedFiles?.length || 0} attachments</div>
-                                    </div>
-                                  </div>
-
-                                  {/* Column 2: Data Matched from Google Sheet Database */}
-                                  <div className="space-y-3 pt-4 md:pt-0 md:pl-6">
-                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-800 font-bold text-[10px] uppercase tracking-wider">
-                                      Data Matched from Google Sheet Database
-                                    </div>
-                                    <div className="font-extrabold font-display text-slate-800 text-base tracking-wide uppercase">
-                                      {item.contact.full_name}
-                                    </div>
-                                    <div className="text-xs text-slate-600 space-y-1.5">
-                                      <div><strong className="text-slate-700">Barangay:</strong> {item.contact.barangay}</div>
-                                      <div><strong className="text-slate-700">Purok:</strong> {item.contact.purok || 'N/A'}</div>
-                                      <div><strong className="text-slate-700">Contact No:</strong> {item.contact.contact_number || 'None'}</div>
-                                    </div>
-                                  </div>
-
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-
-                          {/* Action Bar */}
-                          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            <div className="flex items-center gap-2 text-xs text-emerald-600 font-bold">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                              <span>System auto-reconciled based on Full Name match</span>
-                            </div>
-                            <button
-                              onClick={() => handleMerge(item.contact.id, item.account.id)}
-                              disabled={actionLoadingId !== null}
-                              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none shadow-xs"
-                            >
-                              <GitMerge className="w-3.5 h-3.5" />
-                              {actionLoadingId === `merge_${item.contact.id}_${item.account.id}` ? 'Merging...' : 'Merge Profiles'}
-                            </button>
-                          </div>
+                  <div className="space-y-8">
+                    {/* Perfect Matches Group */}
+                    {filteredPerfectMatches.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 px-1">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                            Perfect Matches ({filteredPerfectMatches.length})
+                          </h3>
                         </div>
-                      );
-                    })}
+                        <div className="grid grid-cols-1 gap-4">
+                          {filteredPerfectMatches.map((item, index) => {
+                            return (
+                              <div
+                                key={`perfect_${index}`}
+                                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                                  <div>
+                                    <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Submitted Name</span>
+                                    <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
+                                      {item.account.full_name}
+                                    </span>
+                                  </div>
+                                  <div className="hidden sm:block text-slate-300">
+                                    <ArrowRight className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">PATIENT NAME FROM DATABASE</span>
+                                    <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
+                                      {item.contact.full_name}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fuzzy / Potential Matches Group */}
+                    {filteredFuzzyMatches.length > 0 && (
+                      <div className="space-y-4 pt-4 border-t border-slate-100">
+                        <div className="flex items-center gap-2 px-1">
+                          <Sparkles className="w-4 h-4 text-amber-600" />
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                            Potential / Fuzzy Matches ({filteredFuzzyMatches.length})
+                          </h3>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                          {filteredFuzzyMatches.map((item, index) => {
+                            return (
+                              <div
+                                key={`fuzzy_${index}`}
+                                className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                                  <div>
+                                    <span className="block text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">Submitted Name</span>
+                                    <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
+                                      {item.account.full_name}
+                                    </span>
+                                  </div>
+                                  <div className="hidden sm:block text-amber-300">
+                                    <ArrowRight className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <span className="block text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">PATIENT NAME FROM DATABASE</span>
+                                    <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
+                                      {item.contact.full_name}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </motion.div>
@@ -596,6 +564,89 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-bold text-[9px] uppercase tracking-wider">
                                   Unlinked Local Record
                                 </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* TAB: DATA NO MATCH FOUND */}
+            {activeTab === 'unmatched_accounts' && (
+              <motion.div
+                key="unmatched_accounts"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-4"
+              >
+                {/* Information Callout */}
+                <div className="p-4 bg-emerald-50 border border-emerald-200/50 rounded-2xl flex items-start gap-3">
+                  <Database className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                      Unmatched Registrations Engine
+                    </h4>
+                    <p className="text-xs text-emerald-800 leading-relaxed">
+                      Only displaying records from <strong>Data Inserted to Match</strong> (submitted online registrations) that have absolutely no match found in the Google Sheets database. You can instantly create a formal patient profile for them here.
+                    </p>
+                  </div>
+                </div>
+
+                {filteredUnmatchedAccounts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 bg-white border border-slate-200 rounded-3xl text-center space-y-3">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+                    <p className="text-slate-800 font-extrabold text-sm uppercase tracking-wider">All Submissions Linked</p>
+                    <p className="text-slate-400 text-xs max-w-sm">
+                      All online submitted registrations have successfully matched or have been imported into the clinic database.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                            <th className="py-4 px-6">Account ID</th>
+                            <th className="py-4 px-6">Data Inserted to Match (Full Name)</th>
+                            <th className="py-4 px-6">Barangay Location</th>
+                            <th className="py-4 px-6">Purok</th>
+                            <th className="py-4 px-6">Contact Number</th>
+                            <th className="py-4 px-6 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                          {filteredUnmatchedAccounts.map((acc) => (
+                            <tr key={acc.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="py-4 px-6 font-mono font-bold text-[10px] text-slate-400">
+                                {acc.id.substring(0, 8)}...
+                              </td>
+                              <td className="py-4 px-6 font-extrabold text-slate-800 uppercase">
+                                {acc.full_name}
+                              </td>
+                              <td className="py-4 px-6 font-semibold">
+                                {acc.barangay}
+                              </td>
+                              <td className="py-4 px-6 text-slate-500">
+                                {acc.purok || '—'}
+                              </td>
+                              <td className="py-4 px-6 text-slate-500 font-semibold">
+                                {acc.contact_number || '—'}
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCreatePatient(acc.id)}
+                                  disabled={actionLoadingId !== null}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none"
+                                >
+                                  <UserPlus className="w-3.5 h-3.5" />
+                                  {actionLoadingId === `create_${acc.id}` ? 'Creating...' : 'Create Patient Profile'}
+                                </button>
                               </td>
                             </tr>
                           ))}

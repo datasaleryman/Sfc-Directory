@@ -5778,6 +5778,7 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
     await saveContacts();
     await addActivity(username, `Uploaded PCU File "${fileName}" for: "${fullName}"`);
     forwardToWebApp('edit', contact).catch(err => console.error('Error forwarding PCU file update to Sheets Web App:', err));
+    saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
   } else {
     await addActivity(username, `Uploaded PCU File "${fileName}" for unregistered household: "${fullName}"`);
   }
@@ -5905,6 +5906,7 @@ export async function addPCUUpdatesMultiple(contactId: number, fullName: string,
 
   await addActivity(username, `Uploaded ${files.length} PCU File(s) for: "${fullName}"`);
   forwardToWebApp('edit', contact).catch(err => console.error('Error forwarding PCU file update to Sheets Web App:', err));
+  saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
 
   return contact;
 }
