@@ -2765,8 +2765,17 @@ export function getAllFilteredContacts(params: {
 // Helper to generate IDs for locally added contacts to avoid clash with Base44 entries (1..N)
 function getNextLocalId(): number {
   const localIdStart = 100000;
-  const localContacts = contactsCache.filter(c => c.id >= localIdStart);
-  return localContacts.length > 0 ? Math.max(...localContacts.map(c => c.id)) + 1 : localIdStart;
+  const ids = contactsCache
+    .map(c => typeof c.id === 'number' ? c.id : parseInt(c.id as any, 10))
+    .filter(id => !isNaN(id) && id >= localIdStart);
+  
+  let nextId = ids.length > 0 ? Math.max(...ids) + 1 : localIdStart;
+  
+  // Guarantee absolute uniqueness against any existing record
+  while (contactsCache.some(c => Number(c.id) === nextId)) {
+    nextId++;
+  }
+  return nextId;
 }
 
 // Helper to save or update contact records in Base44 database
