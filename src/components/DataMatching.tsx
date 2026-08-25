@@ -76,6 +76,7 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
   const [activeTab, setActiveTab] = useState<'perfect' | 'unmatched_contacts' | 'unmatched_accounts' | 'bulk_entry'>('perfect');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedMatches, setExpandedMatches] = useState<Record<number, boolean>>({});
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{ accountId: string; name: string } | null>(null);
 
   // Bulk Entry states
   const [bulkText, setBulkText] = useState('');
@@ -229,6 +230,30 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
     }
   };
 
+  const handleDeleteMatchAccountConfirm = async (accountId: string) => {
+    setActionLoadingId(`delete_${accountId}`);
+    setDeleteConfirmModal(null);
+    try {
+      const response = await fetch(`/api/existing-accounts/${accountId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete record');
+      }
+      showToast('Successfully deleted the registration record!', 'success');
+      await fetchAnalysis();
+      if (onSyncComplete) onSyncComplete();
+    } catch (err: any) {
+      showToast(err.message || 'Deletion failed', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const handleAutoMergeAll = async () => {
     if (!analysis || analysis.perfectMatches.length === 0) {
       showToast('No perfect matches available for automatic merging.', 'info');
@@ -280,6 +305,10 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
     acc.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     acc.barangay.toLowerCase().includes(searchQuery.toLowerCase())
   ) || [];
+
+  const displayUnmatchedContactsCount = analysis
+    ? Math.max(0, analysis.summary.unmatchedContactsCount - analysis.summary.perfectCount - (analysis.summary.fuzzyCount || 0))
+    : 0;
 
   return (
     <div className="space-y-6" id="data-matching-section">
@@ -342,7 +371,7 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
               </div>
               <div className="text-right">
                 <span className="text-2xl sm:text-3xl font-black font-display text-rose-400">
-                  {analysis.summary.unmatchedContactsCount}
+                  {displayUnmatchedContactsCount}
                 </span>
                 <span className="text-[10px] text-rose-300/80 block font-bold">records</span>
               </div>
@@ -359,7 +388,7 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {[
             { id: 'perfect', label: 'Match Patients', count: (analysis?.summary.perfectCount ?? 0) + (analysis?.summary.fuzzyCount ?? 0) },
-            { id: 'unmatched_contacts', label: 'Unmatched Patients', count: analysis?.summary.unmatchedContactsCount ?? 0 },
+            { id: 'unmatched_contacts', label: 'Unmatched Patients', count: displayUnmatchedContactsCount },
             { id: 'unmatched_accounts', label: 'Data No Match Found', count: analysis?.summary.unmatchedAccountsCount ?? 0 },
             { id: 'bulk_entry', label: 'Bulk Entry', count: 0 }
           ].map(tab => (
@@ -441,9 +470,9 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                             return (
                               <div
                                 key={`perfect_${index}`}
-                                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all"
+                                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex items-center gap-4"
                               >
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                                <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                   <div>
                                     <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Submitted Name</span>
                                     <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
@@ -453,13 +482,21 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                                   <div className="hidden sm:block text-slate-300">
                                     <ArrowRight className="w-4 h-4" />
                                   </div>
-                                  <div>
+                                  <div className="sm:text-right">
                                     <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">PATIENT NAME FROM DATABASE</span>
                                     <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
                                       {item.contact.full_name}
                                     </span>
                                   </div>
                                 </div>
+                                <button
+                                  onClick={() => setDeleteConfirmModal({ accountId: item.account.id, name: item.account.full_name })}
+                                  disabled={actionLoadingId !== null}
+                                  className="p-2.5 text-rose-500 hover:bg-rose-50 hover:text-rose-600 rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none border border-transparent hover:border-rose-100 shrink-0"
+                                  title="Delete Registration"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             );
                           })}
@@ -481,9 +518,9 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                             return (
                               <div
                                 key={`fuzzy_${index}`}
-                                className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all"
+                                className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex items-center gap-4"
                               >
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                                <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                   <div>
                                     <span className="block text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">Submitted Name</span>
                                     <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
@@ -493,13 +530,21 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                                   <div className="hidden sm:block text-amber-300">
                                     <ArrowRight className="w-4 h-4" />
                                   </div>
-                                  <div>
+                                  <div className="sm:text-right">
                                     <span className="block text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">PATIENT NAME FROM DATABASE</span>
                                     <span className="font-extrabold font-display text-slate-800 text-sm tracking-wide uppercase">
                                       {item.contact.full_name}
                                     </span>
                                   </div>
                                 </div>
+                                <button
+                                  onClick={() => setDeleteConfirmModal({ accountId: item.account.id, name: item.account.full_name })}
+                                  disabled={actionLoadingId !== null}
+                                  className="p-2.5 text-rose-500 hover:bg-rose-50 hover:text-rose-600 rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none border border-transparent hover:border-rose-100 shrink-0"
+                                  title="Delete Registration"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             );
                           })}
@@ -754,6 +799,65 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
           </AnimatePresence>
         </div>
       )}
+
+      {/* Custom Center Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirmModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeleteConfirmModal(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: 'spring', duration: 0.35 }}
+              className="relative w-full max-w-md bg-white border border-slate-100 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-center"
+            >
+              <div className="mx-auto w-14 h-14 bg-rose-50 rounded-full flex items-center justify-center text-rose-500">
+                <Trash2 className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="font-extrabold font-display text-slate-900 text-lg sm:text-xl uppercase tracking-wide">
+                  Confirm Deletion
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Are you absolutely sure you want to delete the submitted registration for <strong className="text-slate-800 font-extrabold uppercase">{deleteConfirmModal.name}</strong>?
+                </p>
+                <div className="p-3 bg-rose-50/50 border border-rose-100/50 rounded-xl text-[11px] text-rose-700 leading-relaxed text-left">
+                  This action is permanent and will completely remove this online submission from the reconciliation registry.
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmModal(null)}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteMatchAccountConfirm(deleteConfirmModal.accountId)}
+                  disabled={actionLoadingId !== null}
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition-all focus:outline-none shadow-md shadow-rose-600/10"
+                >
+                  {actionLoadingId === `delete_${deleteConfirmModal.accountId}` ? 'Deleting...' : 'Permanently Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
