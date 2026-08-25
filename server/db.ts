@@ -6251,6 +6251,7 @@ export async function addLocalExistingAccountsBulk(dataList: any[], username: st
       status: data.status || 'approved',
       submittedBy: username || 'Admin',
       pin: data.pin || '',
+      uploadedFiles: [],
       added_from_website: true,
       isBulkEntry: true
     };
