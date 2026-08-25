@@ -723,37 +723,7 @@ export function DataMatching({ authToken, showToast, onSyncComplete }: DataMatch
                 </div>
 
                 <form onSubmit={handleBulkSubmit} className="space-y-5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-2">
-                        Default Barangay (Fallback)
-                      </label>
-                      <select
-                        value={defaultBarangay}
-                        onChange={(e) => setDefaultBarangay(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-600 transition-all text-slate-700"
-                      >
-                        {DEFAULT_BARANGAYS.map((bg) => (
-                          <option key={bg} value={bg}>
-                            {bg}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-2">
-                        Default Purok (Fallback)
-                      </label>
-                      <input
-                        type="text"
-                        value={defaultPurok}
-                        onChange={(e) => setDefaultPurok(e.target.value)}
-                        placeholder="e.g. Purok 1"
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-600 transition-all placeholder:text-slate-400"
-                      />
-                    </div>
-                  </div>
+                  {/* Fallback inputs removed as per request */}
 
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
