@@ -14,7 +14,18 @@ import {
   ShieldCheck,
   User,
   Lock,
-  Menu
+  Menu,
+  UserPlus,
+  Mail,
+  MapPin,
+  Eye,
+  EyeOff,
+  Search,
+  Key,
+  Shield,
+  Sparkles,
+  Check,
+  Copy
 } from 'lucide-react';
 import { SheetsStatus } from '../types.js';
 import { DEFAULT_SITE_LOGO } from '../App.js';
@@ -45,6 +56,8 @@ interface SettingsPageProps {
     rolePermissions?: Record<string, string[]>;
   };
   onSettingsSaved: (updated: any) => void;
+  adminUser?: any;
+  onAdminUserUpdated?: (user: any, newToken?: string) => void;
 }
 
 const DEFAULT_ROLES = [
@@ -55,6 +68,43 @@ const DEFAULT_ROLES = [
   'ADMIN',
   'ENCODER',
   'STAFF'
+];
+
+const DEFAULT_BARANGAYS = [
+  'BALINTAWAK',
+  'BALOBO',
+  'BANALE',
+  'BOMBONA',
+  'BUENAVISTA',
+  'BULATOC',
+  'CABILINAN',
+  'DANGCALAN',
+  'DUMAGOC',
+  'GUTAS',
+  'KAWAYAN',
+  'KAUSWAGAN',
+  'LOWER BALINTAWAK',
+  'LUMBIA',
+  'MAHAYAG',
+  'MANGGUSU',
+  'MONTE ALEGRE',
+  'NAPOLAN',
+  'NAVALAN',
+  'PAGADIAN',
+  'PEDRO COLOMBO',
+  'POLOYAGAN',
+  'SAN FRANCISCO',
+  'SAN JOSE',
+  'SAN PEDRO',
+  'SANTA CRUZ',
+  'SANTA LUCIA',
+  'SANTA MARIA',
+  'SANTIAGO',
+  'SANTO NINO',
+  'SFC',
+  'TIGUMA',
+  'TUBURAN',
+  'TULAWAS'
 ];
 
 const APP_PAGES = [
@@ -80,9 +130,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   onSyncComplete,
   showToast,
   siteSettings,
-  onSettingsSaved
+  onSettingsSaved,
+  adminUser
 }) => {
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'branding' | 'nav' | 'roles'>('branding');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'branding' | 'nav' | 'roles' | 'addAccount'>('branding');
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -119,8 +170,143 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     };
   });
 
+  // Add Account Form States
+  const [newFullName, setNewFullName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newBarangay, setNewBarangay] = useState('BALINTAWAK');
+  const [newRole, setNewRole] = useState('STAFF');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
+  const [createdAccountDetails, setCreatedAccountDetails] = useState<any | null>(null);
+  const [barangayList, setBarangayList] = useState<string[]>(DEFAULT_BARANGAYS);
+  const [accountsList, setAccountsList] = useState<any[]>([]);
+  const [loadingAccountsList, setLoadingAccountsList] = useState(false);
+  const [accountsSearchQuery, setAccountsSearchQuery] = useState('');
+  const [copiedKey, setCopiedKey] = useState(false);
+
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch barangays from Google Sheet database
+  const fetchBarangays = async () => {
+    try {
+      const res = await fetch('/api/public/barangays');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.barangays) && data.barangays.length > 0) {
+          setBarangayList(data.barangays);
+          setNewBarangay(prev => prev || data.barangays[0]);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch barangays:', err);
+    }
+  };
+
+  // Fetch registered user accounts for live verification
+  const fetchAccounts = async () => {
+    if (!authToken) return;
+    setLoadingAccountsList(true);
+    try {
+      const res = await fetch('/api/users', {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAccountsList(data);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch accounts list:', err);
+    } finally {
+      setLoadingAccountsList(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBarangays();
+    if (authToken) {
+      fetchAccounts();
+    }
+  }, [authToken]);
+
+  // Handle Add Account submit
+  const handleCreateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFullName.trim()) {
+      showToast('Please enter the Full Name.', 'warning');
+      return;
+    }
+    if (!newEmail.trim()) {
+      showToast('Please enter the Email Address.', 'warning');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail.trim())) {
+      showToast('Please enter a valid email address format (e.g. name@domain.com).', 'warning');
+      return;
+    }
+    if (!newPassword.trim()) {
+      showToast('Please enter the Password.', 'warning');
+      return;
+    }
+    if (newPassword.trim().length < 4) {
+      showToast('Password must be at least 4 characters long.', 'warning');
+      return;
+    }
+    if (!newBarangay) {
+      showToast('Please select a Barangay from the database.', 'warning');
+      return;
+    }
+    if (!newRole) {
+      showToast('Please select a Role Permission from the database.', 'warning');
+      return;
+    }
+
+    setIsSubmittingAccount(true);
+    try {
+      const res = await fetch('/api/users/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          fullName: newFullName.trim(),
+          email: newEmail.trim().toLowerCase(),
+          password: newPassword.trim(),
+          barangay: newBarangay.trim(),
+          role: newRole.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create new account.');
+      }
+
+      showToast(data.message || `Account for "${newFullName}" successfully created and automatically approved!`, 'success');
+      setCreatedAccountDetails({
+        ...data.user,
+        plainPassword: newPassword.trim()
+      });
+
+      // Clear input fields
+      setNewFullName('');
+      setNewEmail('');
+      setNewPassword('');
+
+      // Refresh accounts list & sync state
+      await fetchAccounts();
+      onSyncComplete();
+    } catch (err: any) {
+      showToast(err.message || 'An error occurred while creating the account.', 'error');
+    } finally {
+      setIsSubmittingAccount(false);
+    }
+  };
 
   // Toggle page access for a specific role
   const togglePageForRole = (roleName: string, pageId: string) => {
@@ -457,6 +643,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         >
           <ShieldCheck className="w-4 h-4" />
           Role Page Access Control
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveSettingsTab('addAccount');
+            fetchBarangays();
+            if (authToken) fetchAccounts();
+          }}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-2 ${
+            activeSettingsTab === 'addAccount'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <UserPlus className="w-4 h-4" />
+          Add Account
         </button>
       </div>
 
@@ -1088,6 +1290,411 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: ADD ACCOUNT (MASTER ADMIN) */}
+      {activeSettingsTab === 'addAccount' && (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                  <UserPlus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 font-display text-base sm:text-lg flex items-center gap-2">
+                    Add New Account
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wide">
+                      Auto-Approved
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Master Admin account creation portal with direct activation and real-time Google Sheets database synchronization.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchBarangays();
+                    fetchAccounts();
+                  }}
+                  disabled={loadingAccountsList}
+                  className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 border border-slate-200 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingAccountsList ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Information Banner */}
+            <div className="mt-4 p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-emerald-900 leading-relaxed">
+                <p className="font-bold">Instant Account Activation & Real-Time Google Sheet Sync</p>
+                <p className="text-emerald-800 text-[11px] mt-0.5">
+                  Accounts created by the Master Admin are <strong>automatically approved</strong> with active status and can log in immediately. The account record will also be synced directly to your Google Sheet database (<code className="bg-emerald-100 px-1 py-0.5 rounded font-mono font-bold">Administrators</code> sheet).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: Form */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-5">
+                  <h5 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <User className="w-4 h-4 text-indigo-600" />
+                    Account Registration Form
+                  </h5>
+                  <span className="text-[11px] text-slate-400 font-medium">All fields required</span>
+                </div>
+
+                <form onSubmit={handleCreateAccount} className="space-y-4">
+                  {/* Field 1: Full Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>Full Name</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="text"
+                        value={newFullName}
+                        onChange={(e) => setNewFullName(e.target.value)}
+                        placeholder="e.g. Juan Dela Cruz / Maria Santos"
+                        required
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Field 2: Email Address */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>Email Address</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="email"
+                        value={newEmail}
+                        onChange={(e) => setNewEmail(e.target.value)}
+                        placeholder="e.g. juandelacruz@clinic.gov.ph"
+                        required
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Field 3: Password */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>Password</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Account password (min. 4 characters)"
+                        required
+                        minLength={4}
+                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Field 4: Barangay (Selection from Google Sheet database) */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                        Barangay
+                      </span>
+                      <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded">
+                        Google Sheet Database ({barangayList.length})
+                      </span>
+                    </label>
+                    <select
+                      value={newBarangay}
+                      onChange={(e) => setNewBarangay(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none cursor-pointer"
+                    >
+                      {barangayList.map((bg) => (
+                        <option key={bg} value={bg}>
+                          {bg}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Assigned barangay territory loaded directly from your Google Sheets database.
+                    </p>
+                  </div>
+
+                  {/* Field 5: Role Permission (Selection from Google Sheet database) */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                        Role Permission
+                      </span>
+                      <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded">
+                        Google Sheet Database ({rolesList.length})
+                      </span>
+                    </label>
+                    <select
+                      value={newRole}
+                      onChange={(e) => setNewRole(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none cursor-pointer"
+                    >
+                      {rolesList.map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Role controls which tabs and pages this user is permitted to view.
+                    </p>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-3 border-t border-slate-100 flex items-center gap-3">
+                    <button
+                      type="submit"
+                      disabled={isSubmittingAccount}
+                      className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isSubmittingAccount ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Creating & Auto-Approving...
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-4 h-4" />
+                          Add Account (Auto-Approved)
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewFullName('');
+                        setNewEmail('');
+                        setNewPassword('');
+                      }}
+                      className="px-3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                      title="Clear inputs"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Newly Created Account Info Card */}
+              {createdAccountDetails && (
+                <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5">
+                    <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      Account Successfully Created & Auto-Approved!
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCreatedAccountDetails(null)}
+                      className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Full Name</p>
+                      <p className="font-bold text-slate-800 truncate">{createdAccountDetails.fullName || createdAccountDetails.username}</p>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Email</p>
+                      <p className="font-bold text-slate-800 truncate">{createdAccountDetails.email || 'N/A'}</p>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Barangay</p>
+                      <p className="font-bold text-emerald-700 truncate">{createdAccountDetails.barangay}</p>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Role Permission</p>
+                      <span className="inline-block mt-0.5 px-2 py-0.5 bg-indigo-100 text-indigo-800 font-bold text-[10px] rounded">
+                        {createdAccountDetails.role}
+                      </span>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 col-span-2 flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">Account Status</p>
+                        <p className="font-bold text-emerald-600 flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          Active (Automatically Approved)
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const text = `Account Credentials:\nName: ${createdAccountDetails.fullName}\nEmail: ${createdAccountDetails.email}\nBarangay: ${createdAccountDetails.barangay}\nRole: ${createdAccountDetails.role}\nStatus: Active`;
+                          navigator.clipboard.writeText(text);
+                          setCopiedKey(true);
+                          setTimeout(() => setCopiedKey(false), 2000);
+                        }}
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        {copiedKey ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        {copiedKey ? 'Copied!' : 'Copy Info'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Live Accounts List */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div>
+                    <h5 className="font-bold text-slate-800 font-display text-sm flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-emerald-600" />
+                      Active System Accounts ({accountsList.length})
+                    </h5>
+                    <p className="text-[11px] text-slate-500">Live directory of registered clinic staff and administrator accounts</p>
+                  </div>
+
+                  <div className="relative w-full sm:w-56">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search accounts..."
+                      value={accountsSearchQuery}
+                      onChange={(e) => setAccountsSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Accounts Table */}
+                <div className="max-h-[460px] overflow-y-auto space-y-2.5 pr-1">
+                  {loadingAccountsList ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                      <p className="text-xs">Loading active accounts...</p>
+                    </div>
+                  ) : accountsList.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-xs">
+                      No accounts registered yet. Use the form to add the first account.
+                    </div>
+                  ) : (
+                    accountsList
+                      .filter((acc: any) => {
+                        if (!accountsSearchQuery) return true;
+                        const q = accountsSearchQuery.toLowerCase();
+                        return (
+                          (acc.fullName && acc.fullName.toLowerCase().includes(q)) ||
+                          (acc.username && acc.username.toLowerCase().includes(q)) ||
+                          (acc.email && acc.email.toLowerCase().includes(q)) ||
+                          (acc.barangay && acc.barangay.toLowerCase().includes(q)) ||
+                          (acc.role && acc.role.toLowerCase().includes(q))
+                        );
+                      })
+                      .map((acc: any) => {
+                        let roleBadgeColor = "bg-slate-100 text-slate-700 border-slate-200";
+                        const r = (acc.role || '').toUpperCase();
+                        if (r === 'MASTER ADMIN') roleBadgeColor = "bg-purple-100 text-purple-800 border-purple-200";
+                        else if (r === 'IT') roleBadgeColor = "bg-blue-100 text-blue-800 border-blue-200";
+                        else if (r === 'ADMIN' || r === 'ADMINISTRATOR') roleBadgeColor = "bg-indigo-100 text-indigo-800 border-indigo-200";
+                        else if (r === 'LEADER') roleBadgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200";
+                        else if (r === 'CO-LEADER') roleBadgeColor = "bg-teal-100 text-teal-800 border-teal-200";
+                        else if (r === 'ENCODER') roleBadgeColor = "bg-amber-100 text-amber-800 border-amber-200";
+                        else if (r === 'STAFF') roleBadgeColor = "bg-slate-100 text-slate-800 border-slate-200";
+
+                        const isActive = (acc.status || 'Active').toLowerCase() === 'active';
+
+                        return (
+                          <div
+                            key={acc.username || acc.email}
+                            className="p-3 bg-slate-50/70 hover:bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3 transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                {(acc.fullName || acc.username || 'U').charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-xs font-bold text-slate-800 truncate">
+                                    {acc.fullName || acc.username}
+                                  </p>
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${roleBadgeColor}`}>
+                                    {acc.role || 'Staff'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-0.5 flex-wrap">
+                                  {acc.email && (
+                                    <span className="flex items-center gap-1 text-slate-500 truncate">
+                                      <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                                      {acc.email}
+                                    </span>
+                                  )}
+                                  {acc.barangay && (
+                                    <span className="flex items-center gap-1 text-emerald-700 font-semibold truncate">
+                                      <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                                      {acc.barangay}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {isActive ? 'Active' : 'Pending'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

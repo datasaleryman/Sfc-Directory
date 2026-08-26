@@ -18,6 +18,7 @@ import {
   getUsers,
   getBarangayList,
   registerUser,
+  addUserAccountByAdmin,
   updateUserRole,
   updateUserStatus,
   designateBarangayForUsers,
@@ -993,6 +994,21 @@ export async function getApp() {
       res.json(users);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create new user account by Admin (Auto-Approved)
+  app.post(['/api/users/add', '/api/users'], requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const actor = req.user?.username || 'admin';
+      const newAccount = await addUserAccountByAdmin(req.body, actor);
+      res.json({
+        success: true,
+        message: `Account for "${newAccount.fullName || newAccount.username}" successfully created and automatically approved!`,
+        user: newAccount
+      });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   });
 

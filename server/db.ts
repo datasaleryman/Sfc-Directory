@@ -1945,6 +1945,105 @@ export async function registerUser(data: {
   };
 }
 
+export async function addUserAccountByAdmin(data: {
+  fullName: string;
+  email: string;
+  password: string;
+  barangay: string;
+  role: string;
+}, actorUsername: string) {
+  const { fullName, email, password, barangay, role } = data;
+
+  const trimmedName = fullName ? fullName.trim() : '';
+  const trimmedEmail = email ? email.trim().toLowerCase() : '';
+  const trimmedPass = password ? password.trim() : '';
+  const trimmedBarangay = barangay ? barangay.trim() : '';
+  const trimmedRole = role && role.trim() ? role.trim() : 'Staff';
+
+  if (!trimmedName) {
+    throw new Error('Full Name is required.');
+  }
+  if (!trimmedEmail) {
+    throw new Error('Email address is required.');
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmedEmail)) {
+    throw new Error('Please enter a valid email address format.');
+  }
+  if (!trimmedPass) {
+    throw new Error('Password is required.');
+  }
+  if (trimmedPass.length < 4) {
+    throw new Error('Password must be at least 4 characters long.');
+  }
+  if (!trimmedBarangay) {
+    throw new Error('Barangay selection from Google Sheet database is required.');
+  }
+  if (!trimmedRole) {
+    throw new Error('Role Permission selection from Google Sheet database is required.');
+  }
+
+  // Check if email or username already exists
+  const emailExists = usersCache.some(u => 
+    (u.email && u.email.toLowerCase() === trimmedEmail) ||
+    (u.username && u.username.toLowerCase() === trimmedEmail)
+  );
+  if (emailExists) {
+    throw new Error(`An account with email "${trimmedEmail}" already exists in the system.`);
+  }
+
+  // Derive username from email or name
+  let username = trimmedEmail.split('@')[0].replace(/[^a-z0-9_]/g, '');
+  if (!username) {
+    username = 'user';
+  }
+
+  let finalUsername = username;
+  let counter = 1;
+  while (usersCache.some(u => u.username && u.username.toLowerCase() === finalUsername.toLowerCase())) {
+    finalUsername = `${username}${counter}`;
+    counter++;
+  }
+
+  // Clear any tombstone if re-creating
+  unTombstoneUser(finalUsername, trimmedEmail);
+
+  const newUser: User = {
+    username: finalUsername,
+    email: trimmedEmail,
+    fullName: trimmedName,
+    displayName: trimmedName,
+    barangay: trimmedBarangay,
+    passwordHash: hashPassword(trimmedPass),
+    passwordPlain: trimmedPass,
+    role: trimmedRole,
+    status: 'Active', // Automatically approved by Admin!
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  usersCache.unshift(newUser);
+  await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
+  await addActivity(actorUsername || 'admin', `Admin created and auto-approved account @${finalUsername} (${trimmedName} - ${trimmedBarangay}) with role ${trimmedRole}`);
+
+  try {
+    await syncAdminsToGoogleSheets(true);
+  } catch (err: any) {
+    console.error('Failed to sync users to Sheets on admin add user:', err.message || err);
+  }
+
+  return {
+    username: newUser.username,
+    email: newUser.email,
+    fullName: newUser.fullName,
+    barangay: newUser.barangay,
+    role: newUser.role,
+    status: newUser.status,
+    createdAt: newUser.createdAt,
+    updatedAt: newUser.updatedAt
+  };
+}
+
 export async function updateUserRole(username: string, newRole: string, actorUsername: string) {
   if (!username || !username.trim()) {
     throw new Error('Target username is required.');
