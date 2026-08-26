@@ -941,8 +941,8 @@ export async function getApp() {
 
   // --- Site Settings Endpoints ---
 
-  // Get current site settings (public)
-  app.get('/api/site/settings', async (req: Request, res: Response) => {
+  // Support both /api/site/settings and /api/settings
+  app.get(['/api/site/settings', '/api/settings'], async (req: Request, res: Response) => {
     try {
       if (getSheetsConfig().syncEnabled) {
         await pullSiteSettingsOnce();
@@ -955,7 +955,7 @@ export async function getApp() {
   });
 
   // Save site settings (admin only)
-  app.post('/api/site/settings', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  app.post(['/api/site/settings', '/api/settings'], requireAuth, (req: AuthenticatedRequest, res: Response) => {
     try {
       const username = req.user?.username || 'admin';
       const updated = saveSiteSettings(req.body);
@@ -1148,6 +1148,11 @@ export async function getApp() {
   const distUploads = path.join(process.cwd(), 'dist', 'uploads');
   app.use('/uploads', express.static(publicUploads));
   app.use('/uploads', express.static(distUploads));
+
+  // --- Catch-all 404 for unmatched /api/* routes to prevent serving HTML ---
+  app.all('/api/*', (req: Request, res: Response) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
+  });
 
   // --- Serve Frontend Application ---
 

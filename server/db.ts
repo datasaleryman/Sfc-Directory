@@ -1738,18 +1738,25 @@ export function getBarangayList(): string[] {
 
 export async function getBase44Roles(): Promise<string[]> {
   const defaultRoles = [
-    'MASTER ADMIN',
+    'Administrator',
+    'Admin',
+    'Master Admin',
+    'Leader',
+    'Co-Leader',
     'IT',
-    'LEADER',
-    'CO-LEADER',
-    'ADMIN',
-    'ENCODER',
-    'STAFF'
+    'Encoder',
+    'Data Encoder',
+    'Staff',
+    'User',
+    'Barangay Health Worker',
+    'Clinic Doctor',
+    'Clinic Nurse',
+    'Barangay Official'
   ];
 
   const roleMap = new Map<string, string>();
 
-  // Initialize with uppercase default roles
+  // Initialize with default roles
   defaultRoles.forEach(r => {
     roleMap.set(r.toUpperCase(), r);
   });
@@ -1780,7 +1787,7 @@ export async function getBase44Roles(): Promise<string[]> {
     });
   }
 
-  return Array.from(roleMap.values()).sort((a, b) => a.localeCompare(b));
+  return Array.from(roleMap.values());
 }
 
 export async function registerUser(data: {
@@ -1866,37 +1873,85 @@ export async function registerUser(data: {
 }
 
 export async function updateUserRole(username: string, newRole: string, actorUsername: string) {
-  const user = usersCache.find(u => u.username.toLowerCase() === username.toLowerCase());
-  if (!user) {
-    throw new Error('User account not found.');
+  if (!username || !username.trim()) {
+    throw new Error('Target username is required.');
   }
-  user.role = newRole;
+  if (!newRole || !newRole.trim()) {
+    throw new Error('New role is required.');
+  }
+  const trimmedTarget = username.trim();
+  const trimmedRole = newRole.trim();
+
+  // Find user by username or email
+  const user = findUser(trimmedTarget) || usersCache.find(
+    u => u && typeof u.username === 'string' && (u.username.toLowerCase() === trimmedTarget.toLowerCase() || (typeof u.email === 'string' && u.email.toLowerCase() === trimmedTarget.toLowerCase()))
+  );
+
+  if (!user) {
+    throw new Error(`User account "${trimmedTarget}" not found.`);
+  }
+
+  if (user.username.toLowerCase() === 'admin' && trimmedRole !== 'Administrator') {
+    throw new Error('Master admin role cannot be changed.');
+  }
+
+  user.role = trimmedRole;
   user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-  await addActivity(actorUsername, `Updated user @${username} role to ${newRole}`);
+  await addActivity(actorUsername, `Updated user @${user.username} (${user.fullName || user.username}) role permission to ${trimmedRole}`);
   try {
     await syncAdminsToGoogleSheets();
   } catch (err: any) {
     console.error('Failed to sync users to Sheets on role update:', err.message || err);
   }
-  return user;
+  return {
+    username: user.username,
+    email: user.email,
+    fullName: user.fullName,
+    barangay: user.barangay,
+    role: user.role,
+    status: user.status,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
 }
 
 export async function updateUserStatus(username: string, newStatus: 'Active' | 'Pending' | 'Suspended', actorUsername: string) {
-  const user = usersCache.find(u => u.username.toLowerCase() === username.toLowerCase());
-  if (!user) {
-    throw new Error('User account not found.');
+  if (!username || !username.trim()) {
+    throw new Error('Target username is required.');
   }
+  const trimmedTarget = username.trim();
+  const user = findUser(trimmedTarget) || usersCache.find(
+    u => u && typeof u.username === 'string' && (u.username.toLowerCase() === trimmedTarget.toLowerCase() || (typeof u.email === 'string' && u.email.toLowerCase() === trimmedTarget.toLowerCase()))
+  );
+
+  if (!user) {
+    throw new Error(`User account "${trimmedTarget}" not found.`);
+  }
+
+  if (user.username.toLowerCase() === 'admin' && newStatus !== 'Active') {
+    throw new Error('Master admin account must remain Active.');
+  }
+
   user.status = newStatus;
   user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-  await addActivity(actorUsername, `Updated user @${username} status to ${newStatus}`);
+  await addActivity(actorUsername, `Updated user @${user.username} status to ${newStatus}`);
   try {
     await syncAdminsToGoogleSheets();
   } catch (err: any) {
     console.error('Failed to sync user status to Sheets:', err.message || err);
   }
-  return user;
+  return {
+    username: user.username,
+    email: user.email,
+    fullName: user.fullName,
+    barangay: user.barangay,
+    role: user.role,
+    status: user.status,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
 }
 
 export async function editUserAccount(
@@ -1911,12 +1966,20 @@ export async function editUserAccount(
   },
   actorUsername: string
 ) {
-  const user = usersCache.find(u => u.username.toLowerCase() === targetUsername.toLowerCase());
+  if (!targetUsername || !targetUsername.trim()) {
+    throw new Error('Target account is required.');
+  }
+  const trimmedTarget = targetUsername.trim();
+  const user = findUser(trimmedTarget) || usersCache.find(
+    u => u && typeof u.username === 'string' && (u.username.toLowerCase() === trimmedTarget.toLowerCase() || (typeof u.email === 'string' && u.email.toLowerCase() === trimmedTarget.toLowerCase()))
+  );
+
   if (!user) {
-    throw new Error('User account not found.');
+    throw new Error(`User account "${trimmedTarget}" not found.`);
   }
 
-  if (targetUsername.toLowerCase() === 'admin') {
+  const isMasterAdmin = user.username.toLowerCase() === 'admin';
+  if (isMasterAdmin) {
     if (updates.role && updates.role !== 'Administrator') {
       throw new Error('Master admin role cannot be changed.');
     }
@@ -1925,17 +1988,7 @@ export async function editUserAccount(
     }
   }
 
-  // Prevent logged-in user from self-demoting role or self-suspending status
-  if (targetUsername.toLowerCase() === actorUsername.toLowerCase()) {
-    if (updates.role && updates.role !== 'Administrator' && user.role === 'Administrator') {
-      throw new Error('You cannot demote your own Administrator role.');
-    }
-    if (updates.status && updates.status !== 'Active') {
-      throw new Error('You cannot suspend or deactivate your own account.');
-    }
-  }
-
-  if (updates.fullName !== undefined) {
+  if (updates.fullName !== undefined && updates.fullName.trim()) {
     user.fullName = updates.fullName.trim();
     user.displayName = updates.fullName.trim();
   }
@@ -1948,7 +2001,7 @@ export async function editUserAccount(
         throw new Error('Please enter a valid email address.');
       }
       const duplicate = usersCache.find(
-        u => u.username.toLowerCase() !== targetUsername.toLowerCase() && u.email && u.email.toLowerCase() === trimmedEmail
+        u => u.username.toLowerCase() !== user.username.toLowerCase() && u.email && u.email.toLowerCase() === trimmedEmail
       );
       if (duplicate) {
         throw new Error('An account with this email address already exists.');
@@ -1957,7 +2010,7 @@ export async function editUserAccount(
     }
   }
 
-  if (updates.barangay !== undefined) {
+  if (updates.barangay !== undefined && updates.barangay.trim()) {
     user.barangay = updates.barangay.trim();
   }
 
@@ -1980,11 +2033,11 @@ export async function editUserAccount(
 
   user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-  await addActivity(actorUsername, `Edited user account details for "@${targetUsername}" (${user.fullName || targetUsername})`);
+  await addActivity(actorUsername, `Edited user account details for "@${user.username}" (${user.fullName || user.username}) - Role: ${user.role}, Status: ${user.status}`);
   try {
     await syncAdminsToGoogleSheets();
   } catch (err: any) {
-    console.error('Failed to sync users to Sheets:', err);
+    console.error('Failed to sync users to Sheets on edit:', err.message || err);
   }
 
   return {
@@ -1994,7 +2047,8 @@ export async function editUserAccount(
     barangay: user.barangay,
     role: user.role,
     status: user.status,
-    createdAt: user.createdAt
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
   };
 }
 
@@ -2307,19 +2361,24 @@ export async function createAdminUser(username: string, password: string, creato
 }
 
 export async function deleteAdminUser(username: string, creatorUsername: string) {
+  if (!username || !username.trim()) {
+    throw new Error('Target username is required.');
+  }
   const targetUser = username.trim().toLowerCase();
   if (targetUser === 'admin') {
     throw new Error('The master admin account cannot be deleted.');
   }
 
-  const index = usersCache.findIndex(u => u.username.toLowerCase() === targetUser);
+  const index = usersCache.findIndex(
+    u => u && typeof u.username === 'string' && (u.username.toLowerCase() === targetUser || (typeof u.email === 'string' && u.email.toLowerCase() === targetUser))
+  );
   if (index === -1) {
-    throw new Error('Admin user not found.');
+    throw new Error(`User account "${username}" not found.`);
   }
 
-  usersCache.splice(index, 1);
+  const removed = usersCache.splice(index, 1)[0];
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-  await addActivity(creatorUsername, `Deleted Administrator credential: "@${targetUser}"`);
+  await addActivity(creatorUsername, `Deleted user account: "@${removed.username}"`);
   try {
     await syncAdminsToGoogleSheets();
   } catch (err: any) {
@@ -5318,22 +5377,46 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       return false;
     }
 
+    // Dynamically map headers to column indices
+    const headerRow = rows[0] || [];
+    const getColIndex = (patterns: RegExp[], fallback: number): number => {
+      for (let i = 0; i < headerRow.length; i++) {
+        const val = (headerRow[i] || '').toString().trim();
+        for (const pattern of patterns) {
+          if (pattern.test(val)) return i;
+        }
+      }
+      return fallback;
+    };
+
+    const colUsername = getColIndex([/^user/i, /^username/i], 0);
+    const colPasswordHash = getColIndex([/hash/i, /sha/i], 1);
+    const colRole = getColIndex([/^role/i, /permission/i], 2);
+    const colDisplayName = getColIndex([/display\s*name/i, /full\s*name/i, /^name/i], 3);
+    const colAvatar = getColIndex([/avatar/i, /photo/i, /picture/i], 4);
+    const colEmail = getColIndex([/^email/i, /mail/i], 5);
+    const colBarangay = getColIndex([/barangay/i, /address/i, /location/i], 6);
+    const colStatus = getColIndex([/^status/i, /state/i], 7);
+    const colCreatedAt = getColIndex([/created/i, /registered/i, /date/i], 8);
+    const colPasswordPlain = getColIndex([/plain\s*password/i, /^plain/i, /^password/i], 9);
+    const colUpdatedAt = getColIndex([/updated/i, /modified/i], 10);
+
     const remoteUsers: User[] = [];
     for (const row of rows.slice(1)) {
       if (!row || row.length < 1) continue;
-      const username = row[0]?.trim();
+      const username = row[colUsername]?.trim();
       if (!username) continue;
 
-      const rawPasswordHash = row[1]?.trim() || '';
-      const role = row[2]?.trim() || 'Staff';
-      const displayName = row[3]?.trim() || '';
-      const avatarDataUrl = row[4]?.trim() || '';
-      const email = row[5]?.trim() || '';
-      const barangay = row[6]?.trim() || '';
-      const status = row[7]?.trim() || 'Active';
-      const createdAt = row[8]?.trim() || new Date().toISOString();
-      const passwordPlain = row[9]?.trim() || '';
-      const updatedAt = row[10]?.trim() || '';
+      const rawPasswordHash = row[colPasswordHash]?.trim() || '';
+      const role = row[colRole]?.trim() || 'Staff';
+      const displayName = row[colDisplayName]?.trim() || '';
+      const avatarDataUrl = row[colAvatar]?.trim() || '';
+      const email = row[colEmail]?.trim() || '';
+      const barangay = row[colBarangay]?.trim() || '';
+      const status = row[colStatus]?.trim() || 'Active';
+      const createdAt = row[colCreatedAt]?.trim() || new Date().toISOString();
+      const passwordPlain = row[colPasswordPlain]?.trim() || '';
+      const updatedAt = row[colUpdatedAt]?.trim() || '';
 
       const passwordHash = rawPasswordHash || (passwordPlain ? hashPassword(passwordPlain) : hashPassword('2026'));
 

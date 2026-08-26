@@ -162,9 +162,18 @@ export default function App() {
       return;
     }
     fetch('/api/site/settings')
-      .then(res => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Received non-JSON content');
+        }
+        return res.json();
+      })
       .then(data => {
-        if (data) {
+        if (data && typeof data === 'object') {
           const logo = data.logoDataUrl || DEFAULT_SITE_LOGO;
           const favicon = data.faviconDataUrl || DEFAULT_SITE_LOGO;
           setSiteSettings({
@@ -186,8 +195,22 @@ export default function App() {
         }
       })
       .catch(err => {
-        // Prevent console error noise for transient network errors (e.g., during dev server restarts)
-        if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        // Prevent console error noise for transient network errors / dev restarts / non-JSON fallbacks
+        const errMsg = err?.message || '';
+        if (
+          err && (
+            err.name === 'TypeError' ||
+            err.name === 'AbortError' ||
+            err.name === 'SyntaxError' ||
+            errMsg.includes('Failed to fetch') ||
+            errMsg.includes('Network') ||
+            errMsg.includes('load') ||
+            errMsg.includes('Unexpected token') ||
+            errMsg.includes('is not valid JSON') ||
+            errMsg.includes('non-JSON') ||
+            errMsg.includes('HTTP')
+          )
+        ) {
           console.warn('Site settings fetch suspended (server starting/restarting).');
         } else {
           console.error('Error fetching site settings:', err);
@@ -276,6 +299,8 @@ export default function App() {
           }
         });
         if (!res.ok) return;
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) return;
         const data = await res.json();
         if (Array.isArray(data)) {
           let filteredData = data;
@@ -359,10 +384,15 @@ export default function App() {
         if (
           err?.name === 'TypeError' ||
           err?.name === 'AbortError' ||
+          err?.name === 'SyntaxError' ||
           errMsg.includes('fetch') ||
           errMsg.includes('Network') ||
           errMsg.includes('Failed to fetch') ||
-          errMsg.includes('load')
+          errMsg.includes('load') ||
+          errMsg.includes('JSON') ||
+          errMsg.includes('Unexpected token') ||
+          errMsg.includes('is not valid JSON') ||
+          errMsg.includes('non-JSON')
         ) {
           console.warn('Messages polling suspended (network/server starting/restarting).');
         } else {

@@ -14,7 +14,6 @@
   "navSettings": "Website Settings",
   "navExistingAccount": "Existing Account",
   "navExistAccFiles": "Exist. Acc. Files",
-  "navMemberVerification": "Member verification",
   "rolePermissions": {
     "MASTER ADMIN": [
       "dashboard",

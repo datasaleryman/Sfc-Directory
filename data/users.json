@@ -10,7 +10,7 @@
     "barangay": "NAPOLAN",
     "status": "Active",
     "createdAt": "2026-07-25T01:14:21.423Z",
-    "passwordPlain": "2026",
+    "passwordPlain": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
     "updatedAt": "2026-07-26T07:21:28.805Z"
   },
   {
@@ -24,8 +24,8 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-07-25T01:15:17.855Z",
-    "passwordPlain": "",
-    "updatedAt": ""
+    "passwordPlain": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "aprilkrishag",
@@ -38,8 +38,8 @@
     "barangay": "SFC",
     "status": "Active",
     "createdAt": "2026-07-25T01:16:34.298Z",
-    "passwordPlain": "",
-    "updatedAt": ""
+    "passwordPlain": "16a4313de5f24a61f12164964f6ebb67888ff6ef483cca8823bcb7ea133f4542",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "melfeliciano85",
@@ -52,8 +52,8 @@
     "barangay": "SFC",
     "status": "Active",
     "createdAt": "2026-07-25T02:39:11.262Z",
-    "passwordPlain": "",
-    "updatedAt": ""
+    "passwordPlain": "62ea2bac7cd4d7965b20ab7273df79894a5fc422145e9c6d35b6500b0cf591cf",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "joebertaranez20",
@@ -66,8 +66,8 @@
     "barangay": "Balangasan",
     "status": "Active",
     "createdAt": "2026-07-25T02:58:22.217Z",
-    "passwordPlain": "12192000",
-    "updatedAt": ""
+    "passwordPlain": "2e3a3067c73f4ef5214905cbcfba8bebe5b6917473093d9147a7f25b47d281be",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "jemaelynm1229",
@@ -80,8 +80,8 @@
     "barangay": "Balangasan",
     "status": "Active",
     "createdAt": "2026-07-25T03:04:13.137Z",
-    "passwordPlain": "",
-    "updatedAt": ""
+    "passwordPlain": "277f0394e96e69b151945ad27681edd48565e35323d51415fa0f07e60c194c11",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "laborteasuelo",
@@ -94,7 +94,7 @@
     "barangay": "SFC",
     "status": "Active",
     "createdAt": "2026-07-25T04:49:40.073Z",
-    "passwordPlain": "wezard123",
+    "passwordPlain": "f8585d44a54901366146d67e1b5f17d3d1d688c6206abbb6b00061d9817dc310",
     "updatedAt": "2026-07-30T01:45:14.664Z"
   },
   {
@@ -108,8 +108,8 @@
     "barangay": "Balangasan",
     "status": "Active",
     "createdAt": "2026-07-25T06:29:50.637Z",
-    "passwordPlain": "121900",
-    "updatedAt": ""
+    "passwordPlain": "2e3a3067c73f4ef5214905cbcfba8bebe5b6917473093d9147a7f25b47d281be",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "elgenquinimongenot",
@@ -122,8 +122,8 @@
     "barangay": "Kawit",
     "status": "Active",
     "createdAt": "2026-07-25T12:49:18.100Z",
-    "passwordPlain": "200513genot",
-    "updatedAt": ""
+    "passwordPlain": "1440776a585d2d11872bf40feb08aaa49238ffa2327ec9cad5346cd6bd1ee08a",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "joihairabetonggandawali",
@@ -136,8 +136,8 @@
     "barangay": "Muricay",
     "status": "Active",
     "createdAt": "2026-07-26T03:31:53.141Z",
-    "passwordPlain": "Joihaira123",
-    "updatedAt": ""
+    "passwordPlain": "393587fd1c6316637b6fd805b04c12b31b167ac49b0e5e93e7f4679c4a3602c8",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "emrainieaba20",
@@ -150,8 +150,8 @@
     "barangay": "Muricay",
     "status": "Active",
     "createdAt": "2026-07-26T08:24:04.324Z",
-    "passwordPlain": "rainie06",
-    "updatedAt": ""
+    "passwordPlain": "42880854491e2102df9a4dce1e30496a94fa31fbea8a4e3e91732d4a5964a26c",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "aprilmaerama757",
@@ -164,8 +164,8 @@
     "barangay": "Sta. Lucia",
     "status": "Active",
     "createdAt": "2026-07-27T01:06:57.834Z",
-    "passwordPlain": "ZACKIEH0505",
-    "updatedAt": ""
+    "passwordPlain": "90d67b30dfa730dba6181f6bade52019a3110322975dd2f28b51446e125e5336",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "ganoriocrystalkate07",
@@ -178,8 +178,8 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-07-27T01:22:36.104Z",
-    "passwordPlain": "unique",
-    "updatedAt": ""
+    "passwordPlain": "c2720445a45267813688ff73fa188aa060c1b661aefaf1650d42f690697b5ab3",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "mariacanacan978",
@@ -192,8 +192,8 @@
     "barangay": "Balangasan",
     "status": "Active",
     "createdAt": "2026-07-27T01:40:45.572Z",
-    "passwordPlain": "50978",
-    "updatedAt": ""
+    "passwordPlain": "ee4a5ccb7364527c7394215883133ae4334f97fa7d7661053386ede9ca14bc3d",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "beabordani",
@@ -206,8 +206,8 @@
     "barangay": "San Pedro",
     "status": "Active",
     "createdAt": "2026-07-27T02:04:46.169Z",
-    "passwordPlain": "byangbyang09",
-    "updatedAt": ""
+    "passwordPlain": "ea142fea64630cceded4440c2e7de33e6c292f10aaeb5f53d6ca36d86b541e8d",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "jeenrosshicrea",
@@ -220,7 +220,7 @@
     "barangay": "Lumbia",
     "status": "Active",
     "createdAt": "2026-07-27T03:07:30.337Z",
-    "passwordPlain": "199624",
+    "passwordPlain": "a2d33b83140d6995df3d42a7583a21db0e0873855b9754debb08aea52751ca0f",
     "updatedAt": "2026-07-31T09:13:31.085Z"
   },
   {
@@ -234,8 +234,8 @@
     "barangay": "Kawit",
     "status": "Active",
     "createdAt": "2026-07-27T03:39:37.076Z",
-    "passwordPlain": "20051320",
-    "updatedAt": ""
+    "passwordPlain": "19ed31c2da5e3c77ff7ceebfc94239bda5c9d1864af8baabc71db70fc5e2de40",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "dietherlaborte",
@@ -248,8 +248,8 @@
     "barangay": "Kawit",
     "status": "Active",
     "createdAt": "2026-07-29T00:14:17.627Z",
-    "passwordPlain": "diether123",
-    "updatedAt": ""
+    "passwordPlain": "f0463420f9cc44f2fd6860c37cd9102420c7e8ed0d4f8af25067a9068e5fd6c0",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "shymonsalud",
@@ -262,7 +262,7 @@
     "barangay": "Tawagan Sur",
     "status": "Active",
     "createdAt": "2026-07-29T02:38:52.470Z",
-    "passwordPlain": "101608@shynerose",
+    "passwordPlain": "7d77d1e24fbcf65a6dac72cdd8e1fc2888952fa26139547783a7e2cf71d31d8f",
     "updatedAt": "2026-07-29T02:54:05.220Z"
   },
   {
@@ -276,8 +276,8 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-07-29T03:54:55.545Z",
-    "passwordPlain": "nosrahguillycalalagan03182015",
-    "updatedAt": ""
+    "passwordPlain": "9edcc2f80b4d8b752618ac0b1f4449939e07a6e1b0f89156af3b5e93c4947c30",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "banzaidunyah1214",
@@ -290,8 +290,8 @@
     "barangay": "Napolan",
     "status": "Active",
     "createdAt": "2026-07-29T07:35:42.008Z",
-    "passwordPlain": "methuselah2012",
-    "updatedAt": ""
+    "passwordPlain": "49998fb1ebc99005c7b5b00a60548418552d30b12e22f755ed1feb9c864fd2f1",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "alvaradoashlee08",
@@ -304,8 +304,8 @@
     "barangay": "Bulatok",
     "status": "Active",
     "createdAt": "2026-07-29T08:54:51.465Z",
-    "passwordPlain": "ashlee2007",
-    "updatedAt": ""
+    "passwordPlain": "b3c6714261fd56540043b03fb481750d6f49333cfab8fded6fe9c81bc6ad2390",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "zdoriaf26",
@@ -318,8 +318,8 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-07-29T09:30:14.757Z",
-    "passwordPlain": "Fairodz20",
-    "updatedAt": ""
+    "passwordPlain": "fedc2414288b621df21a385a6a9c4d314358618cdc9aac3558b20f1cbeb3ea6d",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "jidtapsi8",
@@ -332,13 +332,13 @@
     "barangay": "San Pedro",
     "status": "Active",
     "createdAt": "2026-07-30T01:41:14.605Z",
-    "passwordPlain": "habibi",
-    "updatedAt": ""
+    "passwordPlain": "29b6ec70bf0b68b3c26303bdc87f6043b0aee1716145f33f5bd3e7e908d2f0b8",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "vineyopima62",
     "passwordHash": "a9dfeef51acbec65947b8d8de2015b7f1d5fe4c1164bfcaec5452258d0131ec5",
-    "role": "Staff",
+    "role": "LEADER",
     "displayName": "Divine opima",
     "avatarDataUrl": "",
     "fullName": "Divine opima",
@@ -346,8 +346,8 @@
     "barangay": "San Jose",
     "status": "Active",
     "createdAt": "2026-07-30T03:13:47.719Z",
-    "passwordPlain": "jingsunacasio09096429457",
-    "updatedAt": ""
+    "passwordPlain": "a9dfeef51acbec65947b8d8de2015b7f1d5fe4c1164bfcaec5452258d0131ec5",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "villanuevarhea839",
@@ -360,8 +360,8 @@
     "barangay": "Tuburan",
     "status": "Active",
     "createdAt": "2026-07-31T05:38:30.586Z",
-    "passwordPlain": "ssitkizer",
-    "updatedAt": ""
+    "passwordPlain": "4980a82c82826d835da58e9bb6169698692d9470b293c9ed67f8045206ad29b2",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "bryansalik10",
@@ -374,8 +374,8 @@
     "barangay": "San Pedro",
     "status": "Active",
     "createdAt": "2026-07-31T08:23:01.006Z",
-    "passwordPlain": "23096",
-    "updatedAt": ""
+    "passwordPlain": "ace26ce7ca3426bc996a1dfc0b7b5582c02354d451143939daae9860d8ddd4e9",
+    "updatedAt": "2026-08-26T02:33:35.167Z"
   },
   {
     "username": "gevelynmagaso08",
@@ -388,8 +388,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:03:22.155Z",
-    "passwordPlain": "22018",
-    "updatedAt": ""
+    "passwordPlain": "680ffff0c3670b77717b655282ca1f592ff5b9fa4e9b213f4165016dc20ae964",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "trociodaisy",
@@ -402,8 +402,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:04:04.612Z",
-    "passwordPlain": "Mhavy0419",
-    "updatedAt": ""
+    "passwordPlain": "073e5860d89ee2f72090595459ec9d37dade68f70ae709d1c8a10b625aba6a0c",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "marlonaplicador74",
@@ -416,8 +416,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:04:42.352Z",
-    "passwordPlain": "fleah1016",
-    "updatedAt": ""
+    "passwordPlain": "7775bfb83c112dbc5bf426c206b44e96934329ef61f5a4f023e290740d12a62d",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "mackyboygaming30",
@@ -430,8 +430,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:04:32.029Z",
-    "passwordPlain": "sheldonmarc30",
-    "updatedAt": ""
+    "passwordPlain": "f87721a3f0331fa95fa7f8238c4e80f737a5566430dc202b039e3bffae734542",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "mansanadezaurelia",
@@ -444,8 +444,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:04:41.748Z",
-    "passwordPlain": "111283",
-    "updatedAt": ""
+    "passwordPlain": "f50b0e8a7638f5b0bdc1b3505b93f54a6916ec2d683a52e3d8a34b01a557e635",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "fleahmyrtleaplicador",
@@ -458,8 +458,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:05:53.803Z",
-    "passwordPlain": "Fleah1016",
-    "updatedAt": ""
+    "passwordPlain": "e6a0024306f811a65265d4254dc6b462075343dee6e30b929dd279aee0e25cc1",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "joelmansanadez133",
@@ -472,8 +472,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-01T08:09:17.483Z",
-    "passwordPlain": "Online2024",
-    "updatedAt": ""
+    "passwordPlain": "b8fab6e821dff9c67f5c8c8d7050cb72d270ede0a1f70ab7fd2ddd1c6c9463dd",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "jessafaithmacaso",
@@ -486,8 +486,8 @@
     "barangay": "Balangasan",
     "status": "Active",
     "createdAt": "2026-08-03T01:57:48.732Z",
-    "passwordPlain": "JessaxFaith2,",
-    "updatedAt": ""
+    "passwordPlain": "f1d1f7f091eed1d6c75eeaec333e9eac1b1102bfbf2bcd25dacb03d10a468cce",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "apostold827",
@@ -500,13 +500,13 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-08-18T08:31:53.994Z",
-    "passwordPlain": "120306",
-    "updatedAt": ""
+    "passwordPlain": "feac53f25362401b53c0e3100b3225d48651f097c10119caea80b84ca6c7c9ca",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "analoustamaria1984",
     "passwordHash": "4dea5c7cb70f50322ec9d734aa4aa078be9227c05251e18991c596f387552370",
-    "role": "Staff",
+    "role": "LEADER",
     "displayName": "analoustamaria1984",
     "avatarDataUrl": "",
     "fullName": "analoustamaria1984",
@@ -514,7 +514,7 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-08-05T02:45:53.706Z",
-    "passwordPlain": "1984",
+    "passwordPlain": "4dea5c7cb70f50322ec9d734aa4aa078be9227c05251e18991c596f387552370",
     "updatedAt": "2026-08-18T04:27:42.628Z"
   },
   {
@@ -528,8 +528,8 @@
     "barangay": "Napolan",
     "status": "Active",
     "createdAt": "2026-08-05T05:51:39.103Z",
-    "passwordPlain": "221988",
-    "updatedAt": ""
+    "passwordPlain": "908709800fc0dda2b9947b81765be100cc0d74935ac3e17e619460d3342097fe",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "saranilloluceel77",
@@ -542,8 +542,8 @@
     "barangay": "Napolan",
     "status": "Active",
     "createdAt": "2026-08-06T05:27:19.156Z",
-    "passwordPlain": "82687",
-    "updatedAt": ""
+    "passwordPlain": "9146bae5161e3a5a165716dc3e621bc86557e549f59c044c609387bbe8d1f737",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "muhzanesnain",
@@ -556,8 +556,8 @@
     "barangay": "San Pedro",
     "status": "Active",
     "createdAt": "2026-08-06T05:29:16.260Z",
-    "passwordPlain": "mona",
-    "updatedAt": ""
+    "passwordPlain": "132106a20b11b49bb6c2d6a39e302b5ea3d4acc34cfca1ad41e102d2ab898c0f",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "intesalbhe",
@@ -570,7 +570,7 @@
     "barangay": "Tiguma",
     "status": "Active",
     "createdAt": "2026-08-06T05:28:01.725Z",
-    "passwordPlain": "bhe1989",
+    "passwordPlain": "74bea514cf321a6736ddc358438de2ca40a3d0ada2ee1c83a673a869ad800119",
     "updatedAt": "2026-08-06T06:05:24.384Z"
   },
   {
@@ -584,7 +584,7 @@
     "barangay": "San Pedro",
     "status": "Active",
     "createdAt": "2026-08-06T05:29:34.479Z",
-    "passwordPlain": "1991",
+    "passwordPlain": "8e9b669109df89620b94f2387dc53206a82ddc71d658f8f7a2b3a9b417370d3e",
     "updatedAt": "2026-08-06T09:19:16.114Z"
   },
   {
@@ -598,7 +598,7 @@
     "barangay": "Napolan",
     "status": "Active",
     "createdAt": "2026-08-06T05:31:44.123Z",
-    "passwordPlain": "jesusisgoodallthetime",
+    "passwordPlain": "a4bce6a934326bdd2cdb8280d4855273dd6ad7ed007cef85f7608eb26658a3af",
     "updatedAt": "2026-08-06T05:59:57.471Z"
   },
   {
@@ -612,8 +612,8 @@
     "barangay": "Lumbia",
     "status": "Active",
     "createdAt": "2026-08-06T05:41:52.772Z",
-    "passwordPlain": "kenneth12345",
-    "updatedAt": ""
+    "passwordPlain": "e78abb8c1b531861bc08987910461b635537892b81ee1772f03dcb77aab20f89",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "juliusapare28",
@@ -626,13 +626,13 @@
     "barangay": "Tiguma",
     "status": "Active",
     "createdAt": "2026-08-06T05:29:56.131Z",
-    "passwordPlain": "kaikai28",
+    "passwordPlain": "3589b4a6ed0ea7d692ce8d3bde24d45d52af1b308a0f1e7c21d99f720e2ffdc5",
     "updatedAt": "2026-08-06T05:49:55.507Z"
   },
   {
     "username": "lesmorasmichael",
     "passwordHash": "62adc0168645b1551a8c73bd96d7ac6bc4831f78247f002cae01d8a92cc380bc",
-    "role": "Staff",
+    "role": "LEADER",
     "displayName": "michael",
     "avatarDataUrl": "",
     "fullName": "michael",
@@ -640,8 +640,8 @@
     "barangay": "Dumagoc",
     "status": "Active",
     "createdAt": "2026-08-10T09:05:18.280Z",
-    "passwordPlain": "111518",
-    "updatedAt": ""
+    "passwordPlain": "62adc0168645b1551a8c73bd96d7ac6bc4831f78247f002cae01d8a92cc380bc",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "reylonginos67",
@@ -654,7 +654,7 @@
     "barangay": "Kawit",
     "status": "Active",
     "createdAt": "2026-08-11T05:03:48.620Z",
-    "passwordPlain": "4231972",
+    "passwordPlain": "eb89cb906c59df5178ccaed1a35548f006e369fa0aea9fade65526eb9158638a",
     "updatedAt": "2026-08-11T05:12:09.937Z"
   },
   {
@@ -668,7 +668,7 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-08-11T05:33:44.032Z",
-    "passwordPlain": "October162001",
+    "passwordPlain": "647c6cbae16e97fcfa0e6a13e235f531135a4ce71c99229c78900214c042ea9e",
     "updatedAt": "2026-08-11T05:35:51.861Z"
   },
   {
@@ -682,8 +682,8 @@
     "barangay": "Lumbia",
     "status": "Active",
     "createdAt": "2026-08-12T02:13:21.881Z",
-    "passwordPlain": "Jayboy8194000",
-    "updatedAt": ""
+    "passwordPlain": "f139fe949092c0b3b81c4d8263b18172beafa407bc8b1fe01b8584d5f56f412c",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "fecane098",
@@ -696,8 +696,8 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-08-15T02:36:17.031Z",
-    "passwordPlain": "20583",
-    "updatedAt": ""
+    "passwordPlain": "bf1391c5b2362c1e1c42ad080d700b73ba2adf3812d28572a36dc64c1616c973",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "jpemzz23",
@@ -710,8 +710,8 @@
     "barangay": "Banale",
     "status": "Active",
     "createdAt": "2026-08-15T02:37:46.980Z",
-    "passwordPlain": "110890",
-    "updatedAt": ""
+    "passwordPlain": "a9ac06db9e5aa83b66f4e585b67ff9fd4b7b26f45bcdcf6bd039fad040969478",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "christlrosejaguit32",
@@ -724,7 +724,7 @@
     "barangay": "Sto. Niño",
     "status": "Active",
     "createdAt": "2026-08-18T08:34:10.827Z",
-    "passwordPlain": "september161987",
+    "passwordPlain": "c3f2a206a73ec3c72d0c3067f4e7f813ce3f0efb3fbf8c40cb0bc7d2b8b50f01",
     "updatedAt": "2026-08-18T08:37:32.513Z"
   },
   {
@@ -738,8 +738,8 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-18T08:36:29.749Z",
-    "passwordPlain": "fleah1016",
-    "updatedAt": ""
+    "passwordPlain": "7775bfb83c112dbc5bf426c206b44e96934329ef61f5a4f023e290740d12a62d",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
   },
   {
     "username": "mercylaurito75",
@@ -752,7 +752,161 @@
     "barangay": "Dao",
     "status": "Active",
     "createdAt": "2026-08-18T08:42:33.185Z",
-    "passwordPlain": "1988",
-    "updatedAt": ""
+    "passwordPlain": "8266498d969081c29737b8daeb5b51d60e56d008fff243a39d16c3032d42f6cf",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "jeanbanguis63",
+    "passwordHash": "001b683e819c25903d4ceace12bbbcb8b2937d5ac5d413961ffb60d01e50004d",
+    "role": "LEADER",
+    "displayName": "Jean Banguis",
+    "avatarDataUrl": "",
+    "fullName": "Jean Banguis",
+    "email": "jeanbanguis63@gmail.com",
+    "barangay": "Tawagan Sur",
+    "status": "Active",
+    "createdAt": "2026-08-22T01:07:15.864Z",
+    "passwordPlain": "001b683e819c25903d4ceace12bbbcb8b2937d5ac5d413961ffb60d01e50004d",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "radanjory1",
+    "passwordHash": "c8bdee517d46159875fe2951bd5555bbf47e9ca1a8599c73552878919d68ba2a",
+    "role": "LEADER",
+    "displayName": "Jory Radan",
+    "avatarDataUrl": "",
+    "fullName": "Jory Radan",
+    "email": "radanjory1@gmail.com",
+    "barangay": "Lumbia",
+    "status": "Active",
+    "createdAt": "2026-08-22T06:49:18.412Z",
+    "passwordPlain": "c8bdee517d46159875fe2951bd5555bbf47e9ca1a8599c73552878919d68ba2a",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "vparojinog120519",
+    "passwordHash": "e2387de4c5f923dbffe85f8106e17f416212f0acc7412c260db05628c5a2b440",
+    "role": "LEADER",
+    "displayName": "Victoria Parojinog",
+    "avatarDataUrl": "",
+    "fullName": "Victoria Parojinog",
+    "email": "vparojinog120519@gmail.com",
+    "barangay": "White Beach",
+    "status": "Active",
+    "createdAt": "2026-08-22T06:59:45.814Z",
+    "passwordPlain": "e2387de4c5f923dbffe85f8106e17f416212f0acc7412c260db05628c5a2b440",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "retizaprincesskem",
+    "passwordHash": "71a335f59a5751eb5646800c05fbbf671675ece4e64ba41ffb200ec14983d8cb",
+    "role": "LEADER",
+    "displayName": "PRINCESS KEM G. RETIZA",
+    "avatarDataUrl": "",
+    "fullName": "PRINCESS KEM G. RETIZA",
+    "email": "retizaprincesskem@gmail.com",
+    "barangay": "San Jose",
+    "status": "Active",
+    "createdAt": "2026-08-22T07:01:36.154Z",
+    "passwordPlain": "71a335f59a5751eb5646800c05fbbf671675ece4e64ba41ffb200ec14983d8cb",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "patriciakemr",
+    "passwordHash": "6730d53d907775ddbe4ed621b51e6560ceec077d06b3b5f18f89d6152a1e9475",
+    "role": "LEADER",
+    "displayName": "Patricia Kem G RETIZA",
+    "avatarDataUrl": "",
+    "fullName": "Patricia Kem G RETIZA",
+    "email": "patriciakemr@gmail.com",
+    "barangay": "Dao",
+    "status": "Active",
+    "createdAt": "2026-08-22T07:01:52.689Z",
+    "passwordPlain": "6730d53d907775ddbe4ed621b51e6560ceec077d06b3b5f18f89d6152a1e9475",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "acaljheyn",
+    "passwordHash": "03802fe1c88e3445e33c728f07db10c0b31b985e4c81c995b908ec050868565e",
+    "role": "LEADER",
+    "displayName": "Abniera Jheyn M. Acal",
+    "avatarDataUrl": "",
+    "fullName": "Abniera Jheyn M. Acal",
+    "email": "acaljheyn@gmail.com",
+    "barangay": "Banale",
+    "status": "Active",
+    "createdAt": "2026-08-22T07:01:55.258Z",
+    "passwordPlain": "03802fe1c88e3445e33c728f07db10c0b31b985e4c81c995b908ec050868565e",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "jaraoquinalagan",
+    "passwordHash": "98d2727a2ca257581836713ca55d8d97ff34231f3ff726b9f4d8ccd0188c2a75",
+    "role": "LEADER",
+    "displayName": "Jonalyn Arao Quinalagan",
+    "avatarDataUrl": "",
+    "fullName": "Jonalyn Arao Quinalagan",
+    "email": "jaraoquinalagan@gmail.com",
+    "barangay": "Santo Niño",
+    "status": "Active",
+    "createdAt": "2026-08-22T07:02:16.378Z",
+    "passwordPlain": "98d2727a2ca257581836713ca55d8d97ff34231f3ff726b9f4d8ccd0188c2a75",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "edcelgracejaculan86",
+    "passwordHash": "533d08c2218bb81e7db380bea2185d8e613a28b474e56a6f4e55ad41619dcd07",
+    "role": "LEADER",
+    "displayName": "Edcel grace Maranon jaculan",
+    "avatarDataUrl": "",
+    "fullName": "Edcel grace Maranon jaculan",
+    "email": "edcelgracejaculan86@gmail.com",
+    "barangay": "Santo Niño",
+    "status": "Active",
+    "createdAt": "2026-08-22T07:04:51.510Z",
+    "passwordPlain": "533d08c2218bb81e7db380bea2185d8e613a28b474e56a6f4e55ad41619dcd07",
+    "updatedAt": "2026-08-26T02:33:35.168Z"
+  },
+  {
+    "username": "tarorockezia",
+    "passwordHash": "3977e5cad935222da189dd59298320b93c918876606a9daeb6c82b364ee76eb9",
+    "role": "LEADER",
+    "displayName": "KEZIA KYLE C. TAROROC",
+    "avatarDataUrl": "",
+    "fullName": "KEZIA KYLE C. TAROROC",
+    "email": "tarorockezia@gmail.com",
+    "barangay": "Lumbia",
+    "status": "Active",
+    "createdAt": "2026-08-22T08:35:44.311Z",
+    "passwordPlain": "3977e5cad935222da189dd59298320b93c918876606a9daeb6c82b364ee76eb9",
+    "updatedAt": "2026-08-24T10:52:30.517Z"
+  },
+  {
+    "username": "dceno814",
+    "passwordHash": "4598e96f59fee29c51a48074e748a7a1e7d16f67a64ecc6f1dcac33efb06ebaf",
+    "role": "LEADER",
+    "displayName": "Dianahlyn ceño",
+    "avatarDataUrl": "",
+    "fullName": "Dianahlyn ceño",
+    "email": "dceno814@gmail.com",
+    "barangay": "Lumbia",
+    "status": "Active",
+    "createdAt": "2026-08-22T06:48:50.931Z",
+    "passwordPlain": "4598e96f59fee29c51a48074e748a7a1e7d16f67a64ecc6f1dcac33efb06ebaf",
+    "updatedAt": "2026-08-24T10:59:02.825Z"
+  },
+  {
+    "username": "testprogram",
+    "passwordHash": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
+    "role": "Leader",
+    "displayName": "TEST PROGRAM",
+    "avatarDataUrl": "",
+    "fullName": "TEST PROGRAM",
+    "email": "testprogram@gmail.com",
+    "barangay": "Navalan",
+    "status": "Active",
+    "createdAt": "2026-08-26T02:45:44.390Z",
+    "passwordPlain": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
+    "updatedAt": "2026-08-26T02:46:23.402Z"
   }
 ]

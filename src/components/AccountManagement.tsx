@@ -108,13 +108,19 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   // Base44 roles state
   const [base44Roles, setBase44Roles] = useState<string[]>([
     'Administrator',
+    'Admin',
+    'Master Admin',
+    'Leader',
+    'Co-Leader',
+    'IT',
+    'Encoder',
+    'Data Encoder',
     'Staff',
     'User',
     'Barangay Health Worker',
     'Clinic Doctor',
     'Clinic Nurse',
-    'Barangay Official',
-    'Data Encoder'
+    'Barangay Official'
   ]);
 
   // Modal State for Adding New User
@@ -920,10 +926,28 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
                       <span className="truncate max-w-[120px]">{acc.barangay || 'Central'}</span>
                     </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
-                      <Shield className="w-3 h-3 text-slate-500 shrink-0" />
-                      <span>{acc.role}</span>
-                    </span>
+                    {isMasterAdmin ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-100 border border-purple-200 text-purple-800 font-bold">
+                        <ShieldCheck className="w-3 h-3 text-purple-600 shrink-0" />
+                        <span>Administrator</span>
+                      </span>
+                    ) : (
+                      <div className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded-lg px-1.5 py-0.5 transition-all">
+                        <Shield className="w-3 h-3 text-slate-500 shrink-0" />
+                        <select
+                          value={acc.role}
+                          onChange={(e) => handleRoleChange(acc.username, e.target.value)}
+                          className="bg-transparent text-slate-800 text-xs font-bold outline-none cursor-pointer pr-1"
+                        >
+                          {!base44Roles.some(r => r.toUpperCase() === acc.role.toUpperCase()) && (
+                            <option value={acc.role}>{acc.role}</option>
+                          )}
+                          {base44Roles.map(r => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                       <span className="font-mono text-[11px]">
                         PW: {visiblePasswords[acc.username] ? (acc.passwordPlain || '(Encrypted)') : '••••••••'}
@@ -1206,12 +1230,12 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       Role Permission <span className="text-emerald-600">*</span>
                     </label>
                     <select
-                      disabled={editTarget.username.toLowerCase() === 'admin' || editTarget.username.toLowerCase() === currentUsername.toLowerCase()}
+                      disabled={editTarget.username.toLowerCase() === 'admin'}
                       value={editRole}
                       onChange={(e) => setEditRole(e.target.value)}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                     >
-                      {!base44Roles.includes(editRole) && (
+                      {!base44Roles.some(r => r.toUpperCase() === editRole.toUpperCase()) && (
                         <option value={editRole}>{editRole}</option>
                       )}
                       {base44Roles.map(r => (
@@ -1225,7 +1249,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       Account Status
                     </label>
                     <select
-                      disabled={editTarget.username.toLowerCase() === 'admin' || editTarget.username.toLowerCase() === currentUsername.toLowerCase()}
+                      disabled={editTarget.username.toLowerCase() === 'admin'}
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value as any)}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"

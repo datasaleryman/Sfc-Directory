@@ -52,14 +52,30 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
       fetch('/api/users', {
         headers: { 'Authorization': `Bearer ${authToken}` }
       })
-        .then(res => res.json())
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) throw new Error('Received non-JSON');
+          return res.json();
+        })
         .then(data => {
           if (Array.isArray(data)) {
             setUsersList(data);
           }
         })
         .catch(err => {
-          if (err && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+          const errMsg = err?.message || '';
+          if (
+            err && (
+              err.name === 'TypeError' ||
+              err.name === 'AbortError' ||
+              errMsg.includes('Failed to fetch') ||
+              errMsg.includes('Network') ||
+              errMsg.includes('load') ||
+              errMsg.includes('JSON') ||
+              errMsg.includes('HTTP')
+            )
+          ) {
             console.warn('Users fetch suspended in Inbox (server starting/restarting).');
           } else {
             console.error('Error fetching users:', err);
@@ -77,6 +93,8 @@ export const Inbox: React.FC<InboxProps> = ({ authToken, showToast, onNewMessage
         }
       });
       if (!res.ok) throw new Error('Failed to fetch messages.');
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) throw new Error('Non-JSON response received.');
       const data = await res.json();
       
       if (Array.isArray(data)) {
