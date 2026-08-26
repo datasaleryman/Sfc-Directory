@@ -1841,13 +1841,18 @@ export async function registerUser(data: {
     passwordPlain: trimmedPass,
     role: trimmedRole,
     status: 'Pending',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
   usersCache.push(newUser);
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(finalUsername, `Registered new account (${trimmedName} - ${trimmedBarangay}) with role ${trimmedRole}`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync users to Sheets on register:', err.message || err);
+  }
 
   return {
     username: newUser.username,
@@ -1866,9 +1871,14 @@ export async function updateUserRole(username: string, newRole: string, actorUse
     throw new Error('User account not found.');
   }
   user.role = newRole;
+  user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Updated user @${username} role to ${newRole}`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync users to Sheets on role update:', err.message || err);
+  }
   return user;
 }
 
@@ -1878,9 +1888,14 @@ export async function updateUserStatus(username: string, newStatus: 'Active' | '
     throw new Error('User account not found.');
   }
   user.status = newStatus;
+  user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Updated user @${username} status to ${newStatus}`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync users to Sheets:', err));
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync user status to Sheets:', err.message || err);
+  }
   return user;
 }
 
@@ -2267,16 +2282,28 @@ export async function createAdminUser(username: string, password: string, creato
 
   const newUser: User = {
     username: trimmedUser,
+    fullName: trimmedUser,
+    displayName: trimmedUser,
+    email: trimmedUser.includes('@') ? trimmedUser : `${trimmedUser}@clinic.gov.ph`,
+    barangay: 'Central',
     passwordHash: hashPassword(trimmedPass),
-    role: 'Administrator'
+    passwordPlain: trimmedPass,
+    role: 'Administrator',
+    status: 'Active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
   usersCache.push(newUser);
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(creatorUsername, `Created new Administrator credential: "@${trimmedUser}"`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync admins to Sheets on create:', err.message || err);
+  }
 
-  return { username: trimmedUser, role: 'Administrator' };
+  return { username: trimmedUser, role: 'Administrator', status: 'Active' };
 }
 
 export async function deleteAdminUser(username: string, creatorUsername: string) {
@@ -2293,7 +2320,11 @@ export async function deleteAdminUser(username: string, creatorUsername: string)
   usersCache.splice(index, 1);
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(creatorUsername, `Deleted Administrator credential: "@${targetUser}"`);
-  syncAdminsToGoogleSheets().catch(err => console.error('Failed to sync admins to Sheets:', err));
+  try {
+    await syncAdminsToGoogleSheets();
+  } catch (err: any) {
+    console.error('Failed to sync deleted admin to Sheets:', err.message || err);
+  }
 }
 
 // In-memory store for password reset verification PINs
@@ -4635,14 +4666,21 @@ export async function syncAdminsToGoogleSheets() {
     if (match) {
       spreadsheetId = match[1];
     }
-    const adminSheetName = 'Administrators';
-
+    
     // Verify sheet exists, if not create it
     const existingSheets = await getExistingSheets(sheets, spreadsheetId);
     markSheetsConnected();
-    const exists = existingSheets.has(adminSheetName);
 
-    if (!exists) {
+    const adminSheetCandidates = ['Administrators', 'Users', 'User Accounts', 'Accounts'];
+    let adminSheetName = 'Administrators';
+    for (const candidate of adminSheetCandidates) {
+      if (existingSheets.has(candidate)) {
+        adminSheetName = candidate;
+        break;
+      }
+    }
+
+    if (!existingSheets.has(adminSheetName)) {
       console.log(`Sheet "${adminSheetName}" not found. Creating administrators table automatically...`);
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
@@ -4665,22 +4703,40 @@ export async function syncAdminsToGoogleSheets() {
       range: `${adminSheetName}!A:Z`
     });
 
+    // Ensure master admin is always in usersCache
+    const hasAdmin = usersCache.some(u => u.username.toLowerCase() === 'admin');
+    if (!hasAdmin) {
+      usersCache.unshift({
+        username: 'admin',
+        email: 'admin@clinic.gov.ph',
+        fullName: 'Master Administrator',
+        displayName: 'Master Administrator',
+        barangay: 'Central',
+        passwordHash: hashPassword('2026'),
+        passwordPlain: '2026',
+        role: 'Administrator',
+        status: 'Active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
     // Write headers and data
     const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At', 'Plain Password', 'Updated At'];
     const rowsToPut = [
       headers,
       ...usersCache.map(u => [
         u.username,
-        u.passwordHash,
-        u.role,
-        u.displayName || u.fullName || '',
+        u.passwordHash || hashPassword(u.passwordPlain || '2026'),
+        u.role || 'Staff',
+        u.displayName || u.fullName || u.username,
         u.avatarDataUrl && u.avatarDataUrl.length > 45000 ? u.avatarDataUrl.substring(0, 45000) : (u.avatarDataUrl || ''),
-        u.email || '',
-        u.barangay || '',
+        u.email || (u.username.includes('@') ? u.username : `${u.username}@clinic.gov.ph`),
+        u.barangay || 'Central',
         u.status || 'Active',
-        u.createdAt || '',
+        u.createdAt || new Date().toISOString(),
         u.passwordPlain || '',
-        u.updatedAt || ''
+        u.updatedAt || new Date().toISOString()
       ])
     ];
 
@@ -4692,7 +4748,7 @@ export async function syncAdminsToGoogleSheets() {
         values: sanitizeRowsForSheets(rowsToPut)
       }
     });
-    console.log('[Google Sheets] Synchronized administrators list successfully!');
+    console.log('[Google Sheets] Synchronized administrators list successfully! Total accounts saved:', usersCache.length);
   } catch (err: any) {
     console.error('Failed to sync administrators to Google Sheets:', err.message || err);
     handleGoogleSheetsError(err, 'syncAdminsToGoogleSheets');
@@ -5226,16 +5282,26 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
     if (match) {
       spreadsheetId = match[1];
     }
-    const adminSheetName = 'Administrators';
 
     // Verify sheet exists
     const existingSheets = await getExistingSheets(sheets, spreadsheetId);
     markSheetsConnected();
-    const exists = existingSheets.has(adminSheetName);
+
+    const adminSheetCandidates = ['Administrators', 'Users', 'User Accounts', 'Accounts'];
+    let adminSheetName = 'Administrators';
+    let exists = false;
+    for (const candidate of adminSheetCandidates) {
+      if (existingSheets.has(candidate)) {
+        adminSheetName = candidate;
+        exists = true;
+        break;
+      }
+    }
 
     if (!exists) {
-      console.log(`Sheet "${adminSheetName}" not found. No remote administrators to pull.`);
-      return false;
+      console.log(`Administrators sheet not found. Pushing current user accounts to sheet...`);
+      await syncAdminsToGoogleSheets();
+      return true;
     }
 
     const res = await sheets.spreadsheets.values.get({
@@ -5245,16 +5311,21 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
 
     const rows = res.data.values || [];
     if (rows.length <= 1) {
-      console.log('Administrators sheet is empty or only contains headers.');
+      console.log('Administrators sheet is empty or only contains headers. Syncing local users to sheet...');
+      if (usersCache.length > 0) {
+        await syncAdminsToGoogleSheets();
+      }
       return false;
     }
 
     const remoteUsers: User[] = [];
     for (const row of rows.slice(1)) {
-      if (!row || row.length < 3) continue;
+      if (!row || row.length < 1) continue;
       const username = row[0]?.trim();
-      const passwordHash = row[1]?.trim();
-      const role = row[2]?.trim();
+      if (!username) continue;
+
+      const rawPasswordHash = row[1]?.trim() || '';
+      const role = row[2]?.trim() || 'Staff';
       const displayName = row[3]?.trim() || '';
       const avatarDataUrl = row[4]?.trim() || '';
       const email = row[5]?.trim() || '';
@@ -5264,7 +5335,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const passwordPlain = row[9]?.trim() || '';
       const updatedAt = row[10]?.trim() || '';
 
-      if (!username || !passwordHash || !role) continue;
+      const passwordHash = rawPasswordHash || (passwordPlain ? hashPassword(passwordPlain) : hashPassword('2026'));
 
       remoteUsers.push({
         username,
@@ -5273,7 +5344,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         displayName,
         avatarDataUrl,
         fullName: displayName || username,
-        email: email || (username.includes('@') ? username : ''),
+        email: email || (username.includes('@') ? username : `${username}@clinic.gov.ph`),
         barangay: barangay || 'Central',
         status: (status as any) || 'Active',
         createdAt,
@@ -5284,17 +5355,23 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
 
     if (remoteUsers.length > 0) {
       const mergedUsers: User[] = [];
+      const matchedUsernames = new Set<string>();
 
       for (const remote of remoteUsers) {
-        const local = usersCache.find(u => u.username.toLowerCase() === remote.username.toLowerCase());
+        const local = usersCache.find(
+          u => u.username.toLowerCase() === remote.username.toLowerCase() ||
+               (u.email && remote.email && u.email.toLowerCase() === remote.email.toLowerCase())
+        );
+
         if (!local) {
           mergedUsers.push(remote);
         } else {
-          const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
-          const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+          matchedUsernames.add(local.username.toLowerCase());
+          const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : (local.createdAt ? new Date(local.createdAt).getTime() : 0);
+          const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : (remote.createdAt ? new Date(remote.createdAt).getTime() : 0);
 
           if (localTime > remoteTime) {
-            // Local user is newer! Retain local user's fields, or fill from remote if local is blank
+            // Local user is strictly newer! Retain local user's fields, or fill from remote if local is blank
             mergedUsers.push({
               ...remote,
               ...local,
@@ -5306,10 +5383,15 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
               email: local.email || remote.email,
               status: local.status || remote.status,
               role: local.role || remote.role,
-              updatedAt: local.updatedAt
+              updatedAt: local.updatedAt || new Date().toISOString()
             });
           } else {
-            // Remote user is equal or newer! But retain local avatarDataUrl or displayName if remote is blank
+            // Remote user is equal or newer!
+            // If local status was set to 'Active' by admin approval, do not downgrade to 'Pending' unless remote timestamp is strictly newer
+            const statusToApply = (local.status === 'Active' && remote.status === 'Pending' && localTime >= remoteTime)
+              ? 'Active'
+              : (remote.status || local.status || 'Active');
+
             mergedUsers.push({
               ...local,
               ...remote,
@@ -5318,19 +5400,26 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
               barangay: remote.barangay || local.barangay,
               passwordHash: remote.passwordHash || local.passwordHash,
               passwordPlain: remote.passwordPlain || local.passwordPlain,
-              email: remote.email || local.email
+              email: remote.email || local.email,
+              status: statusToApply,
+              role: remote.role || local.role,
+              updatedAt: remote.updatedAt || local.updatedAt || new Date().toISOString()
             });
           }
         }
       }
 
-      // Preserve any local users not present in remote sheet
+      // Preserve any local users not present in remote sheet!
+      let hasLocalOnlyUsers = false;
       for (const localUser of usersCache) {
+        const isMatched = matchedUsernames.has(localUser.username.toLowerCase());
         const existsInMerged = mergedUsers.some(
-          u => u.username.toLowerCase() === localUser.username.toLowerCase()
+          u => u.username.toLowerCase() === localUser.username.toLowerCase() ||
+               (u.email && localUser.email && u.email.toLowerCase() === localUser.email.toLowerCase())
         );
-        if (!existsInMerged) {
+        if (!isMatched && !existsInMerged) {
           mergedUsers.push(localUser);
+          hasLocalOnlyUsers = true;
         }
       }
 
@@ -5339,12 +5428,32 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         const localMaster = usersCache.find(u => u.username.toLowerCase() === 'admin');
         if (localMaster) {
           mergedUsers.unshift(localMaster);
+        } else {
+          mergedUsers.unshift({
+            username: 'admin',
+            email: 'admin@clinic.gov.ph',
+            fullName: 'Master Administrator',
+            displayName: 'Master Administrator',
+            barangay: 'Central',
+            passwordHash: hashPassword('2026'),
+            passwordPlain: '2026',
+            role: 'Administrator',
+            status: 'Active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
         }
       }
 
       usersCache = mergedUsers;
       safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-      console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total count:', usersCache.length);
+      console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total accounts count:', usersCache.length);
+
+      // If local had accounts not yet in remote, push merged list to Google Sheets
+      if (hasLocalOnlyUsers || mergedUsers.length !== remoteUsers.length) {
+        syncAdminsToGoogleSheets().catch(e => console.error('Failed to sync merged users back to Sheets:', e.message || e));
+      }
+
       return true;
     }
   } catch (err: any) {

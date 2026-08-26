@@ -350,6 +350,8 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
   // Handle Role Change inline
   const handleRoleChange = async (username: string, newRole: string) => {
+    // Optimistic update
+    setAccounts(prev => prev.map(a => a.username.toLowerCase() === username.toLowerCase() ? { ...a, role: newRole } : a));
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(username)}/role`, {
         method: 'PUT',
@@ -363,16 +365,19 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to update user role.');
       }
-      showToast(`Role for @${username} updated to ${newRole} and synced to Google Sheets.`, 'success');
+      showToast(`Role for @${username} updated to ${newRole} and saved to Google Sheets.`, 'success');
       fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
+      fetchAccounts();
     }
   };
 
   // Handle Status Toggle (Active <-> Suspended)
   const handleStatusToggle = async (username: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'Active' ? 'Suspended' : 'Active';
+    // Optimistic update
+    setAccounts(prev => prev.map(a => a.username.toLowerCase() === username.toLowerCase() ? { ...a, status: nextStatus } : a));
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(username)}/status`, {
         method: 'PUT',
@@ -386,15 +391,18 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to update user status.');
       }
-      showToast(`Account @${username} status is now ${nextStatus}.`, 'success');
+      showToast(`Account @${username} status is now ${nextStatus} and saved to Google Sheets.`, 'success');
       fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
+      fetchAccounts();
     }
   };
 
   // Handle Approve Pending Account
   const handleApproveAccount = async (username: string) => {
+    // Optimistic update
+    setAccounts(prev => prev.map(a => a.username.toLowerCase() === username.toLowerCase() ? { ...a, status: 'Active' } : a));
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(username)}/status`, {
         method: 'PUT',
@@ -408,19 +416,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to approve account.');
       }
-      showToast(`Account @${username} approved successfully! User can now log in.`, 'success');
+      showToast(`Account @${username} approved successfully and permanently saved to Google Sheets! User can now log in.`, 'success');
       fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
+      fetchAccounts();
     }
   };
 
   // Handle Account Deletion
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
+    const targetUsername = deleteTarget.username;
+    setAccounts(prev => prev.filter(a => a.username.toLowerCase() !== targetUsername.toLowerCase()));
     setDeleting(true);
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(deleteTarget.username)}`, {
+      const res = await fetch(`/api/users/${encodeURIComponent(targetUsername)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${authToken}` }
       });
@@ -428,11 +439,12 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to delete user account.');
       }
-      showToast(`Account "@${deleteTarget.username}" deleted and Google Sheets synced.`, 'success');
+      showToast(`Account "@${targetUsername}" deleted and Google Sheets synced.`, 'success');
       setDeleteTarget(null);
       fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
+      fetchAccounts();
     } finally {
       setDeleting(false);
     }

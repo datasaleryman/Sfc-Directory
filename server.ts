@@ -177,8 +177,7 @@ export async function getApp() {
       if (target === 'admin') {
         user = findUser('admin');
       } else {
-        // Enforce email-only login for standard users
-        user = findUserByEmail(target);
+        user = findUserByEmail(target) || findUser(target);
       }
 
       if (!user) {
