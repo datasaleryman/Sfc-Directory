@@ -143,7 +143,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         )
       );
     }
-    return result;
+    return [...result].sort((a, b) => b.count - a.count || a.purok.localeCompare(b.purok));
   }, [purokFolders, associatedBarangayForPuroks]);
 
   // Export state
@@ -991,9 +991,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     showToast(`Switched to Purok folders associated with Barangay: ${barangayName}`, 'success');
   };
 
-  // Filter and sort Barangay Folders grid alphabetically
+  // Filter and sort Barangay Folders grid by contact population (highest first)
   const rawFiltered = [...barangayFolders]
-    .sort((a, b) => a.barangay.localeCompare(b.barangay))
+    .sort((a, b) => b.count - a.count || a.barangay.localeCompare(b.barangay))
     .filter(f => {
       if (isLeaderOrCoLeader && userBarangay) {
         if (f.barangay.trim().toLowerCase() !== userBarangay.trim().toLowerCase()) {
@@ -1060,8 +1060,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   : isLeaderOrCoLeader && userBarangay && folderGrouping === 'barangay'
                     ? `Assigned Barangay Folder for ${currentUser?.role || 'Leader'}: ${userBarangay}`
                     : folderGrouping === 'barangay'
-                      ? `Organized into ${barangayFolders.length} Barangay Folders`
-                      : `Organized into ${purokFolders.length} Purok Folders alphabetically`}
+                      ? `Organized into ${barangayFolders.length} Barangay Folders (Highest Population First)`
+                      : `Organized into ${purokFolders.length} Purok Folders (Highest Population First)`}
             </p>
           </div>
         </div>
@@ -1221,7 +1221,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
-                        {[...barangayFolders].sort((a, b) => a.barangay.localeCompare(b.barangay)).map((f) => (
+                        {[...barangayFolders].sort((a, b) => b.count - a.count || a.barangay.localeCompare(b.barangay)).map((f) => (
                           <div 
                             key={f.barangay} 
                             className="flex items-center px-3 py-3 bg-white border border-slate-100 rounded-xl shadow-2xs hover:border-emerald-200/40 hover:shadow-xs transition-all h-[52px]"
@@ -1458,14 +1458,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             )}
           </div>
 
-          {/* Purok Folders Cards Grid arranged alphabetically */}
+          {/* Purok Folders Cards Grid arranged by highest population */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-4">
             {filteredPurokFolders
               .filter(f => {
                 // Server-side has already filtered the folders list based on the search term (including contact names).
                 return true;
               })
-              .sort((a, b) => a.purok.localeCompare(b.purok))
+              .sort((a, b) => b.count - a.count || a.purok.localeCompare(b.purok))
               .map((folder) => {
                 const isHighlighted = lastOpenedPurok === folder.purok;
                 return (

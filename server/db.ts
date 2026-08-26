@@ -236,6 +236,7 @@ const BARANGAYS_FILE = path.join(DATA_DIR, 'barangays.json');
 const DELETED_CONTACTS_FILE = path.join(DATA_DIR, 'deleted_contacts.json');
 const DELETED_BARANGAYS_FILE = path.join(DATA_DIR, 'deleted_barangays.json');
 const DELETED_EXISTING_ACCOUNTS_FILE = path.join(DATA_DIR, 'deleted_existing_accounts.json');
+const DELETED_USERS_FILE = path.join(DATA_DIR, 'deleted_users.json');
 
 export interface DeletedContactRecord {
   id?: number | string;
@@ -251,9 +252,53 @@ export interface DeletedExistingAccountRecord {
   deletedAt: string;
 }
 
+export interface DeletedUserRecord {
+  username: string;
+  email?: string;
+  deletedAt: string;
+}
+
 export let deletedContactsCache: DeletedContactRecord[] = [];
 export let deletedBarangaysCache: string[] = [];
 export let deletedExistingAccountsCache: DeletedExistingAccountRecord[] = [];
+export let deletedUsersCache: DeletedUserRecord[] = [];
+
+export function isUserTombstoned(username?: string, email?: string): boolean {
+  if (!username && !email) return false;
+  const u = username ? username.trim().toLowerCase() : '';
+  const e = email ? email.trim().toLowerCase() : '';
+  if (u === 'admin') return false; // Master admin is never tombstoned
+  return deletedUsersCache.some(d => {
+    const du = d.username ? d.username.trim().toLowerCase() : '';
+    const de = d.email ? d.email.trim().toLowerCase() : '';
+    if (u && du && du === u) return true;
+    if (e && de && de === e) return true;
+    if (u && de && de === u) return true;
+    if (e && du && du === e) return true;
+    return false;
+  });
+}
+
+export function unTombstoneUser(username?: string, email?: string) {
+  if (!username && !email) return;
+  const u = username ? username.trim().toLowerCase() : '';
+  const e = email ? email.trim().toLowerCase() : '';
+  const prevLen = deletedUsersCache.length;
+  deletedUsersCache = deletedUsersCache.filter(d => {
+    const du = d.username ? d.username.trim().toLowerCase() : '';
+    const de = d.email ? d.email.trim().toLowerCase() : '';
+    if (u && du && du === u) return false;
+    if (e && de && de === e) return false;
+    if (u && de && de === u) return false;
+    if (e && du && du === e) return false;
+    return true;
+  });
+  if (deletedUsersCache.length !== prevLen) {
+    safeWriteFile(DELETED_USERS_FILE, JSON.stringify(deletedUsersCache, null, 2), 'utf-8').catch(err => {
+      console.warn('Failed to save updated deleted users cache:', err.message || err);
+    });
+  }
+}
 
 export function isBarangayTombstoned(bg: string): boolean {
   if (!bg || typeof bg !== 'string') return false;
@@ -684,6 +729,23 @@ export async function initDb() {
       deletedExistingAccountsCache = [];
       safeWriteFileSync(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2));
     }
+
+    if (fs.existsSync(DELETED_USERS_FILE)) {
+      try {
+        const raw = fs.readFileSync(DELETED_USERS_FILE, 'utf-8');
+        deletedUsersCache = JSON.parse(raw);
+        if (!Array.isArray(deletedUsersCache)) deletedUsersCache = [];
+      } catch (e) {
+        deletedUsersCache = [];
+      }
+    } else {
+      deletedUsersCache = [];
+      safeWriteFileSync(DELETED_USERS_FILE, JSON.stringify(deletedUsersCache, null, 2));
+    }
+
+    // Scrub users cache of any tombstoned accounts
+    usersCache = usersCache.filter(u => !isUserTombstoned(u.username, u.email));
+    safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2));
 
     // Init Contacts
     if (!fs.existsSync(CONTACTS_FILE)) {
@@ -1846,6 +1908,9 @@ export async function registerUser(data: {
     counter++;
   }
 
+  // Clear any tombstone if re-registering
+  unTombstoneUser(finalUsername, trimmedEmail);
+
   const newUser: User = {
     username: finalUsername,
     email: trimmedEmail,
@@ -1941,12 +2006,15 @@ export async function updateUserStatus(username: string, newStatus: 'Active' | '
     throw new Error('Master admin account must remain Active.');
   }
 
+  // Clear any tombstone for this user when updating or activating
+  unTombstoneUser(user.username, user.email);
+
   user.status = newStatus;
   user.updatedAt = new Date().toISOString();
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
   await addActivity(actorUsername, `Updated user @${user.username} status to ${newStatus}`);
   try {
-    await syncAdminsToGoogleSheets();
+    await syncAdminsToGoogleSheets(true);
   } catch (err: any) {
     console.error('Failed to sync user status to Sheets:', err.message || err);
   }
@@ -2342,6 +2410,9 @@ export async function createAdminUser(username: string, password: string, creato
     throw new Error(`Username "@${trimmedUser}" is already taken.`);
   }
 
+  // Clear any tombstone if re-creating
+  unTombstoneUser(trimmedUser, `${trimmedUser}@clinic.gov.ph`);
+
   const newUser: User = {
     username: trimmedUser,
     fullName: trimmedUser,
@@ -2380,15 +2451,48 @@ export async function deleteAdminUser(username: string, creatorUsername: string)
   const index = usersCache.findIndex(
     u => u && typeof u.username === 'string' && (u.username.toLowerCase() === targetUser || (typeof u.email === 'string' && u.email.toLowerCase() === targetUser))
   );
-  if (index === -1) {
-    throw new Error(`User account "${username}" not found.`);
+
+  let removedUser: User | undefined;
+  if (index !== -1) {
+    removedUser = usersCache.splice(index, 1)[0];
+  } else {
+    removedUser = {
+      username: targetUser,
+      email: targetUser.includes('@') ? targetUser : '',
+      fullName: targetUser,
+      passwordHash: '',
+      role: 'Staff',
+      status: 'Suspended'
+    };
   }
 
-  const removed = usersCache.splice(index, 1)[0];
+  const tombUsername = (removedUser && removedUser.username) ? removedUser.username.trim().toLowerCase() : targetUser;
+  const tombEmail = (removedUser && removedUser.email) ? removedUser.email.trim().toLowerCase() : '';
+
+  // Permanently tombstone account
+  deletedUsersCache = deletedUsersCache.filter(d => {
+    const du = d.username ? d.username.trim().toLowerCase() : '';
+    const de = d.email ? d.email.trim().toLowerCase() : '';
+    if (tombUsername && du && du === tombUsername) return false;
+    if (tombEmail && de && de === tombEmail) return false;
+    return true;
+  });
+  deletedUsersCache.push({
+    username: tombUsername,
+    email: tombEmail,
+    deletedAt: new Date().toISOString()
+  });
+  await safeWriteFile(DELETED_USERS_FILE, JSON.stringify(deletedUsersCache, null, 2), 'utf-8');
+
+  // Purge any duplicates or remaining records from usersCache
+  usersCache = usersCache.filter(u => !isUserTombstoned(u.username, u.email));
   await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
-  await addActivity(creatorUsername, `Deleted user account: "@${removed.username}"`);
+  await addActivity(creatorUsername, `Deleted user account: "@${tombUsername}"`);
+
+  // Direct and permanent synchronization to Google Sheets
   try {
-    await syncAdminsToGoogleSheets();
+    await syncAdminsToGoogleSheets(true);
+    await syncDeletedRecordsToGoogleSheets(true);
   } catch (err: any) {
     console.error('Failed to sync deleted admin to Sheets:', err.message || err);
   }
@@ -2786,6 +2890,10 @@ export async function getContacts(params: {
       });
     });
   }
+
+  // Sort both Barangay Folders and Purok Folders based on the number of contacts (highest population on top)
+  barangayFolders.sort((a, b) => b.count - a.count || a.barangay.localeCompare(b.barangay));
+  purokFolders.sort((a, b) => b.count - a.count || a.purok.localeCompare(b.purok));
 
   return {
     contacts: paginated,
@@ -4719,12 +4827,15 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   };
 }
 
-export async function syncAdminsToGoogleSheets() {
+export async function syncAdminsToGoogleSheets(force = false) {
   const sheets = getSheetsClient();
   if (!sheets) return;
 
-  if (Date.now() < googleSheetsQuotaCooldownUntil) {
+  if (!force && Date.now() < googleSheetsQuotaCooldownUntil) {
     return;
+  }
+  if (force) {
+    resetGoogleSheetsCooldown();
   }
 
   try {
@@ -4788,11 +4899,14 @@ export async function syncAdminsToGoogleSheets() {
       });
     }
 
+    // Filter out any tombstoned accounts before writing
+    const activeNonDeletedUsers = usersCache.filter(u => !isUserTombstoned(u.username, u.email));
+
     // Write headers and data
     const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At', 'Plain Password', 'Updated At'];
     const rowsToPut = [
       headers,
-      ...usersCache.map(u => [
+      ...activeNonDeletedUsers.map(u => [
         u.username,
         u.passwordHash || hashPassword(u.passwordPlain || '2026'),
         u.role || 'Staff',
@@ -4815,7 +4929,7 @@ export async function syncAdminsToGoogleSheets() {
         values: sanitizeRowsForSheets(rowsToPut)
       }
     });
-    console.log('[Google Sheets] Synchronized administrators list successfully! Total accounts saved:', usersCache.length);
+    console.log('[Google Sheets] Synchronized administrators list successfully! Total accounts saved:', activeNonDeletedUsers.length);
   } catch (err: any) {
     console.error('Failed to sync administrators to Google Sheets:', err.message || err);
     handleGoogleSheetsError(err, 'syncAdminsToGoogleSheets');
@@ -4823,12 +4937,15 @@ export async function syncAdminsToGoogleSheets() {
   }
 }
 
-export async function syncDeletedRecordsToGoogleSheets() {
+export async function syncDeletedRecordsToGoogleSheets(force = false) {
   const sheets = getSheetsClient();
   if (!sheets) return;
 
-  if (Date.now() < googleSheetsQuotaCooldownUntil) {
+  if (!force && Date.now() < googleSheetsQuotaCooldownUntil) {
     return;
+  }
+  if (force) {
+    resetGoogleSheetsCooldown();
   }
 
   try {
@@ -4908,7 +5025,30 @@ export async function syncDeletedRecordsToGoogleSheets() {
       requestBody: { values: existRows }
     });
 
-    console.log('[Google Sheets] Successfully synchronized deleted records lists!');
+    // 4. Sync DeletedUsers
+    const userSheetName = 'DeletedUsers';
+    if (!existingSheets.has(userSheetName)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: userSheetName } } }]
+        }
+      });
+      existingSheets.add(userSheetName);
+    }
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${userSheetName}!A:Z` });
+    const userRows = [
+      ['Username', 'Email', 'Deleted At'],
+      ...deletedUsersCache.map(u => [u.username || '', u.email || '', u.deletedAt || ''])
+    ];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${userSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: userRows }
+    });
+
+    console.log('[Google Sheets] Successfully synchronized deleted records and users lists!');
   } catch (err: any) {
     console.error('Failed to sync deleted records to Google Sheets:', err.message || err);
     handleGoogleSheetsError(err, 'syncDeletedRecordsToGoogleSheets');
@@ -5007,13 +5147,41 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
       }
     }
 
+    // 4. Pull DeletedUsers
+    const userSheetName = 'DeletedUsers';
+    if (existingSheets.has(userSheetName)) {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${userSheetName}!A:C` });
+      const rows = res.data.values || [];
+      if (rows.length > 1) {
+        const pulledUsers = rows.slice(1).map(row => ({
+          username: (row[0] || '').toString().trim(),
+          email: (row[1] || '').toString().trim(),
+          deletedAt: (row[2] || '').toString().trim() || new Date().toISOString()
+        })).filter(u => u.username || u.email);
+
+        pulledUsers.forEach(pu => {
+          const alreadyLocal = deletedUsersCache.some(lu => 
+            (pu.username && lu.username && pu.username.toLowerCase() === lu.username.toLowerCase()) ||
+            (pu.email && lu.email && pu.email.toLowerCase() === lu.email.toLowerCase())
+          );
+          if (!alreadyLocal) {
+            deletedUsersCache.push(pu);
+          }
+        });
+        await safeWriteFile(DELETED_USERS_FILE, JSON.stringify(deletedUsersCache, null, 2), 'utf-8');
+        loadedAny = true;
+      }
+    }
+
     if (loadedAny) {
       console.log('[Google Sheets] Pulled deleted records and tombstones successfully!');
       // Apply filtering to local active cache immediately to scrub deleted records
       contactsCache = contactsCache.filter(c => !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay));
       barangaysCache = barangaysCache.filter(b => !isBarangayTombstoned(b));
+      usersCache = usersCache.filter(u => !isUserTombstoned(u.username, u.email));
       await saveContacts();
       await saveBarangays();
+      await safeWriteFile(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
     }
     return loadedAny;
   } catch (err: any) {
@@ -5420,6 +5588,9 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const displayName = row[colDisplayName]?.trim() || '';
       const avatarDataUrl = row[colAvatar]?.trim() || '';
       const email = row[colEmail]?.trim() || '';
+      if (isUserTombstoned(username, email)) {
+        continue;
+      }
       const barangay = row[colBarangay]?.trim() || '';
       const rawStatus = row[colStatus]?.trim();
       const status = normalizeUserStatus(rawStatus);
@@ -5450,6 +5621,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const matchedUsernames = new Set<string>();
 
       for (const remote of remoteUsers) {
+        if (isUserTombstoned(remote.username, remote.email)) continue;
         const local = usersCache.find(
           u => u.username.toLowerCase() === remote.username.toLowerCase() ||
                (u.email && remote.email && u.email.toLowerCase() === remote.email.toLowerCase())
@@ -5504,9 +5676,10 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         }
       }
 
-      // Preserve any local users not present in remote sheet!
+      // Preserve any local users not present in remote sheet (except tombstoned ones)!
       let hasLocalOnlyUsers = false;
       for (const localUser of usersCache) {
+        if (isUserTombstoned(localUser.username, localUser.email)) continue;
         const isMatched = matchedUsernames.has(localUser.username.toLowerCase());
         const existsInMerged = mergedUsers.some(
           u => u.username.toLowerCase() === localUser.username.toLowerCase() ||
@@ -5540,7 +5713,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         }
       }
 
-      usersCache = mergedUsers;
+      usersCache = mergedUsers.filter(u => !isUserTombstoned(u.username, u.email));
       safeWriteFileSync(USERS_FILE, JSON.stringify(usersCache, null, 2), 'utf-8');
       console.log('[Google Sheets] Successfully pulled administrators from Google Sheets. Total accounts count:', usersCache.length);
 

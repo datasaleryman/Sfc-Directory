@@ -419,17 +419,18 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
     // Optimistic update
     setAccounts(prev => prev.map(a => a.username.toLowerCase() === username.toLowerCase() ? { ...a, status: 'Active' as const } : a));
     
-    // Auto-switch to "All Statuses" if filtering by Pending so the account does NOT disappear
-    if (statusFilter === 'Pending') {
-      setStatusFilter('All Statuses');
-    }
+    // Auto-reset filters so the approved account is guaranteed to be in view immediately
+    setStatusFilter('All Statuses');
+    setBarangayFilter('All Barangays');
+    setRoleFilter('All Roles');
+    setSearch('');
 
     // Highlight the approved account so the admin can clearly see where it is
     const lowerUser = username.toLowerCase();
     setRecentlyApprovedUsernames(prev => [...prev.filter(u => u !== lowerUser), lowerUser]);
     setTimeout(() => {
       setRecentlyApprovedUsernames(prev => prev.filter(u => u !== lowerUser));
-    }, 8000);
+    }, 15000);
 
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(username)}/status`, {
@@ -444,7 +445,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to approve account.');
       }
-      showToast(`Account @${username} approved successfully! Account is now Active and visible in the directory.`, 'success');
+      showToast(`Account @${username} approved successfully! Account is now Active and listed in the directory.`, 'success');
       fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -467,7 +468,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to delete user account.');
       }
-      showToast(`Account "@${targetUsername}" deleted and Google Sheets synced.`, 'success');
+      showToast(`Account "@${targetUsername}" permanently deleted and removed from Google Sheets database.`, 'success');
       setDeleteTarget(null);
       fetchAccounts();
     } catch (err: any) {
@@ -485,6 +486,9 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
   // Filtered accounts list
   const filteredAccounts = accounts.filter(acc => {
+    const isRecentlyApproved = recentlyApprovedUsernames.includes(acc.username.toLowerCase());
+    if (isRecentlyApproved) return true;
+
     const normStatus = normalizeStatus(acc.status);
     const matchesSearch =
       search === '' ||
@@ -499,10 +503,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
     const matchesStatus =
       statusFilter === 'All Statuses' ||
-      normStatus === statusFilter ||
-      recentlyApprovedUsernames.includes(acc.username.toLowerCase());
+      normStatus === statusFilter;
 
     return matchesSearch && matchesBarangay && matchesRole && matchesStatus;
+  }).sort((a, b) => {
+    const aApproved = recentlyApprovedUsernames.includes(a.username.toLowerCase()) ? 1 : 0;
+    const bApproved = recentlyApprovedUsernames.includes(b.username.toLowerCase()) ? 1 : 0;
+    if (aApproved !== bApproved) return bApproved - aApproved;
+    return (a.fullName || a.username).localeCompare(b.fullName || b.username);
   });
 
   const activeCount = accounts.filter(a => normalizeStatus(a.status) === 'Active').length;

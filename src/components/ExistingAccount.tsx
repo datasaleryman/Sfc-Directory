@@ -313,7 +313,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       count: foldersMap[name].count,
       verifiedCount: foldersMap[name].verifiedCount,
       list: foldersMap[name].list
-    })).sort((a, b) => a.barangay.localeCompare(b.barangay));
+    })).sort((a, b) => b.count - a.count || a.barangay.localeCompare(b.barangay));
   }, [existingAccounts]);
 
   // Filter folders in Folder Overview mode

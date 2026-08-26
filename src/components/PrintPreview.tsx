@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Printer, X, Loader2, Activity, Search, Filter, Plus, Check, UserPlus, Save, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Printer, X, Loader2, Activity, Search, Filter, Plus, Check, UserPlus, Save, ChevronLeft, ChevronRight, ArrowUpDown, ArrowDownAZ, ArrowUpZA, RotateCcw } from 'lucide-react';
 
 export interface HouseholdItem {
   id: string | number;
@@ -62,6 +62,8 @@ const DEFAULT_BARANGAYS = [
   'SFC'
 ];
 
+const ALPHABET = ['ALL', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), '#'];
+
 export const PrintPreview: React.FC<PrintPreviewProps> = ({
   authToken,
   adminUser,
@@ -88,9 +90,11 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
       .catch(() => {});
   }, []);
 
-  // Search, Filter, and Pagination States
+  // Search, Filter, Alphabetical Sort, and Pagination States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBarangay, setSelectedBarangay] = useState('all');
+  const [alphabetSort, setAlphabetSort] = useState<'asc' | 'desc' | 'default'>('asc');
+  const [selectedLetter, setSelectedLetter] = useState<string>('ALL');
   const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(25);
 
   // Manual Add Contact Modal State
@@ -218,9 +222,39 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
     return Array.from(set).sort();
   }, [barangayList, uniqueHouseholds]);
 
-  // Filter household records based on search query and selected address filter
+  // Count records per Barangay
+  const barangayCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    uniqueHouseholds.forEach(h => {
+      const bg = (h.barangay || '').trim().toUpperCase();
+      if (bg) {
+        counts[bg] = (counts[bg] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [uniqueHouseholds]);
+
+  // Count records per Letter based on current Barangay filter
+  const letterCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const relevant = selectedBarangay === 'all'
+      ? uniqueHouseholds
+      : uniqueHouseholds.filter(h => (h.barangay || '').trim().toUpperCase() === selectedBarangay.trim().toUpperCase());
+
+    relevant.forEach(h => {
+      const firstChar = (h.full_name || '').trim().charAt(0).toUpperCase();
+      if (firstChar >= 'A' && firstChar <= 'Z') {
+        counts[firstChar] = (counts[firstChar] || 0) + 1;
+      } else if (firstChar) {
+        counts['#'] = (counts['#'] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [uniqueHouseholds, selectedBarangay]);
+
+  // Filter household records based on search query, selected barangay, and letter
   const filteredHouseholds = useMemo(() => {
-    return uniqueHouseholds.filter(item => {
+    let list = uniqueHouseholds.filter(item => {
       const matchSearch = 
         (item.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.contact_number || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -231,17 +265,36 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
         selectedBarangay === 'all' || 
         (item.barangay && item.barangay.trim().toUpperCase() === selectedBarangay.trim().toUpperCase());
 
-      return matchSearch && matchAddress;
+      let matchLetter = true;
+      if (selectedLetter !== 'ALL') {
+        const firstChar = (item.full_name || '').trim().charAt(0).toUpperCase();
+        if (selectedLetter === '#') {
+          matchLetter = !(firstChar >= 'A' && firstChar <= 'Z');
+        } else {
+          matchLetter = firstChar === selectedLetter;
+        }
+      }
+
+      return matchSearch && matchAddress && matchLetter;
     });
-  }, [uniqueHouseholds, searchQuery, selectedBarangay]);
+
+    // Apply Full Name Alphabetical Sorting
+    if (alphabetSort === 'asc') {
+      list = [...list].sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', undefined, { sensitivity: 'base' }));
+    } else if (alphabetSort === 'desc') {
+      list = [...list].sort((a, b) => (b.full_name || '').localeCompare(a.full_name || '', undefined, { sensitivity: 'base' }));
+    }
+
+    return list;
+  }, [uniqueHouseholds, searchQuery, selectedBarangay, selectedLetter, alphabetSort]);
 
   // Pagination calculation
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Reset page to 1 whenever search query, selected barangay, or itemsPerPage changes
+  // Reset page to 1 whenever search query, selected barangay, letter, sort, or itemsPerPage changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedBarangay, itemsPerPage]);
+  }, [searchQuery, selectedBarangay, selectedLetter, alphabetSort, itemsPerPage]);
 
   const itemsPerPageNum = useMemo(() => {
     if (itemsPerPage === 'all') return Math.max(1, filteredHouseholds.length);
@@ -258,6 +311,16 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
+
+  // Reset all active filters to default
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedBarangay('all');
+    setSelectedLetter('ALL');
+    setAlphabetSort('asc');
+  };
+
+  const hasActiveFilters = searchQuery !== '' || selectedBarangay !== 'all' || selectedLetter !== 'ALL' || alphabetSort !== 'asc';
 
   // Handle +Add List button click
   const handleAddToList = async (item: HouseholdItem) => {
@@ -310,9 +373,9 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
       <div className="flex flex-col gap-5 border-b border-slate-100 pb-5 no-print">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="space-y-1 text-center sm:text-left">
-            <h4 className="font-bold text-slate-800 text-lg font-display">Household Print List & Directory Extractor</h4>
+            <h4 className="font-bold text-slate-800 text-lg font-display">Patient Data List & Directory Extractor</h4>
             <p className="text-xs text-slate-500">
-              Browse household entries. Click <strong className="text-emerald-700">Added List</strong> to save a household to Saint Francis Clinic Directory under its respective Barangay folder.
+              Filter by <strong className="text-emerald-700">Barangay</strong> and sort <strong className="text-emerald-700">Full Name Alphabetically</strong>. Click <strong className="text-emerald-700">Added List</strong> to save a patient record to the Directory.
             </p>
           </div>
 
@@ -335,18 +398,18 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
           </div>
         </div>
 
-        {/* Live Search, Barangay Filter, and Pagination Options */}
+        {/* Live Search, Barangay Filter, and Alphabetical Controls */}
         {!loading && (
           <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
               {/* Search Input */}
-              <div className="relative">
+              <div className="relative sm:col-span-5">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                   <Search className="w-4 h-4" />
                 </span>
                 <input
                   type="text"
-                  placeholder="Search by full name, barangay, or contact number..."
+                  placeholder="Search by full name, barangay, purok, or contact..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 placeholder-slate-400 transition-all"
@@ -361,9 +424,9 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 )}
               </div>
 
-              {/* Address (Barangay) Select Filter */}
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+              {/* Barangay Filter Dropdown */}
+              <div className="relative sm:col-span-4">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-emerald-600">
                   <Filter className="w-4 h-4" />
                 </span>
                 <select
@@ -371,14 +434,84 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                   onChange={(e) => setSelectedBarangay(e.target.value)}
                   className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 appearance-none cursor-pointer transition-all"
                 >
-                  <option value="all">All Address / Barangays ({uniqueBarangays.length})</option>
+                  <option value="all">All Barangays ({uniqueHouseholds.length} Patients)</option>
                   {uniqueBarangays.map((b) => (
-                    <option key={b} value={b}>{b}</option>
+                    <option key={b} value={b}>
+                      {b} {barangayCounts[b] ? `(${barangayCounts[b]} patients)` : '(0)'}
+                    </option>
                   ))}
                 </select>
                 <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400 text-[10px]">
                   ▼
                 </span>
+              </div>
+
+              {/* Full Name Alphabetical Sort */}
+              <div className="relative sm:col-span-3">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-indigo-600">
+                  {alphabetSort === 'asc' ? <ArrowDownAZ className="w-4 h-4" /> : alphabetSort === 'desc' ? <ArrowUpZA className="w-4 h-4" /> : <ArrowUpDown className="w-4 h-4" />}
+                </span>
+                <select
+                  value={alphabetSort}
+                  onChange={(e) => setAlphabetSort(e.target.value as 'asc' | 'desc' | 'default')}
+                  className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800 appearance-none cursor-pointer transition-all"
+                >
+                  <option value="asc">Name: Alphabetical (A → Z)</option>
+                  <option value="desc">Name: Alphabetical (Z → A)</option>
+                  <option value="default">Default (Database Order)</option>
+                </select>
+                <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400 text-[10px]">
+                  ▼
+                </span>
+              </div>
+            </div>
+
+            {/* A-Z Alphabet Quick Filter Bar */}
+            <div className="pt-2 border-t border-slate-200/60">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <ArrowDownAZ className="w-3.5 h-3.5 text-emerald-600" />
+                  Filter by Name Initial Letter:
+                </span>
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleResetFilters}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer hover:underline"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset All Filters
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1 items-center">
+                {ALPHABET.map((char) => {
+                  const isSelected = selectedLetter === char;
+                  const count = char === 'ALL' ? uniqueHouseholds.length : (letterCounts[char] || 0);
+                  const isDisabled = char !== 'ALL' && count === 0;
+
+                  return (
+                    <button
+                      key={char}
+                      disabled={isDisabled}
+                      onClick={() => setSelectedLetter(char)}
+                      className={`px-2 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-700 text-white shadow-xs scale-105'
+                          : isDisabled
+                          ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300'
+                      }`}
+                      title={char === 'ALL' ? 'Show All Names' : `${char}: ${count} patient${count === 1 ? '' : 's'}`}
+                    >
+                      {char}
+                      {char !== 'ALL' && count > 0 && (
+                        <span className={`ml-1 text-[9px] font-semibold px-1 rounded ${isSelected ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -400,9 +533,19 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
               </div>
 
               <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                {selectedBarangay !== 'all' && (
+                  <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 text-[11px]">
+                    Barangay: {selectedBarangay}
+                  </span>
+                )}
+                {selectedLetter !== 'ALL' && (
+                  <span className="bg-indigo-50 text-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-200 text-[11px]">
+                    Initial: {selectedLetter}
+                  </span>
+                )}
                 <span className="bg-emerald-100/70 text-emerald-900 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-                  Total Records: <strong className="text-emerald-800">{filteredHouseholds.length}</strong>
+                  Total Patients: <strong className="text-emerald-800">{filteredHouseholds.length}</strong>
                 </span>
               </div>
             </div>
@@ -413,7 +556,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
       {loading ? (
         <div className="h-64 flex flex-col items-center justify-center text-slate-400 no-print">
           <Loader2 className="w-8 h-8 animate-spin mb-2 text-emerald-600" />
-          <p className="text-sm font-medium text-slate-600">Loading Household Print List...</p>
+          <p className="text-sm font-medium text-slate-600">Loading Patient Data List...</p>
         </div>
       ) : (
         /* Single Printable Document Sheet & Table */
@@ -432,7 +575,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                   {siteSettings.title ? siteSettings.title.toUpperCase() : 'SAINT FRANCIS CLINIC DIRECTORY'}
                 </h1>
                 <p className="text-[10px] md:text-xs font-bold text-emerald-700 uppercase tracking-widest mt-0.5">
-                  Official Household Submissions & Directory Register
+                  Official Patient Data List & Directory Register
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1 font-medium italic">
                   Confidential Document • Internal Access Only
@@ -446,7 +589,11 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 <p>Date: <strong className="text-slate-800 font-semibold">{datePrinted}</strong></p>
               </div>
               <div className="space-y-0.5 text-right">
-                <p>Selection: <strong className="text-slate-800 font-semibold">{selectedBarangay === 'all' ? 'All Barangays' : `Barangay: ${selectedBarangay}`}</strong></p>
+                <p>Selection: <strong className="text-slate-800 font-semibold">
+                  {selectedBarangay === 'all' ? 'All Barangays' : `Barangay: ${selectedBarangay}`}
+                  {alphabetSort === 'asc' ? ' • Sorted A-Z' : alphabetSort === 'desc' ? ' • Sorted Z-A' : ''}
+                  {selectedLetter !== 'ALL' ? ` (Letter: ${selectedLetter})` : ''}
+                </strong></p>
                 <p>Page: <strong className="text-slate-900 font-bold bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded border border-emerald-200 text-xs">Page {currentPage} of {totalPages}</strong></p>
               </div>
             </div>
@@ -458,7 +605,13 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
               <thead>
                 <tr className="bg-slate-50 border-b-2 border-slate-800">
                   <th className="py-2.5 px-3 font-bold text-slate-800 w-12 text-center border border-slate-300">#</th>
-                  <th className="py-2.5 px-3 font-bold text-slate-800 border border-slate-300">Full Name</th>
+                  <th className="py-2.5 px-3 font-bold text-slate-800 border border-slate-300">
+                    <div className="flex items-center gap-1">
+                      <span>Full Name</span>
+                      {alphabetSort === 'asc' && <ArrowDownAZ className="w-3.5 h-3.5 text-emerald-600" />}
+                      {alphabetSort === 'desc' && <ArrowUpZA className="w-3.5 h-3.5 text-emerald-600" />}
+                    </div>
+                  </th>
                   <th className="py-2.5 px-3 font-bold text-slate-800 border border-slate-300">Registered Address (Barangay)</th>
                   <th className="py-2.5 px-3 font-bold text-slate-800 border border-slate-300 w-36">Contact Number</th>
                   <th className="py-2.5 px-3 font-bold text-slate-800 border border-slate-300 w-32 text-center no-print">Action</th>
@@ -468,7 +621,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 {filteredHouseholds.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-400 font-medium border border-slate-300">
-                      No household records matched the specified search and address filters.
+                      No patient records matched the specified search, barangay, and alphabetical filters.
                     </td>
                   </tr>
                 ) : (
@@ -580,7 +733,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-800 font-display text-base">Add New Contact</h3>
-                  <p className="text-[11px] text-slate-500">Will be displayed on Print List and saved to Google Sheet database</p>
+                  <p className="text-[11px] text-slate-500">Will be displayed on Patient Data List and saved to Google Sheet database</p>
                 </div>
               </div>
               <button
@@ -685,3 +838,4 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
     </div>
   );
 };
+
