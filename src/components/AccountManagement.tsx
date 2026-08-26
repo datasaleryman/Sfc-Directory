@@ -104,6 +104,15 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   const [barangayFilter, setBarangayFilter] = useState('All Barangays');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Statuses');
+  const [recentlyApprovedUsernames, setRecentlyApprovedUsernames] = useState<string[]>([]);
+
+  const normalizeStatus = (status?: string): 'Active' | 'Pending' | 'Suspended' => {
+    if (!status) return 'Active';
+    const s = status.trim().toLowerCase();
+    if (s.startsWith('pend')) return 'Pending';
+    if (s.startsWith('susp') || s.startsWith('inact') || s.startsWith('block') || s === 'disabled') return 'Suspended';
+    return 'Active';
+  };
 
   // Base44 roles state
   const [base44Roles, setBase44Roles] = useState<string[]>([
@@ -408,7 +417,20 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
   // Handle Approve Pending Account
   const handleApproveAccount = async (username: string) => {
     // Optimistic update
-    setAccounts(prev => prev.map(a => a.username.toLowerCase() === username.toLowerCase() ? { ...a, status: 'Active' } : a));
+    setAccounts(prev => prev.map(a => a.username.toLowerCase() === username.toLowerCase() ? { ...a, status: 'Active' as const } : a));
+    
+    // Auto-switch to "All Statuses" if filtering by Pending so the account does NOT disappear
+    if (statusFilter === 'Pending') {
+      setStatusFilter('All Statuses');
+    }
+
+    // Highlight the approved account so the admin can clearly see where it is
+    const lowerUser = username.toLowerCase();
+    setRecentlyApprovedUsernames(prev => [...prev.filter(u => u !== lowerUser), lowerUser]);
+    setTimeout(() => {
+      setRecentlyApprovedUsernames(prev => prev.filter(u => u !== lowerUser));
+    }, 8000);
+
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(username)}/status`, {
         method: 'PUT',
@@ -422,7 +444,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to approve account.');
       }
-      showToast(`Account @${username} approved successfully and permanently saved to Google Sheets! User can now log in.`, 'success');
+      showToast(`Account @${username} approved successfully! Account is now Active and visible in the directory.`, 'success');
       fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -463,6 +485,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
   // Filtered accounts list
   const filteredAccounts = accounts.filter(acc => {
+    const normStatus = normalizeStatus(acc.status);
     const matchesSearch =
       search === '' ||
       acc.username.toLowerCase().includes(search.toLowerCase()) ||
@@ -476,14 +499,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
     const matchesStatus =
       statusFilter === 'All Statuses' ||
-      acc.status === statusFilter ||
-      (statusFilter === 'Active' && !acc.status);
+      normStatus === statusFilter ||
+      recentlyApprovedUsernames.includes(acc.username.toLowerCase());
 
     return matchesSearch && matchesBarangay && matchesRole && matchesStatus;
   });
 
-  const activeCount = accounts.filter(a => a.status === 'Active' || !a.status).length;
-  const pendingAccounts = accounts.filter(a => a.status === 'Pending');
+  const activeCount = accounts.filter(a => normalizeStatus(a.status) === 'Active').length;
+  const pendingAccounts = accounts.filter(a => normalizeStatus(a.status) === 'Pending');
   const pendingCount = pendingAccounts.length;
   const adminCount = accounts.filter(a => a.role === 'Administrator').length;
 
@@ -527,30 +550,67 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
           </div>
         </div>
 
-        {/* Quick Summary Widgets */}
+        {/* Quick Summary Widgets (Clickable Filters) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 pt-5 sm:pt-6">
-          <div className="bg-slate-50 rounded-2xl p-3.5 sm:p-4 border border-slate-100">
-            <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Total Users</div>
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter('All Statuses');
+              setRoleFilter('All Roles');
+            }}
+            className={`text-left rounded-2xl p-3.5 sm:p-4 border transition-all cursor-pointer ${
+              statusFilter === 'All Statuses' && roleFilter === 'All Roles'
+                ? 'bg-slate-100 border-slate-400 ring-2 ring-slate-400/30'
+                : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/80'
+            }`}
+          >
+            <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500">Total Users</div>
             <div className="text-xl sm:text-2xl font-black text-slate-800 mt-1 font-display">{accounts.length}</div>
-          </div>
+          </button>
 
-          <div className="bg-emerald-50/60 rounded-2xl p-3.5 sm:p-4 border border-emerald-100/60">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Active')}
+            className={`text-left rounded-2xl p-3.5 sm:p-4 border transition-all cursor-pointer ${
+              statusFilter === 'Active'
+                ? 'bg-emerald-100/70 border-emerald-500 ring-2 ring-emerald-500/30'
+                : 'bg-emerald-50/60 border-emerald-200/60 hover:bg-emerald-100/50'
+            }`}
+          >
             <div className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-800">Active Accounts</div>
             <div className="text-xl sm:text-2xl font-black text-emerald-800 mt-1 font-display">{activeCount}</div>
-          </div>
+          </button>
 
-          <div className={`rounded-2xl p-3.5 sm:p-4 border transition-all ${pendingCount > 0 ? 'bg-amber-50 border-amber-200 shadow-xs' : 'bg-slate-50 border-slate-100'}`}>
-            <div className={`text-[10px] font-extrabold uppercase tracking-widest ${pendingCount > 0 ? 'text-amber-800 flex items-center gap-1' : 'text-slate-400'}`}>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Pending')}
+            className={`text-left rounded-2xl p-3.5 sm:p-4 border transition-all cursor-pointer ${
+              statusFilter === 'Pending'
+                ? 'bg-amber-100 border-amber-500 ring-2 ring-amber-500/30'
+                : pendingCount > 0
+                ? 'bg-amber-50 border-amber-200 hover:bg-amber-100/70'
+                : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/80'
+            }`}
+          >
+            <div className={`text-[10px] font-extrabold uppercase tracking-widest ${pendingCount > 0 ? 'text-amber-850 flex items-center gap-1' : 'text-slate-500'}`}>
               {pendingCount > 0 && <Clock className="w-3 h-3 text-amber-600 animate-pulse shrink-0" />}
               <span className="truncate">Pending Approval</span>
             </div>
             <div className={`text-xl sm:text-2xl font-black mt-1 font-display ${pendingCount > 0 ? 'text-amber-900' : 'text-slate-800'}`}>{pendingCount}</div>
-          </div>
+          </button>
 
-          <div className="bg-purple-50/60 rounded-2xl p-3.5 sm:p-4 border border-purple-100/60">
+          <button
+            type="button"
+            onClick={() => setRoleFilter('Administrator')}
+            className={`text-left rounded-2xl p-3.5 sm:p-4 border transition-all cursor-pointer ${
+              roleFilter === 'Administrator'
+                ? 'bg-purple-100/80 border-purple-500 ring-2 ring-purple-500/30'
+                : 'bg-purple-50/60 border-purple-200/60 hover:bg-purple-100/50'
+            }`}
+          >
             <div className="text-[10px] font-extrabold uppercase tracking-widest text-purple-800">Administrators</div>
             <div className="text-xl sm:text-2xl font-black text-purple-800 mt-1 font-display">{adminCount}</div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -714,24 +774,38 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                 {filteredAccounts.map((acc) => {
                   const isMasterAdmin = acc.username.toLowerCase() === 'admin';
                   const isCurrent = acc.username.toLowerCase() === currentUsername.toLowerCase();
+                  const currentNormStatus = normalizeStatus(acc.status);
+                  const isRecentlyApproved = recentlyApprovedUsernames.includes(acc.username.toLowerCase());
 
                   return (
-                    <tr key={acc.username} className="hover:bg-slate-50/60 transition-colors">
+                    <tr
+                      key={acc.username}
+                      className={`transition-all ${
+                        isRecentlyApproved
+                          ? 'bg-emerald-50/80 ring-2 ring-emerald-500/40'
+                          : 'hover:bg-slate-50/60'
+                      }`}
+                    >
                       {/* Name & Avatar */}
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           <UserAvatar user={acc} size="w-9 h-9" />
                           <div>
                             <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                              {acc.fullName || acc.displayName || `@${acc.username}`}
+                              <span>{acc.fullName || acc.displayName || `@${acc.username}`}</span>
                               {isMasterAdmin && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase">
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase shrink-0">
                                   Master Admin
                                 </span>
                               )}
                               {isCurrent && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[9px] font-extrabold uppercase">
+                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[9px] font-extrabold uppercase shrink-0">
                                   You
+                                </span>
+                              )}
+                              {isRecentlyApproved && (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-0.5 shadow-xs shrink-0">
+                                  <CheckCircle2 className="w-2.5 h-2.5" /> Just Approved
                                 </span>
                               )}
                             </div>
@@ -751,7 +825,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       {/* Barangay Badge */}
                       <td className="py-4 px-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200/60 text-teal-800 text-xs font-bold">
-                          <MapPin className="w-3 h-3 text-teal-600" />
+                          <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
                           {acc.barangay || 'Central'}
                         </span>
                       </td>
@@ -803,22 +877,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
                       {/* Status Badge */}
                       <td className="py-4 px-4">
-                        {acc.status === 'Pending' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 text-xs font-extrabold border border-amber-200">
+                        {currentNormStatus === 'Pending' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 text-xs font-extrabold border border-amber-200 shadow-xs">
                             <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" /> Pending
                           </span>
                         ) : (
                           <button
-                            onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, acc.status || 'Active')}
+                            onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, currentNormStatus)}
                             disabled={isMasterAdmin}
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all ${
-                              acc.status === 'Active'
+                              currentNormStatus === 'Active'
                                 ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                                 : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
                             } ${isMasterAdmin ? 'cursor-default' : 'cursor-pointer'}`}
                             title={isMasterAdmin ? 'Master admin status cannot be changed' : 'Click to toggle active status'}
                           >
-                            {acc.status === 'Active' ? (
+                            {currentNormStatus === 'Active' ? (
                               <>
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Active
                               </>
@@ -842,10 +916,10 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       {/* Actions */}
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {acc.status === 'Pending' && (
+                          {currentNormStatus === 'Pending' && (
                             <button
                               onClick={() => handleApproveAccount(acc.username)}
-                              className="px-2.5 py-1 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-extrabold shadow-xs"
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-extrabold shadow-xs"
                               title="Approve user registration"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" /> Approve
@@ -885,8 +959,18 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             {filteredAccounts.map((acc) => {
               const isMasterAdmin = acc.username.toLowerCase() === 'admin';
               const isCurrent = acc.username.toLowerCase() === currentUsername.toLowerCase();
+              const currentNormStatus = normalizeStatus(acc.status);
+              const isRecentlyApproved = recentlyApprovedUsernames.includes(acc.username.toLowerCase());
+
               return (
-                <div key={acc.username} className="p-3.5 sm:p-4 space-y-3 hover:bg-slate-50/40 transition-colors min-w-0">
+                <div
+                  key={acc.username}
+                  className={`p-3.5 sm:p-4 space-y-3 transition-colors min-w-0 ${
+                    isRecentlyApproved
+                      ? 'bg-emerald-50/80 ring-2 ring-emerald-500/40 rounded-2xl'
+                      : 'hover:bg-slate-50/40'
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-2.5 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <UserAvatar user={acc} size="w-9 h-9" />
@@ -903,22 +987,33 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                               You
                             </span>
                           )}
+                          {isRecentlyApproved && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-0.5 shrink-0">
+                              <CheckCircle2 className="w-2.5 h-2.5" /> Approved
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-400 font-medium truncate">@{acc.username}</div>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, acc.status || 'Active')}
-                      disabled={isMasterAdmin}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all shrink-0 ${
-                        acc.status === 'Active'
-                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                          : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                      } ${isMasterAdmin ? 'cursor-default' : 'cursor-pointer'}`}
-                    >
-                      {acc.status === 'Active' ? 'Active' : 'Suspended'}
-                    </button>
+                    {currentNormStatus === 'Pending' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 text-xs font-extrabold border border-amber-200 shrink-0 shadow-xs">
+                        <Clock className="w-3 h-3 text-amber-600 animate-pulse" /> Pending
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => !isMasterAdmin && handleStatusToggle(acc.username, currentNormStatus)}
+                        disabled={isMasterAdmin}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all shrink-0 ${
+                          currentNormStatus === 'Active'
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                        } ${isMasterAdmin ? 'cursor-default' : 'cursor-pointer'}`}
+                      >
+                        {currentNormStatus === 'Active' ? 'Active' : 'Suspended'}
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -973,6 +1068,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0 border-t sm:border-0 border-slate-50">
+                      {currentNormStatus === 'Pending' && (
+                        <button
+                          onClick={() => handleApproveAccount(acc.username)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold shadow-xs shrink-0"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                        </button>
+                      )}
                       <button
                         onClick={() => openEditModal(acc)}
                         className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-bold border border-emerald-200/60 shrink-0"

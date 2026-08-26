@@ -1665,6 +1665,14 @@ export function getPublicBarangays(): string[] {
 }
 
 // User helper matching username or email
+export function normalizeUserStatus(status?: string): 'Active' | 'Pending' | 'Suspended' {
+  if (!status) return 'Active';
+  const s = status.trim().toLowerCase();
+  if (s.startsWith('pend')) return 'Pending';
+  if (s.startsWith('susp') || s.startsWith('inact') || s.startsWith('block') || s === 'disabled') return 'Suspended';
+  return 'Active';
+}
+
 export function findUser(input: string): User | undefined {
   if (!input) return undefined;
   const target = input.trim().toLowerCase();
@@ -1689,7 +1697,7 @@ export function getUsers() {
     fullName: u.fullName || u.displayName || u.username,
     barangay: u.barangay || 'Central',
     role: u.role || 'Staff',
-    status: u.status || 'Active',
+    status: normalizeUserStatus(u.status),
     createdAt: u.createdAt || new Date().toISOString(),
     displayName: u.displayName || u.fullName || '',
     avatarDataUrl: u.avatarDataUrl || '',
@@ -5398,7 +5406,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
     const colBarangay = getColIndex([/barangay/i, /address/i, /location/i], 6);
     const colStatus = getColIndex([/^status/i, /state/i], 7);
     const colCreatedAt = getColIndex([/created/i, /registered/i, /date/i], 8);
-    const colPasswordPlain = getColIndex([/plain\s*password/i, /^plain/i, /^password/i], 9);
+    const colPasswordPlain = getColIndex([/plain\s*password/i, /^plain/i, /^password$/i, /password_plain/i], 9);
     const colUpdatedAt = getColIndex([/updated/i, /modified/i], 10);
 
     const remoteUsers: User[] = [];
@@ -5413,7 +5421,8 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       const avatarDataUrl = row[colAvatar]?.trim() || '';
       const email = row[colEmail]?.trim() || '';
       const barangay = row[colBarangay]?.trim() || '';
-      const status = row[colStatus]?.trim() || 'Active';
+      const rawStatus = row[colStatus]?.trim();
+      const status = normalizeUserStatus(rawStatus);
       const createdAt = row[colCreatedAt]?.trim() || new Date().toISOString();
       const passwordPlain = row[colPasswordPlain]?.trim() || '';
       const updatedAt = row[colUpdatedAt]?.trim() || '';
@@ -5429,7 +5438,7 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         fullName: displayName || username,
         email: email || (username.includes('@') ? username : `${username}@clinic.gov.ph`),
         barangay: barangay || 'Central',
-        status: (status as any) || 'Active',
+        status: status || 'Active',
         createdAt,
         passwordPlain,
         updatedAt
@@ -5453,6 +5462,14 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
           const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : (local.createdAt ? new Date(local.createdAt).getTime() : 0);
           const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : (remote.createdAt ? new Date(remote.createdAt).getTime() : 0);
 
+          // If local user is already Active, do not revert to Pending during sheet sync
+          let statusToApply: 'Active' | 'Pending' | 'Suspended' = 'Active';
+          if (local.status === 'Active') {
+            statusToApply = (remote.status === 'Suspended' && remoteTime > localTime) ? 'Suspended' : 'Active';
+          } else {
+            statusToApply = (localTime > remoteTime) ? (local.status || remote.status || 'Active') : (remote.status || local.status || 'Active');
+          }
+
           if (localTime > remoteTime) {
             // Local user is strictly newer! Retain local user's fields, or fill from remote if local is blank
             mergedUsers.push({
@@ -5464,17 +5481,12 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
               passwordHash: local.passwordHash || remote.passwordHash,
               passwordPlain: local.passwordPlain || remote.passwordPlain,
               email: local.email || remote.email,
-              status: local.status || remote.status,
+              status: statusToApply,
               role: local.role || remote.role,
               updatedAt: local.updatedAt || new Date().toISOString()
             });
           } else {
             // Remote user is equal or newer!
-            // If local status was set to 'Active' by admin approval, do not downgrade to 'Pending' unless remote timestamp is strictly newer
-            const statusToApply = (local.status === 'Active' && remote.status === 'Pending' && localTime >= remoteTime)
-              ? 'Active'
-              : (remote.status || local.status || 'Active');
-
             mergedUsers.push({
               ...local,
               ...remote,
