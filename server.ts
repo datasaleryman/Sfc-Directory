@@ -761,11 +761,17 @@ export async function getApp() {
   app.post('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const { fullName, fileName, fileData, files } = req.body;
+      const { fullName, fileName, fileData, files, barangay, purok, latitude, longitude, geotagged } = req.body;
       const username = req.user?.username || 'Admin';
 
       if (files && Array.isArray(files) && files.length > 0) {
-        const contact = await addPCUUpdatesMultiple(id, fullName || 'Unknown Contact', files, username);
+        const contact = await addPCUUpdatesMultiple(id, fullName || 'Unknown Contact', files, username, {
+          barangay: typeof barangay === 'string' && barangay.trim() !== '' ? barangay.trim() : undefined,
+          purok: typeof purok === 'string' ? purok : undefined,
+          latitude: latitude !== undefined && latitude !== null ? parseFloat(latitude) : undefined,
+          longitude: longitude !== undefined && longitude !== null ? parseFloat(longitude) : undefined,
+          geotagged: geotagged !== undefined ? Boolean(geotagged) : undefined
+        });
         return res.json(contact);
       }
 

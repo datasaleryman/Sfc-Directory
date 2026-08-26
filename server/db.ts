@@ -5796,10 +5796,34 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
 }
 
 // Add multiple PCU updates for a contact (saves to Base44 PCUUpdate entity + locally)
-export async function addPCUUpdatesMultiple(contactId: number, fullName: string, files: { fileName: string; fileData: string }[], username: string) {
+export async function addPCUUpdatesMultiple(
+  contactId: number, 
+  fullName: string, 
+  files: { fileName: string; fileData: string }[], 
+  username: string,
+  options?: { barangay?: string; purok?: string; latitude?: number | null; longitude?: number | null; geotagged?: boolean }
+) {
   const contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
   if (!contact) {
     throw new Error('Contact record not found.');
+  }
+
+  if (options?.barangay !== undefined && options.barangay.trim() !== '') {
+    contact.barangay = options.barangay.trim();
+  }
+  if (options?.purok !== undefined && options.purok.trim() !== '') {
+    contact.purok = options.purok.trim();
+  }
+  if (options?.latitude !== undefined && options.latitude !== null && !isNaN(options.latitude)) {
+    contact.latitude = options.latitude;
+  }
+  if (options?.longitude !== undefined && options.longitude !== null && !isNaN(options.longitude)) {
+    contact.longitude = options.longitude;
+  }
+  if (options?.geotagged !== undefined) {
+    contact.geotagged = options.geotagged;
+  } else if (contact.latitude && contact.longitude) {
+    contact.geotagged = true;
   }
 
   const barangay = contact.barangay || '';
