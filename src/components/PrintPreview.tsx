@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Printer, X, Loader2, Activity, Search, Filter, Plus, Check, UserPlus, Save, ChevronLeft, ChevronRight, ArrowUpDown, ArrowDownAZ, ArrowUpZA, RotateCcw } from 'lucide-react';
+import { Printer, X, Loader2, Activity, Search, Plus, Check, UserPlus, Save, ChevronLeft, ChevronRight, ArrowUpDown, ArrowDownAZ, ArrowUpZA, RotateCcw } from 'lucide-react';
 
 export interface HouseholdItem {
   id: string | number;
@@ -62,8 +62,6 @@ const DEFAULT_BARANGAYS = [
   'SFC'
 ];
 
-const ALPHABET = ['ALL', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), '#'];
-
 export const PrintPreview: React.FC<PrintPreviewProps> = ({
   authToken,
   adminUser,
@@ -76,7 +74,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
   const [addingId, setAddingId] = useState<string | number | null>(null);
   const [datePrinted] = useState(() => new Date().toLocaleString());
 
-  // Barangay selection list
+  // Barangay selection list (used for manual contact addition)
   const [barangayList, setBarangayList] = useState<string[]>(DEFAULT_BARANGAYS);
 
   useEffect(() => {
@@ -90,11 +88,9 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
       .catch(() => {});
   }, []);
 
-  // Search, Filter, Alphabetical Sort, and Pagination States
+  // Search, Alphabetical Sort, and Pagination States
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedBarangay, setSelectedBarangay] = useState('all');
   const [alphabetSort, setAlphabetSort] = useState<'asc' | 'desc' | 'default'>('asc');
-  const [selectedLetter, setSelectedLetter] = useState<string>('ALL');
   const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(25);
 
   // Manual Add Contact Modal State
@@ -208,74 +204,16 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
     return result;
   }, [households]);
 
-  // Extract unique barangay names for the address filter dropdown
-  const uniqueBarangays = useMemo(() => {
-    const set = new Set<string>();
-    barangayList.forEach(b => {
-      if (b && b.trim()) set.add(b.trim().toUpperCase());
-    });
-    uniqueHouseholds.forEach(h => {
-      if (h && h.barangay) {
-        set.add(h.barangay.trim().toUpperCase());
-      }
-    });
-    return Array.from(set).sort();
-  }, [barangayList, uniqueHouseholds]);
-
-  // Count records per Barangay
-  const barangayCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    uniqueHouseholds.forEach(h => {
-      const bg = (h.barangay || '').trim().toUpperCase();
-      if (bg) {
-        counts[bg] = (counts[bg] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [uniqueHouseholds]);
-
-  // Count records per Letter based on current Barangay filter
-  const letterCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    const relevant = selectedBarangay === 'all'
-      ? uniqueHouseholds
-      : uniqueHouseholds.filter(h => (h.barangay || '').trim().toUpperCase() === selectedBarangay.trim().toUpperCase());
-
-    relevant.forEach(h => {
-      const firstChar = (h.full_name || '').trim().charAt(0).toUpperCase();
-      if (firstChar >= 'A' && firstChar <= 'Z') {
-        counts[firstChar] = (counts[firstChar] || 0) + 1;
-      } else if (firstChar) {
-        counts['#'] = (counts['#'] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [uniqueHouseholds, selectedBarangay]);
-
-  // Filter household records based on search query, selected barangay, and letter
+  // Filter household records based on search query and sort alphabetically
   const filteredHouseholds = useMemo(() => {
     let list = uniqueHouseholds.filter(item => {
-      const matchSearch = 
-        (item.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.contact_number || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.purok && item.purok.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (item.barangay && item.barangay.toLowerCase().includes(searchQuery.toLowerCase()));
-      
-      const matchAddress = 
-        selectedBarangay === 'all' || 
-        (item.barangay && item.barangay.trim().toUpperCase() === selectedBarangay.trim().toUpperCase());
-
-      let matchLetter = true;
-      if (selectedLetter !== 'ALL') {
-        const firstChar = (item.full_name || '').trim().charAt(0).toUpperCase();
-        if (selectedLetter === '#') {
-          matchLetter = !(firstChar >= 'A' && firstChar <= 'Z');
-        } else {
-          matchLetter = firstChar === selectedLetter;
-        }
-      }
-
-      return matchSearch && matchAddress && matchLetter;
+      const q = searchQuery.toLowerCase();
+      return (
+        (item.full_name || '').toLowerCase().includes(q) ||
+        (item.contact_number || '').toLowerCase().includes(q) ||
+        (item.purok && item.purok.toLowerCase().includes(q)) ||
+        (item.barangay && item.barangay.toLowerCase().includes(q))
+      );
     });
 
     // Apply Full Name Alphabetical Sorting
@@ -286,15 +224,15 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
     }
 
     return list;
-  }, [uniqueHouseholds, searchQuery, selectedBarangay, selectedLetter, alphabetSort]);
+  }, [uniqueHouseholds, searchQuery, alphabetSort]);
 
   // Pagination calculation
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Reset page to 1 whenever search query, selected barangay, letter, sort, or itemsPerPage changes
+  // Reset page to 1 whenever search query, sort, or itemsPerPage changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedBarangay, selectedLetter, alphabetSort, itemsPerPage]);
+  }, [searchQuery, alphabetSort, itemsPerPage]);
 
   const itemsPerPageNum = useMemo(() => {
     if (itemsPerPage === 'all') return Math.max(1, filteredHouseholds.length);
@@ -312,15 +250,13 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
     }
   }, [currentPage, totalPages]);
 
-  // Reset all active filters to default
+  // Reset active search & sort to default
   const handleResetFilters = () => {
     setSearchQuery('');
-    setSelectedBarangay('all');
-    setSelectedLetter('ALL');
     setAlphabetSort('asc');
   };
 
-  const hasActiveFilters = searchQuery !== '' || selectedBarangay !== 'all' || selectedLetter !== 'ALL' || alphabetSort !== 'asc';
+  const hasActiveFilters = searchQuery !== '' || alphabetSort !== 'asc';
 
   // Handle +Add List button click
   const handleAddToList = async (item: HouseholdItem) => {
@@ -375,7 +311,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
           <div className="space-y-1 text-center sm:text-left">
             <h4 className="font-bold text-slate-800 text-lg font-display">Patient Data List & Directory Extractor</h4>
             <p className="text-xs text-slate-500">
-              Filter by <strong className="text-emerald-700">Barangay</strong> and sort <strong className="text-emerald-700">Full Name Alphabetically</strong>. Click <strong className="text-emerald-700">Added List</strong> to save a patient record to the Directory.
+              Sorted <strong className="text-emerald-700">Full Name Alphabetically (A-Z)</strong>. Click <strong className="text-emerald-700">Added List</strong> to save a patient record to the Directory.
             </p>
           </div>
 
@@ -398,18 +334,18 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
           </div>
         </div>
 
-        {/* Live Search, Barangay Filter, and Alphabetical Controls */}
+        {/* Live Search & Alphabetical Controls */}
         {!loading && (
           <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
               {/* Search Input */}
-              <div className="relative sm:col-span-5">
+              <div className="relative sm:col-span-8">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                   <Search className="w-4 h-4" />
                 </span>
                 <input
                   type="text"
-                  placeholder="Search by full name, barangay, purok, or contact..."
+                  placeholder="Search by full name, barangay, purok, or contact number..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 placeholder-slate-400 transition-all"
@@ -424,30 +360,8 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 )}
               </div>
 
-              {/* Barangay Filter Dropdown */}
-              <div className="relative sm:col-span-4">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-emerald-600">
-                  <Filter className="w-4 h-4" />
-                </span>
-                <select
-                  value={selectedBarangay}
-                  onChange={(e) => setSelectedBarangay(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 appearance-none cursor-pointer transition-all"
-                >
-                  <option value="all">All Barangays ({uniqueHouseholds.length} Patients)</option>
-                  {uniqueBarangays.map((b) => (
-                    <option key={b} value={b}>
-                      {b} {barangayCounts[b] ? `(${barangayCounts[b]} patients)` : '(0)'}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400 text-[10px]">
-                  ▼
-                </span>
-              </div>
-
               {/* Full Name Alphabetical Sort */}
-              <div className="relative sm:col-span-3">
+              <div className="relative sm:col-span-4">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-indigo-600">
                   {alphabetSort === 'asc' ? <ArrowDownAZ className="w-4 h-4" /> : alphabetSort === 'desc' ? <ArrowUpZA className="w-4 h-4" /> : <ArrowUpDown className="w-4 h-4" />}
                 </span>
@@ -463,55 +377,6 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400 text-[10px]">
                   ▼
                 </span>
-              </div>
-            </div>
-
-            {/* A-Z Alphabet Quick Filter Bar */}
-            <div className="pt-2 border-t border-slate-200/60">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <ArrowDownAZ className="w-3.5 h-3.5 text-emerald-600" />
-                  Filter by Name Initial Letter:
-                </span>
-                {hasActiveFilters && (
-                  <button
-                    onClick={handleResetFilters}
-                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer hover:underline"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    Reset All Filters
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1 items-center">
-                {ALPHABET.map((char) => {
-                  const isSelected = selectedLetter === char;
-                  const count = char === 'ALL' ? uniqueHouseholds.length : (letterCounts[char] || 0);
-                  const isDisabled = char !== 'ALL' && count === 0;
-
-                  return (
-                    <button
-                      key={char}
-                      disabled={isDisabled}
-                      onClick={() => setSelectedLetter(char)}
-                      className={`px-2 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-700 text-white shadow-xs scale-105'
-                          : isDisabled
-                          ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300'
-                      }`}
-                      title={char === 'ALL' ? 'Show All Names' : `${char}: ${count} patient${count === 1 ? '' : 's'}`}
-                    >
-                      {char}
-                      {char !== 'ALL' && count > 0 && (
-                        <span className={`ml-1 text-[9px] font-semibold px-1 rounded ${isSelected ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
               </div>
             </div>
 
@@ -533,15 +398,14 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
               </div>
 
               <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                {selectedBarangay !== 'all' && (
-                  <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 text-[11px]">
-                    Barangay: {selectedBarangay}
-                  </span>
-                )}
-                {selectedLetter !== 'ALL' && (
-                  <span className="bg-indigo-50 text-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-200 text-[11px]">
-                    Initial: {selectedLetter}
-                  </span>
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleResetFilters}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer hover:underline mr-2"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset Filters
+                  </button>
                 )}
                 <span className="bg-emerald-100/70 text-emerald-900 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
@@ -590,9 +454,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
               </div>
               <div className="space-y-0.5 text-right">
                 <p>Selection: <strong className="text-slate-800 font-semibold">
-                  {selectedBarangay === 'all' ? 'All Barangays' : `Barangay: ${selectedBarangay}`}
-                  {alphabetSort === 'asc' ? ' • Sorted A-Z' : alphabetSort === 'desc' ? ' • Sorted Z-A' : ''}
-                  {selectedLetter !== 'ALL' ? ` (Letter: ${selectedLetter})` : ''}
+                  {alphabetSort === 'asc' ? 'All Patients • Sorted A-Z' : alphabetSort === 'desc' ? 'All Patients • Sorted Z-A' : 'All Patients'}
                 </strong></p>
                 <p>Page: <strong className="text-slate-900 font-bold bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded border border-emerald-200 text-xs">Page {currentPage} of {totalPages}</strong></p>
               </div>
@@ -621,7 +483,7 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
                 {filteredHouseholds.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-400 font-medium border border-slate-300">
-                      No patient records matched the specified search, barangay, and alphabetical filters.
+                      No patient records matched the specified search and filter criteria.
                     </td>
                   </tr>
                 ) : (
