@@ -27,6 +27,7 @@ import {
   requestPasswordResetPIN,
   verifyAndResetPassword,
   getSheetsConfig,
+  getSheetsStatus,
   saveSheetsConfig,
   syncWithGoogleSheets,
   getSiteSettings,
@@ -886,6 +887,16 @@ export async function getApp() {
   });
 
   // --- Google Sheets Integration Endpoints ---
+
+  // Get Google Sheets Status
+  app.get('/api/sheets/status', (req: Request, res: Response) => {
+    try {
+      const status = getSheetsStatus();
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Get Google Sheets configuration
   app.get('/api/sheets/config', requireAuth, (req: AuthenticatedRequest, res: Response) => {

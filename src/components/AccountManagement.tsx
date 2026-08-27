@@ -258,14 +258,20 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
     setCreating(true);
     try {
-      const res = await fetch('/api/auth/register', {
+      const endpoint = authToken ? '/api/users/add' : '/api/auth/register';
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           fullName: regFullName.trim(),
-          email: regEmail.trim(),
+          email: regEmail.trim().toLowerCase(),
           password: regPassword.trim(),
           barangay: regBarangay.trim(),
           role: regRole
@@ -277,12 +283,12 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         throw new Error(data.error || 'Failed to register account.');
       }
 
-      showToast(`User account for "${regFullName}" registered and saved to Google Sheets!`, 'success');
+      showToast(data.message || `User account for "${regFullName}" successfully created and saved permanently to Google Sheets!`, 'success');
       setRegFullName('');
       setRegEmail('');
       setRegPassword('');
       setIsAddModalOpen(false);
-      fetchAccounts();
+      await fetchAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {

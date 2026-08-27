@@ -1,5 +1,95 @@
 [
   {
+    "id": "45d3d9c7-8e78-48db-8c47-deb46dc616fe",
+    "timestamp": "2026-08-27T00:11:59.714Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "94221b6c-84f1-4656-858b-5d1822897ca8",
+    "timestamp": "2026-08-27T00:11:54.248Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "75cb766f-771c-48a0-8af2-c91cbdbc1532",
+    "timestamp": "2026-08-27T00:09:56.043Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "eeb5614b-8297-446d-81b8-fc74e0ef5401",
+    "timestamp": "2026-08-27T00:09:56.043Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "f8b92a53-4fcc-49d2-8f6c-ff3689fb82dd",
+    "timestamp": "2026-08-27T00:09:56.029Z",
+    "username": "Live Load/Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "f367067c-12eb-4277-b377-ecb740cf0536",
+    "timestamp": "2026-08-27T00:09:44.656Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "35760a92-5fb2-4e4a-95e9-3c195352529b",
+    "timestamp": "2026-08-27T00:03:17.069Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "5bf46b8c-841b-485b-97ac-4a6be6bf3dc3",
+    "timestamp": "2026-08-27T00:03:17.063Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "57d8dddc-d331-46a5-aba6-2997fc3b2f49",
+    "timestamp": "2026-08-27T00:03:11.181Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "1eeafc81-5128-410c-adfb-37bfebee9b41",
+    "timestamp": "2026-08-27T00:03:11.181Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "ec9cde2f-3da4-4009-9e7b-1d86ecd5c11f",
+    "timestamp": "2026-08-27T00:03:11.172Z",
+    "username": "Live Load/Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "2182eb79-3d19-4eee-bd11-7425f636c40c",
+    "timestamp": "2026-08-27T00:02:58.089Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "18e6fdd8-47c5-42f4-a55a-c016cef0ba2a",
+    "timestamp": "2026-08-27T00:01:48.920Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "db77088b-98c8-4203-a6cd-cdf128fd618a",
+    "timestamp": "2026-08-27T00:00:41.465Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "4c997ea8-8e5f-47aa-ac60-ea46528888d0",
+    "timestamp": "2026-08-26T23:56:42.044Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
     "id": "1d1531e1-c406-4a30-bbb2-8e453a6d84cc",
     "timestamp": "2026-07-25T06:18:48.166Z",
     "username": "System Background Sync",

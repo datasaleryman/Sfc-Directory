@@ -232,6 +232,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   }, [authToken]);
 
+  useEffect(() => {
+    if (activeSettingsTab === 'addAccount' && authToken) {
+      fetchAccounts();
+    }
+  }, [activeSettingsTab, authToken]);
+
   // Handle Add Account submit
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,6 +298,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         ...data.user,
         plainPassword: newPassword.trim()
       });
+
+      // Optimistically add to accountsList immediately to guarantee it is displayed permanently
+      if (data.user) {
+        setAccountsList(prev => {
+          const filtered = prev.filter(
+            acc => (acc.email && data.user.email && acc.email.toLowerCase() !== data.user.email.toLowerCase()) &&
+                   (acc.username && data.user.username && acc.username.toLowerCase() !== data.user.username.toLowerCase())
+          );
+          return [data.user, ...filtered];
+        });
+      }
 
       // Clear input fields
       setNewFullName('');

@@ -400,6 +400,63 @@ export interface SheetsConfig {
   webAppUrl: string;
 }
 
+export function normalizeSheetsConfig(config: Partial<SheetsConfig>): SheetsConfig {
+  let authType = config.authType || 'serviceAccount';
+  let apiKey = (config.apiKey || '').trim();
+  let clientEmail = (config.clientEmail || '').trim() || 'sfc-contact-data@sfcpayroll.iam.gserviceaccount.com';
+  let privateKey = (config.privateKey || '').trim();
+  let spreadsheetId = (config.spreadsheetId || '').trim();
+  let sheetName = (config.sheetName || '').trim() || 'Sheet1';
+  let syncEnabled = config.syncEnabled !== false;
+  let webAppUrl = (config.webAppUrl || '').trim();
+
+  // Extract Spreadsheet ID from URL if full URL is supplied
+  const urlMatch = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (urlMatch) {
+    spreadsheetId = urlMatch[1];
+  }
+
+  // Auto-detect if JSON service account key or private key was supplied in apiKey
+  if (apiKey.includes('BEGIN PRIVATE KEY') || apiKey.includes('private_key') || apiKey.startsWith('{')) {
+    if (!privateKey || apiKey.includes('BEGIN PRIVATE KEY')) {
+      privateKey = apiKey;
+      apiKey = '';
+      authType = 'serviceAccount';
+    }
+  }
+
+  // Auto-detect if full JSON credentials were provided in privateKey
+  if (privateKey.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(privateKey);
+      if (parsed.private_key) privateKey = parsed.private_key.trim();
+      if (parsed.client_email) clientEmail = parsed.client_email.trim();
+      authType = 'serviceAccount';
+    } catch (e) {}
+  }
+
+  // If private key is present, ensure Service Account is used
+  if (privateKey.includes('BEGIN PRIVATE KEY') || privateKey.length > 200) {
+    authType = 'serviceAccount';
+    if (!clientEmail) {
+      clientEmail = 'sfc-contact-data@sfcpayroll.iam.gserviceaccount.com';
+    }
+  } else if (apiKey && !privateKey) {
+    authType = 'apiKey';
+  }
+
+  return {
+    authType,
+    apiKey,
+    clientEmail,
+    privateKey,
+    spreadsheetId,
+    sheetName,
+    syncEnabled,
+    webAppUrl
+  };
+}
+
 // In-memory caches for fast sorting, searching, and filtering
 let contactsCache: Contact[] = [];
 let activitiesCache: Activity[] = [];
@@ -411,9 +468,9 @@ let sheetsConfig: SheetsConfig = {
   apiKey: '',
   clientEmail: 'sfc-contact-data@sfcpayroll.iam.gserviceaccount.com',
   privateKey: '',
-  spreadsheetId: '',
+  spreadsheetId: '1cgkalsSO_iY14vSGVN7UL3ORR76rsYw-edI2coLp9PQ',
   sheetName: 'Sheet1',
-  syncEnabled: false,
+  syncEnabled: true,
   webAppUrl: ''
 };
 
@@ -435,7 +492,7 @@ function sanitizeRowsForSheets(rows: any[][]): any[][] {
 function isConfigCorrect(): boolean {
   return !!(
     sheetsConfig.spreadsheetId && 
-    ((sheetsConfig.clientEmail && sheetsConfig.privateKey) || sheetsConfig.apiKey)
+    ((sheetsConfig.clientEmail && (sheetsConfig.privateKey || process.env.GOOGLE_SHEETS_API_KEY || process.env.GOOGLE_PRIVATE_KEY || process.env.PRIVATE_KEY)) || sheetsConfig.apiKey)
   );
 }
 
@@ -910,16 +967,7 @@ export async function initDb() {
       try {
         const content = fs.readFileSync(SHEETS_CONFIG_FILE, 'utf-8');
         const parsed = JSON.parse(content);
-        sheetsConfig = {
-          authType: parsed.authType || 'apiKey',
-          apiKey: unescapeHtml(parsed.apiKey || ''),
-          clientEmail: unescapeHtml(parsed.clientEmail || ''),
-          privateKey: unescapeHtml(parsed.privateKey || ''),
-          spreadsheetId: unescapeHtml(parsed.spreadsheetId || ''),
-          sheetName: unescapeHtml(parsed.sheetName || 'Sheet1'),
-          syncEnabled: parsed.syncEnabled !== false,
-          webAppUrl: unescapeHtml(parsed.webAppUrl || '')
-        };
+        sheetsConfig = normalizeSheetsConfig(parsed);
       } catch (e) {
         console.error('Error parsing sheets config:', e);
       }
@@ -1003,30 +1051,36 @@ export async function initDb() {
     }
 
     // Merge or override with environment variables if provided
-    if (process.env.GOOGLE_SHEETS_API_KEY) {
-      sheetsConfig.apiKey = unescapeHtml(process.env.GOOGLE_SHEETS_API_KEY);
-    }
-    if (process.env.SPREADSHEET_ID) {
-      sheetsConfig.spreadsheetId = unescapeHtml(process.env.SPREADSHEET_ID);
-    }
-    if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL || process.env.CLIENT_EMAIL) {
-      sheetsConfig.clientEmail = unescapeHtml(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL || process.env.CLIENT_EMAIL || '');
-    }
-    if (process.env.GOOGLE_PRIVATE_KEY || process.env.PRIVATE_KEY) {
-      sheetsConfig.privateKey = unescapeHtml(process.env.GOOGLE_PRIVATE_KEY || process.env.PRIVATE_KEY || '');
+    let envApiKey = process.env.GOOGLE_SHEETS_API_KEY ? unescapeHtml(process.env.GOOGLE_SHEETS_API_KEY) : '';
+    let envSpreadsheetId = process.env.SPREADSHEET_ID ? unescapeHtml(process.env.SPREADSHEET_ID) : (process.env.GOOGLE_SPREADSHEET_ID ? unescapeHtml(process.env.GOOGLE_SPREADSHEET_ID) : '');
+    let envClientEmail = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL || process.env.CLIENT_EMAIL) ? unescapeHtml(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.SERVICE_ACCOUNT_EMAIL || process.env.CLIENT_EMAIL || '') : '';
+    let envPrivateKey = (process.env.GOOGLE_PRIVATE_KEY || process.env.PRIVATE_KEY) ? unescapeHtml(process.env.GOOGLE_PRIVATE_KEY || process.env.PRIVATE_KEY || '') : '';
+
+    if (envApiKey.includes('BEGIN PRIVATE KEY') || envApiKey.includes('private_key') || envApiKey.trim().startsWith('{')) {
+      if (!envPrivateKey) {
+        envPrivateKey = envApiKey;
+        envApiKey = '';
+      }
     }
 
-    // Determine authType based on environment or loaded values
-    if (sheetsConfig.clientEmail && sheetsConfig.privateKey) {
-      sheetsConfig.authType = 'serviceAccount';
-    } else if (sheetsConfig.apiKey) {
-      sheetsConfig.authType = 'apiKey';
-    }
+    sheetsConfig = normalizeSheetsConfig({
+      ...sheetsConfig,
+      apiKey: envApiKey || sheetsConfig.apiKey,
+      spreadsheetId: envSpreadsheetId || sheetsConfig.spreadsheetId || '1cgkalsSO_iY14vSGVN7UL3ORR76rsYw-edI2coLp9PQ',
+      clientEmail: envClientEmail || sheetsConfig.clientEmail || 'sfc-contact-data@sfcpayroll.iam.gserviceaccount.com',
+      privateKey: envPrivateKey || sheetsConfig.privateKey,
+      syncEnabled: true
+    });
 
-    // Automatically enable synchronization/connection if we have a spreadsheetId
-    if (sheetsConfig.spreadsheetId) {
+    if (sheetsConfig.spreadsheetId && ((sheetsConfig.clientEmail && sheetsConfig.privateKey) || sheetsConfig.apiKey)) {
       sheetsConfig.syncEnabled = true;
+      markSheetsConnected();
     }
+
+    // Persist sheets config
+    try {
+      safeWriteFileSync(SHEETS_CONFIG_FILE, JSON.stringify(sheetsConfig, null, 2), 'utf-8');
+    } catch (e) {}
 
     // Ensure all Base44 JSON Cache files exist on disk to prevent read-only filesystem crash or empty fallback failures
     const base44Caches = [HOUSEHOLDS_CACHE_FILE, PCUS_CACHE_FILE, MEMBER_VERIFIED_CACHE_FILE, MESSAGES_CACHE_FILE];
@@ -4386,21 +4440,13 @@ export function getSheetsConfig(): SheetsConfig {
 }
 
 export async function saveSheetsConfig(config: SheetsConfig, username: string) {
-  sheetsConfig = {
-    authType: config.authType || 'apiKey',
-    apiKey: config.apiKey?.trim() || '',
-    clientEmail: config.clientEmail?.trim() || '',
-    privateKey: config.privateKey?.trim() || '',
-    spreadsheetId: config.spreadsheetId?.trim() || '',
-    sheetName: config.sheetName?.trim() || 'Sheet1',
-    syncEnabled: !!config.syncEnabled,
-    webAppUrl: config.webAppUrl?.trim() || ''
-  };
+  sheetsConfig = normalizeSheetsConfig(config);
   resetGoogleSheetsCooldown();
   await safeWriteFile(SHEETS_CONFIG_FILE, JSON.stringify(sheetsConfig, null, 2), 'utf-8');
   await addActivity(username, `Updated Google Sheets Database settings (Auth: ${sheetsConfig.authType}, Sync: ${sheetsConfig.syncEnabled ? 'ENABLED' : 'DISABLED'})`);
 
   if (sheetsConfig.syncEnabled) {
+    markSheetsConnected();
     try {
       const settingsPulled = await pullSiteSettingsFromGoogleSheets();
       if (!settingsPulled) {
@@ -4974,12 +5020,6 @@ export async function syncAdminsToGoogleSheets(force = false) {
       existingSheets.add(adminSheetName);
     }
 
-    // Clear the sheet first to write the fresh state
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `${adminSheetName}!A:Z`
-    });
-
     // Ensure master admin is always in usersCache
     const hasAdmin = usersCache.some(u => u.username.toLowerCase() === 'admin');
     if (!hasAdmin) {
@@ -5001,7 +5041,7 @@ export async function syncAdminsToGoogleSheets(force = false) {
     // Filter out any tombstoned accounts before writing
     const activeNonDeletedUsers = usersCache.filter(u => !isUserTombstoned(u.username, u.email));
 
-    // Write headers and data
+    // Write headers and data first to ensure no empty sheet window
     const headers = ['Username', 'Password Hash (SHA-256)', 'Role', 'Display Name', 'Avatar Data URL', 'Email', 'Barangay', 'Status', 'Created At', 'Plain Password', 'Updated At'];
     const rowsToPut = [
       headers,
@@ -5028,6 +5068,17 @@ export async function syncAdminsToGoogleSheets(force = false) {
         values: sanitizeRowsForSheets(rowsToPut)
       }
     });
+
+    // Clear any extra rows below the written data
+    try {
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: `${adminSheetName}!A${rowsToPut.length + 1}:K500`
+      });
+    } catch (clearErr) {
+      // Benign if range does not exist
+    }
+
     console.log('[Google Sheets] Synchronized administrators list successfully! Total accounts saved:', activeNonDeletedUsers.length);
   } catch (err: any) {
     console.error('Failed to sync administrators to Google Sheets:', err.message || err);
@@ -5775,11 +5826,28 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
         }
       }
 
+      // Also ensure any users from disk USERS_FILE are included in local candidates
+      let diskUsers: User[] = [];
+      try {
+        if (fs.existsSync(USERS_FILE)) {
+          const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+          diskUsers = JSON.parse(raw);
+        }
+      } catch (e) {}
+
+      const allLocalCandidates = [...usersCache];
+      for (const du of diskUsers) {
+        if (du && du.username && !allLocalCandidates.some(u => u.username.toLowerCase() === du.username.toLowerCase() || (u.email && du.email && u.email.toLowerCase() === du.email.toLowerCase()))) {
+          allLocalCandidates.push(du);
+        }
+      }
+
       // Preserve any local users not present in remote sheet (except tombstoned ones)!
       let hasLocalOnlyUsers = false;
-      for (const localUser of usersCache) {
+      for (const localUser of allLocalCandidates) {
         if (isUserTombstoned(localUser.username, localUser.email)) continue;
-        const isMatched = matchedUsernames.has(localUser.username.toLowerCase());
+        const isMatched = matchedUsernames.has(localUser.username.toLowerCase()) ||
+          (localUser.email ? matchedUsernames.has(localUser.email.toLowerCase()) : false);
         const existsInMerged = mergedUsers.some(
           u => u.username.toLowerCase() === localUser.username.toLowerCase() ||
                (u.email && localUser.email && u.email.toLowerCase() === localUser.email.toLowerCase())

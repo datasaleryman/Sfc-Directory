@@ -1,0 +1,10 @@
+{
+  "authType": "serviceAccount",
+  "apiKey": "",
+  "clientEmail": "sfc-contact-data@sfcpayroll.iam.gserviceaccount.com",
+  "privateKey": "-----BEGIN PRIVATE KEY-----\\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDOolmKCEXtTmxA\\n4ZZUUyZK/8CgZveXFA2WMrhRwPdAyetnRS2xaTja7pbO2x+Si49gzTYc6jrLNR2U\\nOEHfC8s/gI2r8gXvwaHvd28xjHHbJK9A9VnVlwh0aJYE8VY7hNwIwZQvZdNiPe5U\\nnoqXus7Y8vEV+trLJebMwLFaFZM8cDsaSoZIHK+TdMw20qcmV8p0ZPYZSZJ4R2vf\\nSFhQWw+oXM+3UU4XEUt2UQiU5s/oQ4UQgADeGoiDPDy9f5lGJB1w/PM55d8fwAIv\\nliHvH80djtqrVd4x0r4dd8hFveop/SuodfE1Q3JLKZUg1VM1NWu0/8p5rltKlgOL\\nIjtd+K+BAgMBAAECggEAB+fVd+ba4QpG8UEIPrvrK0Onb6Oc3aR8ZBaW73bL5uhK\\nx7nRdpgNXy/xaGLhDXrmLoiPZVIPU4q50dvIpmNVwH1XPkC9WifM/aPSxuEmEoGv\\n7FLuv9GeVtDRC4mduFt8DSA13o3dZWTz7zwdFpLEuu9piqMdN5hAwSzupCEO7+kU\\nMaIoIv+//VLjW5hVU8f9Jmr+As2LqR/SQztwpY2CecWxGvyDYfW49KmNzsHqKwD0\\nOlqHxxiA2ifUV+ZCD+/yG/gRtoht5kM5a5BKdmSEV0I2Y2SF/4OOyjxCr5TiWTfe\\ndjQbDkK/+xqIrvZa8ybyKxr72w2042xrwOnm/JqfaQKBgQD00wZqQ1oC27XrLFrs\\nsikfXJ4C0JoCHnbcJm7EtrXE6kYSYMBZiZ6xoRONuu6DWV7YgnhhMlp2FiUznRr4\\nOmB0WxDK6VG7nVM6U8gmgGX/JGUYHCJphdJ0AtClZXnZFQnd2cs4KMhdgmpz6e0p\\nPWCRqWmdedfyLjmii54ekKSdiQKBgQDYEQqTIGCCAeUFG+g1+1DqrzakE3/S2dKq\\nffTcsN609dfb9l1Bb4jkgSXl69pQrQ0OVYRp0ExpgAyO0HcCwpWLnQGrQkHuOEaa\\nRILL5kkdXYIPeue1p2nq/qJljMe683ce4q8jPsI+sqqNlHn7lsWK4Anoo/E3qz35\\nQdA2OVm8OQKBgAxgUpWym+1DEBo4XsxSYVPNictYokBzK80LQFQ/bEbtFOe+7lpY\\nY6ZVHzjt9zq6nNnTFqTLN9l6Wx0V1xQvV0rqg5nOW6xhUqDDNX4ExaM1QssKOQ8e\\njboBnmyOCa/YqWwGo4hOP3rCqgD8FVodWTFj4Avu6eS7Q3ydFDw1Ua0JAoGBAIEF\\n1Bm9SMP5m6fsXUL2+v/ZdziNSFRBrJIQuwqaN7M55xe7yz5K+yTwlg/xQiHQ5K39\\nlR+Wujp5s4YIqDimt6RyMk/xNeuqAUcXyD84GcsGTqctznXkLdSdD56ybYaO4kA4\\nPzs9u8Ky8DOxSRJam0XtuR0J4P5MLKrOiSYIIzTJAoGBAO4yQkLAznjIYjnzdnma\\nOi7omaZEmDW6g23bqRqXVHEDyT5t42eI2LIKaVNGjGaGx5RyCiItc+S5Z2jJhDxV\\n5yqVG8c/Alv+cRHNWCKX+I19P0clA/Ntpg02dtagx6EmMOzT7ANzg10FdJVkYSW7\\noWH70c/IzBXJrH6AcQmnGZRk\\n-----END PRIVATE KEY-----\\n",
+  "spreadsheetId": "1cgkalsSO_iY14vSGVN7UL3ORR76rsYw-edI2coLp9PQ",
+  "sheetName": "Sheet1",
+  "syncEnabled": true,
+  "webAppUrl": ""
+}

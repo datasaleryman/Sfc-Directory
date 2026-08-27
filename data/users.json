@@ -1,5 +1,19 @@
 [
   {
+    "username": "jadausandanica",
+    "passwordHash": "7d260a131241403f9899f5d8bc720ab3676b4fc93288b66f1b8b9dc041e5e57a",
+    "role": "Leader",
+    "displayName": "Danica Jadausan",
+    "avatarDataUrl": "",
+    "fullName": "Danica Jadausan",
+    "email": "jadausandanica@gmail.com",
+    "barangay": "BALINTAWAK",
+    "status": "Active",
+    "createdAt": "2026-08-27T00:02:16.253Z",
+    "passwordPlain": "jadausan100802",
+    "updatedAt": "2026-08-27T00:02:16.253Z"
+  },
+  {
     "username": "admin",
     "passwordHash": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
     "role": "Administrator",
@@ -894,6 +908,34 @@
     "createdAt": "2026-08-22T06:48:50.931Z",
     "passwordPlain": "4598e96f59fee29c51a48074e748a7a1e7d16f67a64ecc6f1dcac33efb06ebaf",
     "updatedAt": "2026-08-24T10:59:02.825Z"
+  },
+  {
+    "username": "etangmark531",
+    "passwordHash": "96f74c390fab4edec7eb64779bc2afe7dcf47ee860732f0ccbd7cc8f985300e9",
+    "role": "Leader",
+    "displayName": "Mark Ian Malinao Etang",
+    "avatarDataUrl": "",
+    "fullName": "Mark Ian Malinao Etang",
+    "email": "etangmark531@gmail.com",
+    "barangay": "BALINTAWAK",
+    "status": "Active",
+    "createdAt": "2026-08-27T00:01:30.213Z",
+    "passwordPlain": "may302001",
+    "updatedAt": "2026-08-27T00:01:30.213Z"
+  },
+  {
+    "username": "joeramil0815",
+    "passwordHash": "f8f3bc29b0c195b3df2e982bf3ca818983ff813222bd533b4cfaeca0ec47d7e2",
+    "role": "Leader",
+    "displayName": "Ramil Matalines Joe",
+    "avatarDataUrl": "",
+    "fullName": "Ramil Matalines Joe",
+    "email": "joeramil0815@gmail.com",
+    "barangay": "BALINTAWAK",
+    "status": "Active",
+    "createdAt": "2026-08-27T00:01:05.112Z",
+    "passwordPlain": "joeramil16",
+    "updatedAt": "2026-08-27T00:01:05.112Z"
   },
   {
     "username": "testprogram",
