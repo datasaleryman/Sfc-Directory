@@ -1,5 +1,89 @@
 [
   {
+    "id": "f29845a3-3bfd-41a0-8794-2db57d2e29c8",
+    "timestamp": "2026-08-27T00:47:14.614Z",
+    "username": "test",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "8a0fcfa3-f9ea-4106-8d69-ace2926d3e0a",
+    "timestamp": "2026-08-27T00:45:39.865Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "075b5742-67af-4d00-9070-65785710f423",
+    "timestamp": "2026-08-27T00:45:39.853Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "db77e63e-f785-4646-810a-5c5c2b20d671",
+    "timestamp": "2026-08-27T00:45:36.238Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "5d29e119-2e80-4aad-81aa-82067c851f46",
+    "timestamp": "2026-08-27T00:45:36.232Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "378c7188-7384-454a-8695-5c975dbb9b5f",
+    "timestamp": "2026-08-27T00:45:34.103Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "c16b55d5-e130-4d67-8015-5d2a8a9b6614",
+    "timestamp": "2026-08-27T00:45:34.070Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "b85ad0e1-d56a-4b67-8cc8-9513accdec8c",
+    "timestamp": "2026-08-27T00:44:46.936Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "1449c6c0-dcac-4255-bd84-9496099d19f8",
+    "timestamp": "2026-08-27T00:44:46.936Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "ba2a969d-d14e-4925-a9fa-3bae3ed1244c",
+    "timestamp": "2026-08-27T00:44:46.936Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "d53ba4b8-7635-404b-ab4f-f1a10475ae8b",
+    "timestamp": "2026-08-27T00:44:46.936Z",
+    "username": "admin",
+    "action": "Manually synchronized clinic directory with Base44 Database."
+  },
+  {
+    "id": "751b537a-ded3-4496-a142-674a350c667a",
+    "timestamp": "2026-08-27T00:44:46.923Z",
+    "username": "Live Load/Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
+    "id": "d09d6eb8-218f-4977-b964-7858fe423b6b",
+    "timestamp": "2026-08-27T00:44:34.015Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "ce84445a-6539-48ab-8bf0-06dd24416ebe",
+    "timestamp": "2026-08-27T00:44:18.167Z",
+    "username": "System Background Sync",
+    "action": "Synchronized 1149 contacts from Google Sheet."
+  },
+  {
     "id": "45d3d9c7-8e78-48db-8c47-deb46dc616fe",
     "timestamp": "2026-08-27T00:11:59.714Z",
     "username": "admin",

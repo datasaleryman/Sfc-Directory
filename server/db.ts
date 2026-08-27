@@ -2813,8 +2813,8 @@ export async function getContacts(params: {
 
   const filterBarangay = barangay || address;
 
-  // Only query active (non-soft-deleted) contacts that have NOT yet uploaded a PCU file
-  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
+  // Query all active (non-soft-deleted) contacts
+  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
 
   // Get ALL unique barangays from Google Sheet database (getBarangayList) + contactsCache
   const rawBarangaysList: string[] = [];
@@ -2831,7 +2831,7 @@ export async function getContacts(params: {
 
   // 2. Add any barangay from active contacts in contactsCache
   contactsCache.forEach(c => {
-    if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && c.barangay && c.barangay.trim()) {
+    if (!c.deleted_at && (c.added_from_print_list !== false) && c.barangay && c.barangay.trim()) {
       rawBarangaysList.push(c.barangay.trim());
     }
   });
@@ -2842,7 +2842,6 @@ export async function getContacts(params: {
   const noAddressContacts = contactsCache.filter(c => 
     !c.deleted_at && 
     (c.added_from_print_list !== false) && 
-    !c.pcu_file_url && 
     (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
   );
 
@@ -2854,7 +2853,7 @@ export async function getContacts(params: {
   const allPuroksSet = new Set<string>();
   let hasNoPurokContacts = false;
   contactsCache.forEach(c => {
-    if (!c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url) {
+    if (!c.deleted_at && (c.added_from_print_list !== false)) {
       if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
         allPuroksSet.add(c.purok.trim());
       } else {
@@ -2921,7 +2920,7 @@ export async function getContacts(params: {
 
   // Compute folder statistics for each barangay
   let barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url && isBarangayMatch(c.barangay, bg));
+    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -2967,7 +2966,7 @@ export async function getContacts(params: {
   let purokFolders = allPuroks.map(purok => {
     const isNoPurok = purok === 'No Purok';
     const pContacts = contactsCache.filter(c => {
-      if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+      if (c.deleted_at || (c.added_from_print_list === false)) return false;
       if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
         if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
           if (c.barangay && c.barangay.trim() && c.barangay.trim().toLowerCase() !== 'no address' && c.barangay.trim().toLowerCase() !== 'no barangay') return false;
@@ -3004,7 +3003,7 @@ export async function getContacts(params: {
       if (f.barangay.toLowerCase().includes(term)) return true;
       // 2. OR any active contact in this folder matches search query
       return contactsCache.some(c => {
-        if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+        if (c.deleted_at || (c.added_from_print_list === false)) return false;
         
         const matchesFolder = f.barangay.toUpperCase() === 'NO ADDRESS'
           ? (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
@@ -3022,7 +3021,7 @@ export async function getContacts(params: {
       if (f.purok.toLowerCase().includes(term)) return true;
       // 2. OR any active contact in this folder matches search query
       return contactsCache.some(c => {
-        if (c.deleted_at || (c.added_from_print_list === false) || c.pcu_file_url) return false;
+        if (c.deleted_at || (c.added_from_print_list === false)) return false;
         
         if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
           const isNoAddressFolder = filterBarangay.toUpperCase() === 'NO ADDRESS';
@@ -3039,7 +3038,8 @@ export async function getContacts(params: {
         if (!matchesPurok) return false;
 
         return (c.full_name || '').toLowerCase().includes(term) ||
-               (c.contact_number || '').includes(term);
+               (c.contact_number || '').includes(term) ||
+               (c.purok || '').toLowerCase().includes(term);
       });
     });
   }
@@ -3075,7 +3075,7 @@ export function getAllFilteredContacts(params: {
   syncPCUFieldsToCache();
 
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && !c.pcu_file_url);
+  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
@@ -3997,7 +3997,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
 
 // Dashboard statistics
 export function getDashboardStats() {
-  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list === true && !c.pcu_file_url);
+  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list !== false);
   
   // Total Contacts
   const totalContacts = activeContacts.length;
@@ -4685,7 +4685,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
 
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `${sheetName}!A:Z`
+        range: `'${sheetName}'`
       });
       rows = (res.data.values || []) as string[][];
     } catch (err: any) {
@@ -4757,25 +4757,37 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   const headers = rows[0].map(h => (h || '').toString().trim().toLowerCase());
 
   // Check if rows[0] is actually a header row or a data row.
-  // A header row is highly likely to contain at least one of these standard keywords.
   const isHeaderRow = headers.some(h => {
     const clean = h.replace(/[^a-z0-9]/g, '');
-    return ['id', 'name', 'fullname', 'full_name', 'address', 'barangay', 'purok', 'phone', 'phonenumber', 'contact', 'contactnumber', 'contact_number', 'createdat', 'created_at', 'updatedat', 'updated_at', 'created', 'updated', 'date'].includes(clean);
+    return ['id', 'name', 'fullname', 'full_name', 'address', 'barangay', 'purok', 'phone', 'phonenumber', 'contact', 'contactnumber', 'contact_number', 'createdat', 'created_at', 'updatedat', 'updated_at', 'created', 'updated', 'date', 'latitude', 'longitude', 'status'].includes(clean);
   });
+
+  const findCol = (keywords: string[]): number => {
+    return headers.findIndex(h => {
+      const clean = h.replace(/[^a-z0-9]/g, '');
+      return keywords.some(k => clean.includes(k.replace(/[^a-z0-9]/g, '')) || clean === k.replace(/[^a-z0-9]/g, ''));
+    });
+  };
 
   let idIdx = -1;
   let nameIdx = -1;
+  let firstNameIdx = -1;
+  let lastNameIdx = -1;
+  let middleNameIdx = -1;
   let barangayIdx = -1;
   let purokIdx = -1;
   let numberIdx = -1;
   let createdIdx = -1;
   let updatedIdx = -1;
   let addedIdx = -1;
+  let latIdx = -1;
+  let lngIdx = -1;
+  let photoIdx = -1;
+  let pcuIdx = -1;
   let startIndex = 1;
 
   if (!isHeaderRow) {
     startIndex = 0;
-    // Guess default column indices when there is no header row
     const firstRow = rows[0] || [];
     const isFirstColNumber = /^\d+$/.test((firstRow[0] || '').toString().trim());
     if (isFirstColNumber && firstRow.length >= 4) {
@@ -4792,18 +4804,25 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       numberIdx = 2;
     }
   } else {
-    // Detect column indices based on sheet headers
-    idIdx = headers.findIndex(h => h.includes('id'));
-    nameIdx = headers.findIndex(h => h.includes('name') || h.includes('full'));
-    barangayIdx = headers.findIndex(h => h.includes('barangay') || h.includes('address'));
-    purokIdx = headers.findIndex(h => h.includes('purok'));
-    numberIdx = headers.findIndex(h => h.includes('number') || h.includes('contact') || h.includes('phone'));
-    createdIdx = headers.findIndex(h => h.includes('created') || h.includes('date'));
-    updatedIdx = headers.findIndex(h => h.includes('updated') || h.includes('last'));
-    addedIdx = headers.findIndex(h => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
+    idIdx = findCol(['id', 'no', 'numberid', 'contactid', 'householdid', 'memberid']);
+    nameIdx = findCol(['fullname', 'full_name', 'name', 'householdhead', 'membername', 'patientname', 'beneficiary', 'pangalan', 'client']);
+    firstNameIdx = findCol(['firstname', 'first_name', 'fname', 'first', 'givenname']);
+    lastNameIdx = findCol(['lastname', 'last_name', 'lname', 'surname', 'familyname', 'last', 'apelyido']);
+    middleNameIdx = findCol(['middlename', 'middle_name', 'mname', 'middle', 'mi']);
+    barangayIdx = findCol(['barangay', 'brgy', 'address', 'location', 'tirahan', 'village', 'community', 'town']);
+    purokIdx = findCol(['purok', 'prk', 'zone', 'sitio', 'street', 'st', 'block', 'lot', 'phase', 'subdivision']);
+    numberIdx = findCol(['contactnumber', 'contact_number', 'phone', 'phonenumber', 'mobile', 'cell', 'cellphone', 'tel', 'telephone', 'cp', 'numero', 'contact']);
+    createdIdx = findCol(['createdat', 'created_at', 'created', 'dateadded', 'date_added', 'timestamp', 'date', 'entrydate']);
+    updatedIdx = findCol(['updatedat', 'updated_at', 'updated', 'lastupdated', 'modified']);
+    addedIdx = findCol(['addedfromprintlist', 'added_from_print_list', 'directory', 'printlist', 'added', 'status', 'list']);
+    latIdx = findCol(['latitude', 'lat', 'ycoord']);
+    lngIdx = findCol(['longitude', 'lng', 'long', 'xcoord']);
+    photoIdx = findCol(['photourl', 'photo', 'picture', 'image', 'avatar']);
+    pcuIdx = findCol(['pcufileurl', 'pcu', 'attachment', 'document', 'file']);
 
-    // Defaults if headers not found
-    if (nameIdx === -1) nameIdx = 1;
+    if (nameIdx === -1 && firstNameIdx === -1) {
+      nameIdx = 1;
+    }
     if (barangayIdx === -1) barangayIdx = 2;
     if (numberIdx === -1) numberIdx = 3;
   }
@@ -4815,12 +4834,32 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const row = rows[i];
     if (!row || row.length === 0) continue;
 
-    const rawName = row[nameIdx] || '';
-    const rawBarangay = row[barangayIdx] || '';
-    const rawPurok = purokIdx !== -1 ? (row[purokIdx] || '') : '';
-    const rawNumber = row[numberIdx] || '';
+    let rawName = '';
+    if (nameIdx !== -1 && row[nameIdx]) {
+      rawName = row[nameIdx];
+    } else if (firstNameIdx !== -1 || lastNameIdx !== -1) {
+      const parts = [
+        firstNameIdx !== -1 ? (row[firstNameIdx] || '') : '',
+        middleNameIdx !== -1 ? (row[middleNameIdx] || '') : '',
+        lastNameIdx !== -1 ? (row[lastNameIdx] || '') : ''
+      ].filter(p => p && p.trim());
+      rawName = parts.join(' ');
+    } else {
+      // Find the first non-empty column that contains alphabetical characters
+      for (let c = 0; c < row.length; c++) {
+        const val = (row[c] || '').toString().trim();
+        if (val && /[a-zA-Z]/.test(val) && val.length > 2) {
+          rawName = val;
+          break;
+        }
+      }
+    }
 
-    if (!rawName.trim()) continue; // Skip empty/blank rows
+    if (!rawName || !rawName.trim()) continue; // Skip blank rows
+
+    const rawBarangay = (barangayIdx !== -1 && row[barangayIdx]) ? row[barangayIdx] : '';
+    const rawPurok = (purokIdx !== -1 && row[purokIdx]) ? row[purokIdx] : '';
+    const rawNumber = (numberIdx !== -1 && row[numberIdx]) ? row[numberIdx] : '';
 
     let id = idIdx !== -1 && row[idIdx] ? parseInt(row[idIdx], 10) : NaN;
     if (isNaN(id)) {
@@ -4835,21 +4874,13 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const updatedAt = updatedIdx !== -1 && row[updatedIdx] ? row[updatedIdx] : new Date().toISOString();
 
     const formattedName = capitalizeWords(rawName);
-    const formattedBarangay = normalizeBarangayName(rawBarangay);
+    const formattedBarangay = rawBarangay.trim() ? normalizeBarangayName(rawBarangay) : 'NO ADDRESS';
 
-    // Skip any contacts or barangays that have been permanently deleted by the administrator
-    if (isBarangayTombstoned(formattedBarangay)) {
-      continue;
-    }
-    if (isContactTombstoned({ id, full_name: formattedName, barangay: formattedBarangay })) {
-      continue;
-    }
-
-    // Find if this contact already exists in local cache (matching either ID safely or case-insensitive name & barangay)
+    // Find if this contact already exists in local cache
     const existingLocal = contactsCache.find(lc => 
       (lc.id && id && lc.id.toString() === id.toString()) || 
       (normalizeCompareName(lc.full_name, rawName) && 
-       lc.barangay.toLowerCase() === formattedBarangay.toLowerCase())
+       normalizeBarangayName(lc.barangay).toLowerCase() === formattedBarangay.toLowerCase())
     );
 
     const rawAdded = addedIdx !== -1 ? (row[addedIdx] || '').toString().trim().toUpperCase() : '';
@@ -4859,44 +4890,57 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     } else if (existingLocal) {
       addedFromPrintList = existingLocal.added_from_print_list !== false;
     } else {
-      // Default new rows from Google Sheets to true so they are displayed accurately.
       addedFromPrintList = true;
     }
 
+    let latVal: number | undefined = undefined;
+    let lngVal: number | undefined = undefined;
+    if (latIdx !== -1 && row[latIdx]) {
+      const parsedLat = parseFloat((row[latIdx] || '').toString().replace(/[^0-9.-]/g, ''));
+      if (!isNaN(parsedLat)) latVal = parsedLat;
+    }
+    if (lngIdx !== -1 && row[lngIdx]) {
+      const parsedLng = parseFloat((row[lngIdx] || '').toString().replace(/[^0-9.-]/g, ''));
+      if (!isNaN(parsedLng)) lngVal = parsedLng;
+    }
+    if (latVal === undefined && existingLocal && existingLocal.latitude !== undefined) {
+      latVal = existingLocal.latitude;
+    }
+    if (lngVal === undefined && existingLocal && existingLocal.longitude !== undefined) {
+      lngVal = existingLocal.longitude;
+    }
+
     const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === id || (existingLocal && p.contactId === existingLocal.id) || normalizeCompareName(p.fullName, rawName));
-    const pcuFileUrl = (existingLocal && existingLocal.pcu_file_url) || (matchedUpdate && (matchedUpdate.fileData || `Uploaded: ${matchedUpdate.fileName}`));
+    const pcuFileUrl = (pcuIdx !== -1 && row[pcuIdx]) ? row[pcuIdx] : ((existingLocal && existingLocal.pcu_file_url) || (matchedUpdate && (matchedUpdate.fileData || `Uploaded: ${matchedUpdate.fileName}`)));
     const pcuUploadedBy = (existingLocal && existingLocal.pcu_uploaded_by) || (matchedUpdate && matchedUpdate.uploadedBy);
     const pcuUploadedAt = (existingLocal && existingLocal.pcu_uploaded_at) || (matchedUpdate && matchedUpdate.uploadedAt);
+    const photoUrl = (photoIdx !== -1 && row[photoIdx]) ? row[photoIdx] : (existingLocal ? existingLocal.photo_url : undefined);
 
     newContacts.push({
       id,
       full_name: formattedName,
       barangay: formattedBarangay,
       purok: rawPurok ? capitalizeWords(rawPurok) : '',
-      contact_number: rawNumber.trim(),
+      contact_number: rawNumber.toString().trim(),
       created_at: createdAt,
       updated_at: updatedAt,
       deleted_at: existingLocal ? existingLocal.deleted_at : null,
-      latitude: existingLocal ? existingLocal.latitude : undefined,
-      longitude: existingLocal ? existingLocal.longitude : undefined,
-      geotagged: existingLocal ? existingLocal.geotagged : false,
-      photo_url: existingLocal ? existingLocal.photo_url : undefined,
+      latitude: latVal,
+      longitude: lngVal,
+      geotagged: (latVal !== undefined && lngVal !== undefined) || (existingLocal ? existingLocal.geotagged : false),
+      photo_url: photoUrl,
       pcu_file_url: pcuFileUrl || undefined,
       pcu_uploaded_by: pcuUploadedBy || undefined,
       pcu_uploaded_at: pcuUploadedAt || undefined,
-      added_locally: false, // Pulled from Google Sheets, so it is officially synced!
+      added_locally: false,
       added_from_print_list: addedFromPrintList
     });
   }
 
-  // Merge the pulled contacts from Google Sheets into our local contactsCache.
+  // Merge pulled contacts from Google Sheets into local cache
   const mergedContacts: Contact[] = [...newContacts];
   
   for (const lc of contactsCache) {
-    if (isContactTombstoned(lc) || isBarangayTombstoned(lc.barangay)) {
-      continue;
-    }
-
     const alreadyExists = mergedContacts.some(mc => 
       (mc.id && lc.id && mc.id.toString() === lc.id.toString()) || 
       (normalizeCompareName(mc.full_name, lc.full_name) && 
@@ -4904,19 +4948,14 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     );
     
     if (!alreadyExists) {
-      // If sync is enabled, we only keep local contacts that were added very recently (e.g. less than 5 minutes ago)
-      // to allow them time to upload/sync. Otherwise, if it is missing from Google Sheets, it was deleted!
       const isPendingLocalSync = sheetsConfig.syncEnabled 
         ? (lc.added_locally && (Date.now() - new Date(lc.created_at).getTime() < 300000))
         : true;
 
       if (isPendingLocalSync) {
         mergedContacts.push(lc);
-      } else {
-        console.log(`[Sync] Permanent deletion: Discarding contact "${lc.full_name}" as it is missing from Google Sheets.`);
       }
     } else {
-      // If it already exists in Google Sheets, preserve local-only fields
       const targetIndex = mergedContacts.findIndex(mc => 
         (mc.id && lc.id && mc.id.toString() === lc.id.toString()) || 
         (normalizeCompareName(mc.full_name, lc.full_name) && 
@@ -4930,8 +4969,8 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
           pcu_file_url: mergedContacts[targetIndex].pcu_file_url || lc.pcu_file_url,
           pcu_uploaded_by: mergedContacts[targetIndex].pcu_uploaded_by || lc.pcu_uploaded_by,
           pcu_uploaded_at: mergedContacts[targetIndex].pcu_uploaded_at || lc.pcu_uploaded_at,
-          latitude: mergedContacts[targetIndex].latitude || lc.latitude,
-          longitude: mergedContacts[targetIndex].longitude || lc.longitude,
+          latitude: mergedContacts[targetIndex].latitude !== undefined ? mergedContacts[targetIndex].latitude : lc.latitude,
+          longitude: mergedContacts[targetIndex].longitude !== undefined ? mergedContacts[targetIndex].longitude : lc.longitude,
           geotagged: mergedContacts[targetIndex].geotagged || lc.geotagged,
           deleted_at: mergedContacts[targetIndex].deleted_at !== undefined ? mergedContacts[targetIndex].deleted_at : lc.deleted_at
         };
@@ -4939,7 +4978,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     }
   }
 
-  contactsCache = mergedContacts.filter(c => !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay));
+  contactsCache = mergedContacts.filter(c => !c.deleted_at);
   syncPCUFieldsToCache();
   await saveContacts();
 
@@ -5255,6 +5294,13 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
         })).filter(c => c.full_name);
 
         pulledContacts.forEach(pc => {
+          const isActiveInSheet = contactsCache.some(ac => 
+            (pc.id && ac.id && pc.id.toString() === ac.id.toString()) ||
+            (normalizeCompareName(pc.full_name, ac.full_name) && 
+             normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(ac.barangay).toLowerCase())
+          );
+          if (isActiveInSheet) return; // Do not tombstone active records present in sheet
+
           const alreadyLocal = deletedContactsCache.some(lc => 
             (pc.id && lc.id && pc.id.toString() === lc.id.toString()) ||
             (normalizeCompareName(pc.full_name, lc.full_name) && 
@@ -5283,6 +5329,13 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
         })).filter(c => c.full_name);
 
         pulledExists.forEach(pe => {
+          const isActive = existingAccountsCache.some(ea =>
+            (pe.id && ea.id && pe.id.toString() === ea.id.toString()) ||
+            (normalizeCompareName(pe.full_name, ea.full_name) && 
+             normalizeBarangayName(pe.barangay).toLowerCase() === normalizeBarangayName(ea.barangay).toLowerCase())
+          );
+          if (isActive) return;
+
           const alreadyLocal = deletedExistingAccountsCache.some(lc => 
             (pe.id && lc.id && pe.id.toString() === lc.id.toString()) ||
             (normalizeCompareName(pe.full_name, lc.full_name) && 
@@ -6005,21 +6058,28 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
     if (match) {
       spreadsheetId = match[1];
     }
-    const existSheetName = 'ExistingAccounts';
+    const existSheetCandidates = ['ExistingAccounts', 'Existing Accounts', 'Existing_Accounts', 'Existing'];
 
     // Verify sheet exists
     const existingSheets = await getExistingSheets(sheets, spreadsheetId);
     markSheetsConnected();
-    const exists = existingSheets.has(existSheetName);
+    
+    let targetSheetName = '';
+    for (const name of existSheetCandidates) {
+      if (existingSheets.has(name)) {
+        targetSheetName = name;
+        break;
+      }
+    }
 
-    if (!exists) {
-      console.log(`Sheet "${existSheetName}" not found. No remote existing accounts to pull.`);
+    if (!targetSheetName) {
+      console.log(`No existing accounts sheet found among: ${existSheetCandidates.join(', ')}`);
       return false;
     }
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${existSheetName}!A:R`
+      range: `'${targetSheetName}'`
     });
 
     const rows = res.data.values || [];
@@ -6028,45 +6088,83 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
       return false;
     }
 
+    const headers = (rows[0] || []).map((h: any) => (h || '').toString().trim().toLowerCase());
+    const findCol = (keywords: string[]): number => {
+      return headers.findIndex((h: string) => {
+        const clean = h.replace(/[^a-z0-9]/g, '');
+        return keywords.some(k => clean.includes(k.replace(/[^a-z0-9]/g, '')) || clean === k.replace(/[^a-z0-9]/g, ''));
+      });
+    };
+
+    const idIdx = findCol(['id', 'no', 'accountid', 'itemid']);
+    const nameIdx = findCol(['fullname', 'full_name', 'name', 'accountname', 'clientname', 'membername', 'patientname', 'householdhead']);
+    const barangayIdx = findCol(['barangay', 'brgy', 'address', 'location', 'tirahan', 'village', 'town']);
+    const purokIdx = findCol(['purok', 'prk', 'zone', 'sitio', 'street', 'st']);
+    const numberIdx = findCol(['contactnumber', 'contact_number', 'phone', 'phonenumber', 'mobile', 'cell', 'numero', 'contact']);
+    const createdIdx = findCol(['createdat', 'created_at', 'created', 'date', 'timestamp']);
+    const latIdx = findCol(['latitude', 'lat', 'ycoord']);
+    const lngIdx = findCol(['longitude', 'lng', 'long', 'xcoord']);
+    const geotaggedIdx = findCol(['geotagged', 'geo']);
+    const existingAccIdx = findCol(['existingacc', 'existing_acc', 'existingaccount', 'isexisting']);
+    const verifiedIdx = findCol(['existingaccverified', 'verified', 'isverified']);
+    const visitedIdx = findCol(['existingaccvisited', 'visited', 'isvisited']);
+    const statusIdx = findCol(['status', 'approvalstatus', 'state']);
+    const submittedIdx = findCol(['submittedby', 'submitted_by', 'uploader', 'author', 'encoder']);
+    const pinIdx = findCol(['pin', 'code', 'passcode']);
+    const fbIdx = findCol(['facebooklink', 'facebook', 'fb', 'fblink', 'social']);
+    const filesIdx = findCol(['uploadedfiles', 'files', 'attachments', 'documents']);
+    const addedToFilesIdx = findCol(['addedtofiles', 'added_to_files', 'added', 'folder']);
+
     const remoteAccounts: ExistingAccountItem[] = [];
     for (const row of rows.slice(1)) {
-      if (!row || row.length < 2) continue;
+      if (!row || row.length === 0) continue;
       
-      const id = row[0]?.trim();
-      const full_name = (row[1] || '').trim().toUpperCase();
-      const barangay = (row[2] || '').trim().toUpperCase();
-      const purok = (row[3] || '').trim();
-      const contact_number = (row[4] || '').trim();
-      const created_at = row[5]?.trim() || new Date().toISOString();
-      const latitude = row[6]?.trim() ? parseFloat(row[6].trim()) : undefined;
-      const longitude = row[7]?.trim() ? parseFloat(row[7].trim()) : undefined;
-      const geotagged = row[8]?.trim().toUpperCase() === 'TRUE';
-      const existingAcc = row[9]?.trim().toUpperCase() !== 'FALSE';
-      const existingAccVerified = row[10]?.trim().toUpperCase() === 'TRUE';
-      const existingAccVisited = row[11]?.trim().toUpperCase() === 'TRUE';
-      const status = row[12]?.trim() || 'approved';
-      const submittedBy = row[13]?.trim() || 'Admin';
-      const pin = row[14]?.trim() || '';
-      const facebookLink = row[15]?.trim() || '';
+      const id = (idIdx !== -1 && row[idIdx]) ? row[idIdx]?.trim() : `ext_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const full_name = (nameIdx !== -1 && row[nameIdx] ? row[nameIdx] : (row[1] || row[0] || '')).toString().trim().toUpperCase();
+      const barangay = (barangayIdx !== -1 && row[barangayIdx] ? row[barangayIdx] : (row[2] || 'NO ADDRESS')).toString().trim().toUpperCase();
+      const purok = (purokIdx !== -1 && row[purokIdx] ? row[purokIdx] : (row[3] || '')).toString().trim();
+      const contact_number = (numberIdx !== -1 && row[numberIdx] ? row[numberIdx] : (row[4] || '')).toString().trim();
+      const created_at = (createdIdx !== -1 && row[createdIdx] ? row[createdIdx] : (row[5] || '')).toString().trim() || new Date().toISOString();
+      
+      let latitude: number | undefined = undefined;
+      let longitude: number | undefined = undefined;
+      if (latIdx !== -1 && row[latIdx]) {
+        const pLat = parseFloat((row[latIdx] || '').toString().replace(/[^0-9.-]/g, ''));
+        if (!isNaN(pLat)) latitude = pLat;
+      }
+      if (lngIdx !== -1 && row[lngIdx]) {
+        const pLng = parseFloat((row[lngIdx] || '').toString().replace(/[^0-9.-]/g, ''));
+        if (!isNaN(pLng)) longitude = pLng;
+      }
+
+      const geotagged = (geotaggedIdx !== -1 && row[geotaggedIdx]) ? row[geotaggedIdx]?.toString().trim().toUpperCase() === 'TRUE' : (latitude !== undefined && longitude !== undefined);
+      const existingAcc = (existingAccIdx !== -1 && row[existingAccIdx]) ? row[existingAccIdx]?.toString().trim().toUpperCase() !== 'FALSE' : true;
+      const existingAccVerified = (verifiedIdx !== -1 && row[verifiedIdx]) ? row[verifiedIdx]?.toString().trim().toUpperCase() === 'TRUE' : false;
+      const existingAccVisited = (visitedIdx !== -1 && row[visitedIdx]) ? row[visitedIdx]?.toString().trim().toUpperCase() === 'TRUE' : false;
+      const status = (statusIdx !== -1 && row[statusIdx] ? row[statusIdx] : (row[12] || 'approved')).toString().trim();
+      const submittedBy = (submittedIdx !== -1 && row[submittedIdx] ? row[submittedIdx] : (row[13] || 'Admin')).toString().trim();
+      const pin = (pinIdx !== -1 && row[pinIdx] ? row[pinIdx] : (row[14] || '')).toString().trim();
+      const facebookLink = (fbIdx !== -1 && row[fbIdx] ? row[fbIdx] : (row[15] || '')).toString().trim();
       
       let uploadedFiles: any[] = [];
       try {
-        if (row[16]?.trim()) {
-          uploadedFiles = JSON.parse(row[16].trim());
+        const rawFiles = (filesIdx !== -1 && row[filesIdx]) ? row[filesIdx] : (row[16] || '');
+        if (rawFiles && rawFiles.toString().trim()) {
+          uploadedFiles = JSON.parse(rawFiles.toString().trim());
           if (!Array.isArray(uploadedFiles)) uploadedFiles = [];
         }
       } catch (e) {}
 
-      const addedToFiles = row[17]?.trim().toUpperCase() === 'TRUE';
+      const addedToFiles = (addedToFilesIdx !== -1 && row[addedToFilesIdx]) ? row[addedToFilesIdx]?.toString().trim().toUpperCase() === 'TRUE' : false;
 
-      if (!full_name || isExistingAccountTombstoned({ id, full_name, barangay })) {
+      if (!full_name) {
         continue;
       }
 
       remoteAccounts.push({
         id,
         full_name,
-        barangay,
+        barangay: barangay || 'NO ADDRESS',
         purok,
         contact_number,
         created_at,
@@ -6088,7 +6186,6 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
     // Merge remote and local cache
     const merged: ExistingAccountItem[] = [...remoteAccounts];
     for (const local of existingAccountsCache) {
-      if (isExistingAccountTombstoned(local)) continue;
       const alreadyMerged = merged.some(m => m.id === local.id || (m.full_name === local.full_name && m.barangay === local.barangay));
       if (!alreadyMerged) {
         merged.push(local);
@@ -7451,7 +7548,7 @@ export interface MatchingGroup {
 }
 
 export function getMatchingAnalysis() {
-  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list !== false && !c.pcu_file_url);
+  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list !== false);
   const activeAccounts = existingAccountsCache.filter(acc => !isExistingAccountTombstoned(acc));
 
   const perfectMatches: MatchingGroup[] = [];
