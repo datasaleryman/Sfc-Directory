@@ -687,14 +687,17 @@ export async function getApp() {
   // Add single contact
   app.post('/api/contacts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { full_name, barangay, purok, address, contact_number } = req.body;
+      const { full_name, barangay, purok, address, contact_number, latitude, longitude, geotagged } = req.body;
       const username = req.user?.username || 'Admin';
 
       const contact = await addContact({
         full_name,
         barangay: barangay || address || '',
         purok,
-        contact_number
+        contact_number,
+        latitude: latitude !== undefined && latitude !== null ? parseFloat(latitude) : undefined,
+        longitude: longitude !== undefined && longitude !== null ? parseFloat(longitude) : undefined,
+        geotagged: geotagged !== undefined ? Boolean(geotagged) : undefined
       }, username);
       res.status(201).json(contact);
     } catch (err: any) {
@@ -781,17 +784,20 @@ export async function getApp() {
   app.post('/api/contacts/:id/pcu', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const { fullName, fileName, fileData, files, barangay, purok, latitude, longitude, geotagged } = req.body;
+      const { fullName, fileName, fileData, files, barangay, purok, contact_number, latitude, longitude, geotagged } = req.body;
       const username = req.user?.username || 'Admin';
 
+      const commonOptions = {
+        barangay: typeof barangay === 'string' && barangay.trim() !== '' ? barangay.trim() : undefined,
+        purok: typeof purok === 'string' ? purok : undefined,
+        contact_number: typeof contact_number === 'string' ? contact_number : undefined,
+        latitude: latitude !== undefined && latitude !== null ? parseFloat(latitude) : undefined,
+        longitude: longitude !== undefined && longitude !== null ? parseFloat(longitude) : undefined,
+        geotagged: geotagged !== undefined ? Boolean(geotagged) : undefined
+      };
+
       if (files && Array.isArray(files) && files.length > 0) {
-        const contact = await addPCUUpdatesMultiple(id, fullName || 'Unknown Contact', files, username, {
-          barangay: typeof barangay === 'string' && barangay.trim() !== '' ? barangay.trim() : undefined,
-          purok: typeof purok === 'string' ? purok : undefined,
-          latitude: latitude !== undefined && latitude !== null ? parseFloat(latitude) : undefined,
-          longitude: longitude !== undefined && longitude !== null ? parseFloat(longitude) : undefined,
-          geotagged: geotagged !== undefined ? Boolean(geotagged) : undefined
-        });
+        const contact = await addPCUUpdatesMultiple(id, fullName || 'Unknown Contact', files, username, commonOptions);
         return res.json(contact);
       }
 
@@ -799,7 +805,7 @@ export async function getApp() {
         return res.status(400).json({ error: 'fileName and fileData are required (or a non-empty files array).' });
       }
 
-      const update = await addPCUUpdate(id, fullName || 'Unknown Contact', fileName, fileData, username);
+      const update = await addPCUUpdate(id, fullName || 'Unknown Contact', fileName, fileData, username, commonOptions);
       res.json(update);
     } catch (err: any) {
       res.status(400).json({ error: err.message });

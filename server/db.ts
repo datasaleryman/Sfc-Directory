@@ -3215,6 +3215,7 @@ export async function saveContactToBase44(contact: Contact, username: string): P
 
     const userObj = findUser(username);
     const uName = userObj?.fullName || userObj?.displayName || username;
+    const userEmail = userObj?.email || (username.includes('@') ? username : 'saintfrancisclinic2026@gmail.com');
 
     const nameParts = (contact.full_name || '').trim().split(/\s+/);
     let firstName = 'Unknown';
@@ -3227,44 +3228,130 @@ export async function saveContactToBase44(contact: Contact, username: string): P
       lastName = 'Unknown';
     }
 
+    const hasGeo = (contact.latitude !== undefined && contact.latitude !== null && !isNaN(Number(contact.latitude)) &&
+                    contact.longitude !== undefined && contact.longitude !== null && !isNaN(Number(contact.longitude)));
+    const latNum = hasGeo ? Number(contact.latitude) : null;
+    const lngNum = hasGeo ? Number(contact.longitude) : null;
+    const isGeotagged = Boolean(contact.geotagged || hasGeo);
+
     const payload: any = {
+      contactId: contact.id,
       memberName: contact.full_name,
       full_name: contact.full_name,
       fullName: contact.full_name,
       firstName,
       lastName,
       barangay: contact.barangay || '',
+      Barangay: contact.barangay || '',
       purok: contact.purok || '',
       address: `${contact.purok ? contact.purok + ', ' : ''}${contact.barangay || ''}`.trim(),
       contact: contact.contact_number || '',
       contact_number: contact.contact_number || '',
       contactNumber: contact.contact_number || '',
+      mobile: contact.contact_number || '',
       status: 'approved',
       existingAcc: false,
       submittedBy: uName,
       "Submitted by": uName,
-      "Barangay": contact.barangay || '',
+      submittedByEmail: userEmail,
+      latitude: latNum,
+      longitude: lngNum,
+      geotagged: isGeotagged,
+      geoLocation: hasGeo ? {
+        latitude: latNum,
+        longitude: lngNum
+      } : undefined,
       fpe: {
         fullName: contact.full_name,
         mobile: contact.contact_number || '',
         purok: contact.purok || '',
-        barangay: contact.barangay || ''
+        barangay: contact.barangay || '',
+        latitude: latNum,
+        longitude: lngNum,
+        geotagged: isGeotagged
       },
       pcsf: {
         contact: contact.contact_number || '',
         purok: contact.purok || '',
-        barangay: contact.barangay || ''
+        barangay: contact.barangay || '',
+        latitude: latNum,
+        longitude: lngNum,
+        geotagged: isGeotagged
       },
-      latitude: contact.latitude || null,
-      longitude: contact.longitude || null,
-      geotagged: contact.geotagged || false,
+      uploadedFiles: contact.uploadedFiles || [],
+      uploadedFilesJson: JSON.stringify(contact.uploadedFiles || []),
+      pcu_file_url: contact.pcu_file_url || '',
+      pcu_uploaded_by: contact.pcu_uploaded_by || uName,
+      pcu_uploaded_at: contact.pcu_uploaded_at || new Date().toISOString(),
+      photo_url: contact.photo_url || '',
+      photoUrl: contact.photo_url || '',
       created_at: contact.created_at || new Date().toISOString(),
       updated_at: contact.updated_at || new Date().toISOString()
     };
 
-    console.log(`[Base44 SDK] Saving contact "${contact.full_name}" to Base44 HouseholdSubmission database...`);
-    await submissionEntity.create(payload);
-    console.log(`[Base44 SDK] Contact "${contact.full_name}" successfully saved to Base44 database.`);
+    console.log(`[Base44 SDK] Permanently saving contact "${contact.full_name}" (Geotagged: ${isGeotagged}, Lat: ${latNum}, Lng: ${lngNum}) to Base44 HouseholdSubmission database...`);
+
+    // Check if matching record exists in Base44 cache
+    let matchedId: string | null = null;
+    try {
+      const existingHouseholds = await getCachedHouseholdSubmissions(false);
+      if (Array.isArray(existingHouseholds)) {
+        const match = existingHouseholds.find((h: any) => 
+          h.id === String(contact.id) ||
+          h.contactId === contact.id ||
+          (h.fullName && h.fullName.trim().toUpperCase() === contact.full_name.trim().toUpperCase() &&
+           (!contact.contact_number || h.contact === contact.contact_number || h.contact_number === contact.contact_number)) ||
+          (h.full_name && h.full_name.trim().toUpperCase() === contact.full_name.trim().toUpperCase() &&
+           (!contact.contact_number || h.contact === contact.contact_number || h.contact_number === contact.contact_number))
+        );
+        if (match && match.id) {
+          matchedId = match.id;
+        }
+      }
+    } catch (findErr) {
+      // Ignore
+    }
+
+    let savedRecord: any = null;
+    if (matchedId && typeof submissionEntity.update === 'function') {
+      try {
+        console.log(`[Base44 SDK] Updating existing Base44 HouseholdSubmission (ID: ${matchedId})...`);
+        savedRecord = await submissionEntity.update(matchedId, payload);
+      } catch (updateErr: any) {
+        console.warn(`[Base44 SDK] Update failed (falling back to create): ${updateErr.message}`);
+        savedRecord = await submissionEntity.create(payload);
+      }
+    } else {
+      savedRecord = await submissionEntity.create(payload);
+    }
+
+    // Update local HOUSEHOLDS_CACHE_FILE
+    try {
+      if (fs.existsSync(HOUSEHOLDS_CACHE_FILE)) {
+        const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+        const list = data ? JSON.parse(data) : [];
+        const recordToStore = {
+          id: savedRecord?.id || matchedId || `hh_${contact.id}`,
+          ...payload
+        };
+        const idx = list.findIndex((h: any) => 
+          h.id === recordToStore.id || 
+          h.contactId === contact.id || 
+          (h.fullName && h.fullName.trim().toUpperCase() === contact.full_name.trim().toUpperCase()) ||
+          (h.full_name && h.full_name.trim().toUpperCase() === contact.full_name.trim().toUpperCase())
+        );
+        if (idx !== -1) {
+          list[idx] = { ...list[idx], ...recordToStore };
+        } else {
+          list.unshift(recordToStore);
+        }
+        safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(list, null, 2), 'utf-8');
+      }
+    } catch (cacheErr) {
+      console.warn('[Base44 Cache] Failed to update local households cache:', cacheErr);
+    }
+
+    console.log(`[Base44 SDK] Contact "${contact.full_name}" successfully saved permanently to Base44 database.`);
   } catch (err: any) {
     console.warn(`[Base44 SDK Warning] Failed to save contact to Base44 database:`, err.message || err);
   }
@@ -3272,7 +3359,16 @@ export async function saveContactToBase44(contact: Contact, username: string): P
 
 // Add a single contact with full validation and capitalization formatting
 export async function addContact(
-  contact: { full_name: string; barangay: string; purok?: string; address?: string; contact_number: string },
+  contact: { 
+    full_name: string; 
+    barangay: string; 
+    purok?: string; 
+    address?: string; 
+    contact_number: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    geotagged?: boolean;
+  },
   username: string
 ) {
   const rawName = contact.full_name.trim();
@@ -3296,9 +3392,18 @@ export async function addContact(
       c.contact_number === rawNumber
   );
 
+  const hasGeo = (contact.latitude !== undefined && contact.latitude !== null && !isNaN(Number(contact.latitude)) &&
+                  contact.longitude !== undefined && contact.longitude !== null && !isNaN(Number(contact.longitude)));
+  const updateLat = hasGeo ? Number(contact.latitude) : undefined;
+  const updateLng = hasGeo ? Number(contact.longitude) : undefined;
+  const updateGeotag = contact.geotagged !== undefined ? Boolean(contact.geotagged) : (hasGeo ? true : undefined);
+
   if (existing) {
     if (existing.added_from_print_list === false) {
       existing.added_from_print_list = true;
+      if (updateLat !== undefined) existing.latitude = updateLat;
+      if (updateLng !== undefined) existing.longitude = updateLng;
+      if (updateGeotag !== undefined) existing.geotagged = updateGeotag;
       existing.updated_at = new Date().toISOString();
       await saveContacts();
       if (sheetsConfig.syncEnabled) {
@@ -3317,6 +3422,9 @@ export async function addContact(
     barangay: formattedBarangay,
     purok: formattedPurok,
     contact_number: rawNumber,
+    latitude: updateLat,
+    longitude: updateLng,
+    geotagged: updateGeotag || false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     deleted_at: null,
@@ -6408,10 +6516,46 @@ export async function uploadContactPhoto(contactId: number, photoDataUrl: string
 }
 
 // Add a PCU Update (saves to Base44 PCUUpdate entity + locally)
-export async function addPCUUpdate(contactId: number, fullName: string, fileName: string, fileData: string, username: string) {
+export async function addPCUUpdate(
+  contactId: number, 
+  fullName: string, 
+  fileName: string, 
+  fileData: string, 
+  username: string,
+  options?: { barangay?: string; purok?: string; contact_number?: string; latitude?: number | null; longitude?: number | null; geotagged?: boolean }
+) {
   const contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
-  const barangay = contact ? contact.barangay : '';
-  const purok = contact ? contact.purok : '';
+
+  if (contact) {
+    if (options?.barangay !== undefined && options.barangay.trim() !== '') {
+      contact.barangay = options.barangay.trim();
+    }
+    if (options?.purok !== undefined && options.purok.trim() !== '') {
+      contact.purok = options.purok.trim();
+    }
+    if (options?.contact_number !== undefined && options.contact_number.trim() !== '') {
+      contact.contact_number = options.contact_number.trim();
+    }
+    if (options?.latitude !== undefined && options.latitude !== null && !isNaN(Number(options.latitude))) {
+      contact.latitude = Number(options.latitude);
+    }
+    if (options?.longitude !== undefined && options.longitude !== null && !isNaN(Number(options.longitude))) {
+      contact.longitude = Number(options.longitude);
+    }
+    if (options?.geotagged !== undefined) {
+      contact.geotagged = options.geotagged;
+    } else if (contact.latitude && contact.longitude) {
+      contact.geotagged = true;
+    }
+  }
+
+  const barangay = contact ? (contact.barangay || '') : (options?.barangay || '');
+  const purok = contact ? (contact.purok || '') : (options?.purok || '');
+  const contactNumber = contact ? (contact.contact_number || '') : (options?.contact_number || '');
+  const latVal = contact?.latitude ?? (options?.latitude !== undefined && options.latitude !== null ? Number(options.latitude) : null);
+  const lngVal = contact?.longitude ?? (options?.longitude !== undefined && options.longitude !== null ? Number(options.longitude) : null);
+  const hasGeo = latVal !== null && !isNaN(latVal) && lngVal !== null && !isNaN(lngVal);
+  const isGeotagged = Boolean(contact?.geotagged || options?.geotagged || hasGeo);
   
   let finalFileUrlOrData = fileData;
   let base44EntityValue = '';
@@ -6478,17 +6622,31 @@ export async function addPCUUpdate(contactId: number, fullName: string, fileName
     const { mimeType } = parseDataUrl(fileData);
 
     await pcuEntity.create({
+      contactId,
+      fullName,
       firstName,
       lastName,
       barangay,
+      Barangay: barangay,
       purok,
       fileName,
       fileUrl: base44EntityValue, // Save either the CDN URL or the safe metadata placeholder
       fileType: mimeType,
       uploadDate: newUpdate.uploadedAt,
       uploadedBy: uName,
+      "Submitted by": uName,
       uploadedByEmail: userEmail,
-      contact: contact ? contact.contact_number : ''
+      contact: contactNumber,
+      contact_number: contactNumber,
+      latitude: latVal,
+      longitude: lngVal,
+      geotagged: isGeotagged,
+      geoLocation: hasGeo ? {
+        latitude: latVal,
+        longitude: lngVal
+      } : undefined,
+      "Attachment data": base44EntityValue,
+      attachmentUrl: base44EntityValue
     });
     console.log('[Base44 SDK] PCU File metadata saved successfully in Base44 PCUUpdate table.');
   } catch (err: any) {
@@ -6519,7 +6677,7 @@ export async function addPCUUpdatesMultiple(
   fullName: string, 
   files: { fileName: string; fileData: string }[], 
   username: string,
-  options?: { barangay?: string; purok?: string; latitude?: number | null; longitude?: number | null; geotagged?: boolean }
+  options?: { barangay?: string; purok?: string; contact_number?: string; latitude?: number | null; longitude?: number | null; geotagged?: boolean }
 ) {
   const contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
   if (!contact) {
@@ -6532,11 +6690,14 @@ export async function addPCUUpdatesMultiple(
   if (options?.purok !== undefined && options.purok.trim() !== '') {
     contact.purok = options.purok.trim();
   }
-  if (options?.latitude !== undefined && options.latitude !== null && !isNaN(options.latitude)) {
-    contact.latitude = options.latitude;
+  if (options?.contact_number !== undefined && options.contact_number.trim() !== '') {
+    contact.contact_number = options.contact_number.trim();
   }
-  if (options?.longitude !== undefined && options.longitude !== null && !isNaN(options.longitude)) {
-    contact.longitude = options.longitude;
+  if (options?.latitude !== undefined && options.latitude !== null && !isNaN(Number(options.latitude))) {
+    contact.latitude = Number(options.latitude);
+  }
+  if (options?.longitude !== undefined && options.longitude !== null && !isNaN(Number(options.longitude))) {
+    contact.longitude = Number(options.longitude);
   }
   if (options?.geotagged !== undefined) {
     contact.geotagged = options.geotagged;
@@ -6546,6 +6707,12 @@ export async function addPCUUpdatesMultiple(
 
   const barangay = contact.barangay || '';
   const purok = contact.purok || '';
+  const contactNumber = contact.contact_number || '';
+  const hasGeo = (contact.latitude !== undefined && contact.latitude !== null && !isNaN(Number(contact.latitude)) &&
+                  contact.longitude !== undefined && contact.longitude !== null && !isNaN(Number(contact.longitude)));
+  const latNum = hasGeo ? Number(contact.latitude) : null;
+  const lngNum = hasGeo ? Number(contact.longitude) : null;
+  const isGeotagged = Boolean(contact.geotagged || hasGeo);
   
   const userObj = findUser(username);
   const uName = userObj?.fullName || userObj?.displayName || username;
@@ -6620,17 +6787,31 @@ export async function addPCUUpdatesMultiple(
       const { mimeType } = parseDataUrl(fileData);
 
       await pcuEntity.create({
+        contactId,
+        fullName,
         firstName,
         lastName,
         barangay,
+        Barangay: barangay,
         purok,
         fileName,
         fileUrl: base44EntityValue, // Save either the CDN URL or the safe metadata placeholder
         fileType: mimeType,
         uploadDate: newUpdate.uploadedAt,
         uploadedBy: uName,
+        "Submitted by": uName,
         uploadedByEmail: userEmail,
-        contact: contact.contact_number || ''
+        contact: contactNumber,
+        contact_number: contactNumber,
+        latitude: latNum,
+        longitude: lngNum,
+        geotagged: isGeotagged,
+        geoLocation: hasGeo ? {
+          latitude: latNum,
+          longitude: lngNum
+        } : undefined,
+        "Attachment data": base44EntityValue,
+        attachmentUrl: base44EntityValue
       });
       console.log('[Base44 SDK] PCU File metadata saved successfully in Base44 PCUUpdate table.');
     } catch (err: any) {

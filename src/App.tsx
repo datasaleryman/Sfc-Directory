@@ -505,8 +505,13 @@ export default function App() {
   // Triggers Single Contact Form Saves (Add or Edit update commits)
   const handleSaveContact = async (contact: {
     full_name: string;
-    address: string;
+    barangay?: string;
+    purok?: string;
+    address?: string;
     contact_number: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    geotagged?: boolean;
   }): Promise<boolean> => {
     if (!authToken) return false;
 

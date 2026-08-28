@@ -497,6 +497,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           fullName: viewContact.full_name,
           barangay: currentBarangay,
           purok: currentPurok,
+          contact_number: modalEditContactNumber.trim() || viewContact.contact_number,
           latitude: currentLat,
           longitude: currentLng,
           geotagged: true,

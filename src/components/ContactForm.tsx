@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, UserCheck, RefreshCcw, Trash2, HelpCircle } from 'lucide-react';
+import { UserPlus, UserCheck, RefreshCcw, Trash2, HelpCircle, Compass, CheckCircle2, Loader2 } from 'lucide-react';
 import { Contact } from '../types.js';
 
 interface ContactFormProps {
   editTarget: Contact | null;
-  onSave: (contact: { full_name: string; barangay: string; purok: string; contact_number: string }) => Promise<boolean>;
+  onSave: (contact: { 
+    full_name: string; 
+    barangay: string; 
+    purok: string; 
+    contact_number: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    geotagged?: boolean;
+  }) => Promise<boolean>;
   onCancel: () => void;
   showToast: (message: string, type: 'success' | 'warning' | 'error') => void;
 }
@@ -14,6 +22,10 @@ export const ContactForm: React.FC<ContactFormProps> = ({ editTarget, onSave, on
   const [barangay, setBarangay] = useState('');
   const [purok, setPurok] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [latitude, setLatitude] = useState<string>('');
+  const [longitude, setLongitude] = useState<string>('');
+  const [geotagged, setGeotagged] = useState(false);
+  const [isGpsCapturing, setIsGpsCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -22,6 +34,9 @@ export const ContactForm: React.FC<ContactFormProps> = ({ editTarget, onSave, on
       setBarangay(editTarget.barangay || '');
       setPurok(editTarget.purok || '');
       setContactNumber(editTarget.contact_number);
+      setLatitude(editTarget.latitude !== undefined && editTarget.latitude !== null ? String(editTarget.latitude) : '');
+      setLongitude(editTarget.longitude !== undefined && editTarget.longitude !== null ? String(editTarget.longitude) : '');
+      setGeotagged(!!editTarget.geotagged);
     } else {
       clearForm();
     }
@@ -32,6 +47,34 @@ export const ContactForm: React.FC<ContactFormProps> = ({ editTarget, onSave, on
     setBarangay('');
     setPurok('');
     setContactNumber('');
+    setLatitude('');
+    setLongitude('');
+    setGeotagged(false);
+  };
+
+  const handleCaptureGps = () => {
+    if (!navigator.geolocation) {
+      showToast('Geolocation is not supported by your browser.', 'error');
+      return;
+    }
+
+    setIsGpsCapturing(true);
+    showToast('Acquiring device GPS sensor...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLatitude(position.coords.latitude.toFixed(6));
+        setLongitude(position.coords.longitude.toFixed(6));
+        setGeotagged(true);
+        setIsGpsCapturing(false);
+        showToast('Successfully locked and captured GPS coordinates!', 'success');
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        setIsGpsCapturing(false);
+        showToast(`Failed to capture GPS: ${error.message}`, 'error');
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
   };
 
   const handleCapitalization = (str: string): string => {
@@ -72,13 +115,20 @@ export const ContactForm: React.FC<ContactFormProps> = ({ editTarget, onSave, on
     const formattedBarangay = handleCapitalization(trimmedBarangay);
     const formattedPurok = trimmedPurok ? handleCapitalization(trimmedPurok) : '';
 
+    const parsedLat = latitude.trim() ? parseFloat(latitude.trim()) : null;
+    const parsedLng = longitude.trim() ? parseFloat(longitude.trim()) : null;
+    const isGeotagValid = geotagged || (parsedLat !== null && !isNaN(parsedLat) && parsedLng !== null && !isNaN(parsedLng));
+
     setSaving(true);
     try {
       const success = await onSave({
         full_name: formattedName,
         barangay: formattedBarangay,
         purok: formattedPurok,
-        contact_number: trimmedNumber
+        contact_number: trimmedNumber,
+        latitude: parsedLat !== null && !isNaN(parsedLat) ? parsedLat : null,
+        longitude: parsedLng !== null && !isNaN(parsedLng) ? parsedLng : null,
+        geotagged: isGeotagValid
       });
       if (success && !editTarget) {
         clearForm();
@@ -181,6 +231,59 @@ export const ContactForm: React.FC<ContactFormProps> = ({ editTarget, onSave, on
             placeholder="e.g. 09171234567"
             disabled={saving}
           />
+        </div>
+
+        {/* Geotag GPS Section */}
+        <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Geotag GPS Coordinates
+            </label>
+            <button
+              type="button"
+              onClick={handleCaptureGps}
+              disabled={isGpsCapturing}
+              className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              {isGpsCapturing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Capturing...
+                </>
+              ) : (
+                <>
+                  <Compass className="w-3.5 h-3.5" /> Capture Device GPS
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <input
+                type="text"
+                value={latitude}
+                onChange={(e) => setLatitude(e.target.value)}
+                placeholder="Latitude (e.g. 8.234123)"
+                className="w-full px-3 py-2 bg-white border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-mono font-medium outline-none"
+              />
+            </div>
+            <div>
+              <input
+                type="text"
+                value={longitude}
+                onChange={(e) => setLongitude(e.target.value)}
+                placeholder="Longitude (e.g. 124.234123)"
+                className="w-full px-3 py-2 bg-white border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-mono font-medium outline-none"
+              />
+            </div>
+          </div>
+
+          {geotagged && latitude && longitude && (
+            <div className="flex items-center gap-1.5 text-xs font-bold text-teal-700">
+              <CheckCircle2 className="w-4 h-4 text-teal-600" />
+              <span>GPS Geotag locked ({latitude}, {longitude})</span>
+            </div>
+          )}
         </div>
 
         {/* Actions Buttons */}
