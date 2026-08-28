@@ -300,6 +300,73 @@ export function unTombstoneUser(username?: string, email?: string) {
   }
 }
 
+export function unTombstoneBarangay(barangay?: string) {
+  if (!barangay || typeof barangay !== 'string') return;
+  const target = barangay.trim().toLowerCase();
+  if (!target) return;
+  const prevLen = deletedBarangaysCache.length;
+  deletedBarangaysCache = deletedBarangaysCache.filter(b => {
+    if (!b) return false;
+    const bg = b.trim().toLowerCase();
+    return bg !== target && !isBarangayMatch(b, barangay) && normalizeBarangayName(b).toLowerCase() !== normalizeBarangayName(barangay).toLowerCase();
+  });
+  if (deletedBarangaysCache.length !== prevLen) {
+    safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8').catch(err => {
+      console.warn('Failed to save updated deleted barangays cache:', err.message || err);
+    });
+  }
+}
+
+export function unTombstoneContact(id?: number | string, full_name?: string, barangay?: string) {
+  const cId = id !== undefined && id !== null ? id.toString() : '';
+  const cName = (full_name || '').trim();
+  const cBarangay = (barangay || '').trim();
+  if (cBarangay) {
+    unTombstoneBarangay(cBarangay);
+  }
+  const prevLen = deletedContactsCache.length;
+  deletedContactsCache = deletedContactsCache.filter(del => {
+    if (cId && del.id !== undefined && del.id !== null && del.id.toString() === cId) return false;
+    if (cName && del.full_name && normalizeCompareName(del.full_name, cName)) {
+      if (!cBarangay || !del.barangay) return false;
+      if (isBarangayMatch(del.barangay, cBarangay) || normalizeBarangayName(del.barangay).toLowerCase() === normalizeBarangayName(cBarangay).toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
+  });
+  if (deletedContactsCache.length !== prevLen) {
+    safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8').catch(err => {
+      console.warn('Failed to save updated deleted contacts cache:', err.message || err);
+    });
+  }
+}
+
+export function unTombstoneExistingAccount(id?: string, full_name?: string, barangay?: string) {
+  const aId = id !== undefined && id !== null ? id.toString() : '';
+  const aName = (full_name || '').trim();
+  const aBarangay = (barangay || '').trim();
+  if (aBarangay) {
+    unTombstoneBarangay(aBarangay);
+  }
+  const prevLen = deletedExistingAccountsCache.length;
+  deletedExistingAccountsCache = deletedExistingAccountsCache.filter(del => {
+    if (aId && del.id !== undefined && del.id !== null && del.id.toString() === aId) return false;
+    if (aName && del.full_name && normalizeCompareName(del.full_name, aName)) {
+      if (!aBarangay || !del.barangay) return false;
+      if (isBarangayMatch(del.barangay, aBarangay) || normalizeBarangayName(del.barangay).toLowerCase() === normalizeBarangayName(aBarangay).toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
+  });
+  if (deletedExistingAccountsCache.length !== prevLen) {
+    safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8').catch(err => {
+      console.warn('Failed to save updated deleted existing accounts cache:', err.message || err);
+    });
+  }
+}
+
 export function isBarangayTombstoned(bg: string): boolean {
   if (!bg || typeof bg !== 'string') return false;
   const target = bg.trim().toLowerCase();
@@ -933,7 +1000,10 @@ export async function initDb() {
       try {
         const parsed = JSON.parse(content);
         if (Array.isArray(parsed)) {
-          existingAccountsCache = parsed.filter(acc => acc && !isExistingAccountTombstoned(acc));
+          existingAccountsCache = parsed.filter(acc => acc && acc.full_name);
+          for (const acc of existingAccountsCache) {
+            unTombstoneExistingAccount(acc.id, acc.full_name, acc.barangay);
+          }
           safeWriteFileSync(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2));
         } else {
           existingAccountsCache = [];
@@ -5969,6 +6039,7 @@ export async function syncExistingAccountsToGoogleSheets() {
       spreadsheetId = match[1];
     }
     const existSheetName = 'ExistingAccounts';
+    const existSheetCandidates = ['ExistingAccounts', 'Existing Accounts', 'Existing_Accounts', 'Existing'];
 
     // Verify sheet exists, if not create it
     const existingSheets = await getExistingSheets(sheets, spreadsheetId);
@@ -5992,11 +6063,17 @@ export async function syncExistingAccountsToGoogleSheets() {
       existingSheets.add(existSheetName);
     }
 
-    // Clear the sheet first to write the fresh state
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `${existSheetName}!A:Z`
-    });
+    // Clear all existing account sheet variants first to write the fresh state
+    for (const sheetVariant of existSheetCandidates) {
+      if (existingSheets.has(sheetVariant)) {
+        try {
+          await sheets.spreadsheets.values.clear({
+            spreadsheetId,
+            range: `'${sheetVariant}'!A:Z`
+          });
+        } catch (e) {}
+      }
+    }
 
     // Write headers and data
     const headers = [
@@ -6157,7 +6234,7 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
 
       const addedToFiles = (addedToFilesIdx !== -1 && row[addedToFilesIdx]) ? row[addedToFilesIdx]?.toString().trim().toUpperCase() === 'TRUE' : false;
 
-      if (!full_name) {
+      if (!full_name || isExistingAccountTombstoned({ id, full_name, barangay })) {
         continue;
       }
 
@@ -6614,6 +6691,8 @@ export function getRecentUploads(params: {
     const uploader = (c.pcu_uploaded_by || '').toLowerCase().trim();
     const current = (username || '').toLowerCase().trim();
 
+    if (!current || current === 'admin') return true;
+
     if (!uploader) {
       // Fallback check in pcuUpdatesCache if pcu_uploaded_by was missing
       const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === c.id && (p.uploadedBy || '').toLowerCase().trim() === current);
@@ -6621,7 +6700,7 @@ export function getRecentUploads(params: {
       return false;
     }
 
-    return uploader === current;
+    return uploader === current || uploader === 'admin';
   }).map(c => {
     const uploadedFiles = c.uploadedFiles && c.uploadedFiles.length > 0 ? c.uploadedFiles : [{
       name: c.pcu_file_url ? (c.pcu_file_url.includes('/') ? (c.pcu_file_url.split('/').pop() || 'PCU Document').replace(/^\d+_/,'') : c.pcu_file_url) : 'PCU Document',
@@ -6631,19 +6710,22 @@ export function getRecentUploads(params: {
     }];
     return {
       ...c,
+      isExistingAccount: false,
+      category: 'pcu',
       uploadedFiles
     };
   });
 
-  // 2. Get uploaded existing accounts from existingAccountsCache
+  // 2. Get uploaded existing accounts from existingAccountsCache (those transferred with uploaded files)
   const uploadedExistingAccounts = existingAccountsCache.filter(acc => {
-    // If it is verified, it should be transferred/available in the Recent Upload page!
-    if (acc.existingAccVerified) return true;
+    // Only include if it has uploaded files
+    const hasFiles = Boolean(acc.uploadedFiles && acc.uploadedFiles.length > 0);
+    if (!hasFiles) return false;
 
-    if (!acc.uploadedFiles || acc.uploadedFiles.length === 0) return false;
-    const uploader = (acc.uploadedFiles[0].uploadedBy || acc.submittedBy || '').toLowerCase().trim();
+    const uploader = (acc.uploadedFiles && acc.uploadedFiles.length > 0 ? acc.uploadedFiles[0].uploadedBy : '') || acc.submittedBy || 'Admin';
     const current = (username || '').toLowerCase().trim();
-    return uploader === current;
+    if (!current || current === 'admin') return true;
+    return uploader.toLowerCase().trim() === current || uploader.toLowerCase().trim() === 'admin';
   }).map(acc => {
     const hasFiles = acc.uploadedFiles && acc.uploadedFiles.length > 0;
     const fileUrl = hasFiles ? acc.uploadedFiles![0].url : '';
@@ -6662,6 +6744,12 @@ export function getRecentUploads(params: {
       pcu_uploaded_by: uploadedBy,
       pcu_uploaded_at: uploadedAt,
       isExistingAccount: true,
+      category: 'existing_account',
+      pin: acc.pin || '',
+      facebookLink: acc.facebookLink || '',
+      latitude: acc.latitude,
+      longitude: acc.longitude,
+      geotagged: acc.geotagged || (acc.latitude !== undefined && acc.longitude !== undefined),
       uploadedFiles: acc.uploadedFiles || []
     };
   });
@@ -6833,7 +6921,7 @@ export async function removePCUFileFromContact(contactId: number, username: stri
 
 // Get local existing accounts
 export function getLocalExistingAccounts(): ExistingAccountItem[] {
-  return existingAccountsCache.filter(acc => acc && !isExistingAccountTombstoned(acc) && !isBarangayTombstoned(acc.barangay));
+  return existingAccountsCache.filter(acc => acc && acc.full_name);
 }
 
 // Add local existing account
@@ -6857,6 +6945,10 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
     uploadedFiles: [],
     added_from_website: true
   };
+
+  // Untombstone account and its barangay so newly registered account displays immediately
+  unTombstoneExistingAccount(newAccount.id, newAccount.full_name, newAccount.barangay);
+  unTombstoneBarangay(newAccount.barangay);
 
   const userObj = findUser(username);
   const uName = userObj?.fullName || userObj?.displayName || username;
@@ -6929,6 +7021,11 @@ export async function addLocalExistingAccountsBulk(dataList: any[], username: st
       added_from_website: true,
       isBulkEntry: true
     };
+
+    // Untombstone account and its barangay so newly registered account displays immediately
+    unTombstoneExistingAccount(newAccount.id, newAccount.full_name, newAccount.barangay);
+    unTombstoneBarangay(newAccount.barangay);
+
     newAccounts.push(newAccount);
     existingAccountsCache.push(newAccount);
 
@@ -7534,6 +7631,31 @@ export async function deleteLocalExistingAccount(id: string, username: string): 
 
   // Sync to Google Sheets
   syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing accounts to Sheets on deletion:', err));
+
+  return existingAccountsCache;
+}
+
+// Clear and remove all existing accounts completely
+export async function clearAllExistingAccounts(username: string): Promise<ExistingAccountItem[]> {
+  const previousCount = existingAccountsCache.length;
+  for (const acc of existingAccountsCache) {
+    if (!isExistingAccountTombstoned(acc)) {
+      deletedExistingAccountsCache.push({
+        id: acc.id,
+        full_name: acc.full_name,
+        barangay: acc.barangay,
+        deletedAt: new Date().toISOString()
+      });
+    }
+  }
+  await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
+  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted existing accounts to Google Sheets:', err));
+
+  existingAccountsCache = [];
+  await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+
+  await addActivity(username, `Permanently cleared all ${previousCount} existing account records from database.`);
+  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync cleared existing accounts to Sheets:', err));
 
   return existingAccountsCache;
 }

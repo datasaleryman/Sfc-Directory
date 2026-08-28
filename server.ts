@@ -59,6 +59,7 @@ import {
   restoreExistingAccountFiles,
   deleteExistingAccountFolder,
   deleteLocalExistingAccount,
+  clearAllExistingAccounts,
   ensureContactsSynced,
   syncPCUUpdatesFromBase44,
   resetGoogleSheetsCooldown,
@@ -606,6 +607,24 @@ export async function getApp() {
       const barangay = req.params.barangay;
       const { updatedAccounts, deletedAccounts } = await deleteExistingAccountFolder(barangay, username);
       res.json({ success: true, message: `Barangay folder "${barangay}" has been deleted.`, data: updatedAccounts, deletedAccounts: deletedAccounts });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Clear/Delete ALL Existing Accounts
+  app.delete('/api/existing-accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'Admin';
+      const role = (req.user?.role || '').toUpperCase().trim();
+      
+      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({ error: 'Permission denied: Only administrators can clear all existing accounts.' });
+      }
+
+      const updatedAccounts = await clearAllExistingAccounts(username);
+      res.json({ success: true, message: 'All existing account records have been permanently cleared.', data: updatedAccounts });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

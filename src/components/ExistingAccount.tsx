@@ -24,7 +24,12 @@ import {
   Paperclip,
   ExternalLink,
   File,
-  Facebook
+  Facebook,
+  Navigation,
+  Crosshair,
+  Save,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { ExistingAccountItem } from '../types.js';
 
@@ -62,21 +67,52 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   const [stagedFiles, setStagedFiles] = useState<{ fileName: string; fileData: string; size: number }[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  // Editable fields for Selected Account Details Modal
+  const [editFullName, setEditFullName] = useState('');
+  const [editBarangay, setEditBarangay] = useState('');
+  const [editPurok, setEditPurok] = useState('');
+  const [editContactNumber, setEditContactNumber] = useState('');
+  const [editPin, setEditPin] = useState('');
+  const [editLatitude, setEditLatitude] = useState('');
+  const [editLongitude, setEditLongitude] = useState('');
+  const [editGeotagged, setEditGeotagged] = useState(false);
+  const [facebookLink, setFacebookLink] = useState('');
+  const [isGpsCapturing, setIsGpsCapturing] = useState(false);
+  const [showManualCoords, setShowManualCoords] = useState(false);
+  const [isSavingRecord, setIsSavingRecord] = useState(false);
+
   // Reset folder and searches when active tab changes
   useEffect(() => {
     setActiveFolder(null);
     setSearchQuery('');
   }, [activeTab]);
 
-  const [facebookLink, setFacebookLink] = useState('');
-
-  // Clear staged files and initialize Facebook Link when selected item changes
+  // Synchronize modal state whenever a record is selected
   useEffect(() => {
-    if (!selectedItem) {
-      setStagedFiles([]);
-      setFacebookLink('');
-    } else {
+    if (selectedItem) {
+      setEditFullName(selectedItem.full_name || '');
+      setEditBarangay(selectedItem.barangay || '');
+      setEditPurok(selectedItem.purok || '');
+      setEditContactNumber(selectedItem.contact_number || '');
+      setEditPin(selectedItem.pin || '');
+      setEditLatitude(selectedItem.latitude !== undefined && selectedItem.latitude !== null ? selectedItem.latitude.toString() : '');
+      setEditLongitude(selectedItem.longitude !== undefined && selectedItem.longitude !== null ? selectedItem.longitude.toString() : '');
+      setEditGeotagged(!!selectedItem.geotagged);
       setFacebookLink(selectedItem.facebookLink || '');
+      setStagedFiles([]);
+      setShowManualCoords(false);
+    } else {
+      setEditFullName('');
+      setEditBarangay('');
+      setEditPurok('');
+      setEditContactNumber('');
+      setEditPin('');
+      setEditLatitude('');
+      setEditLongitude('');
+      setEditGeotagged(false);
+      setFacebookLink('');
+      setStagedFiles([]);
+      setShowManualCoords(false);
     }
   }, [selectedItem]);
   
@@ -86,8 +122,6 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   // Add Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [bulkText, setBulkText] = useState('');
-  const [formStatus, setFormStatus] = useState('approved');
-  const [formVerified, setFormVerified] = useState(true);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   // Delete Folder state
@@ -97,6 +131,10 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   // Delete Single Account state
   const [accountToDelete, setAccountToDelete] = useState<ExistingAccountItem | null>(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Clear All Accounts state
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   // Pagination states
   const [unifiedPage, setUnifiedPage] = useState(1);
@@ -154,6 +192,29 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       showToast(err.message || 'Error deleting account.', 'error');
     } finally {
       setDeletingAccount(false);
+    }
+  };
+
+  const handleConfirmClearAllAccounts = async () => {
+    setClearingAll(true);
+    try {
+      const res = await fetch('/api/existing-accounts', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to clear all existing accounts.');
+      }
+      showToast('All existing account records have been permanently cleared.', 'success');
+      await fetchExistingAccounts();
+      setShowClearAllModal(false);
+    } catch (err: any) {
+      showToast(err.message || 'Error clearing existing accounts.', 'error');
+    } finally {
+      setClearingAll(false);
     }
   };
 
@@ -243,29 +304,33 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
     fetchBarangays();
   }, [authToken]);
 
-  // Aggregate unique barangays for filter dropdown
+  // Aggregate unique barangays for filter dropdown from active unsubmitted accounts
+  const unsubmittedAccounts = useMemo(() => {
+    return existingAccounts.filter(acc => !acc.uploadedFiles || acc.uploadedFiles.length === 0);
+  }, [existingAccounts]);
+
   const uniqueBarangays = useMemo(() => {
     const set = new Set<string>();
-    existingAccounts.forEach(acc => {
+    unsubmittedAccounts.forEach(acc => {
       if (acc.barangay) {
         set.add(acc.barangay.trim().toUpperCase());
       }
     });
     return Array.from(set).sort();
-  }, [existingAccounts]);
+  }, [unsubmittedAccounts]);
 
   // Compute dynamic stats for top widgets
   const stats = useMemo(() => {
-    const total = existingAccounts.length;
-    const verified = existingAccounts.filter(a => a.existingAccVerified).length;
+    const total = unsubmittedAccounts.length;
+    const verified = unsubmittedAccounts.filter(a => a.existingAccVerified).length;
     const pending = total - verified;
-    const geotagged = existingAccounts.filter(a => a.geotagged).length;
+    const geotagged = unsubmittedAccounts.filter(a => a.geotagged).length;
     return { total, verified, pending, geotagged };
-  }, [existingAccounts]);
+  }, [unsubmittedAccounts]);
 
-  // Filter accounts inside unified list
+  // Filter accounts inside unified list (only unsubmitted accounts)
   const filteredAccounts = useMemo(() => {
-    return existingAccounts.filter(acc => {
+    return unsubmittedAccounts.filter(acc => {
       // 1. Search Query
       const lowerQuery = searchQuery.toLowerCase();
       const matchesSearch = !searchQuery || 
@@ -286,14 +351,14 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
 
       return matchesSearch && matchesBarangay && matchesVerification;
     });
-  }, [existingAccounts, searchQuery, selectedBarangay, selectedVerification]);
+  }, [unsubmittedAccounts, searchQuery, selectedBarangay, selectedVerification]);
 
-  // Aggregate barangay folders from existing accounts where addedToFiles is true
+  // Aggregate barangay folders from existing accounts where addedToFiles is true and not yet submitted
   const barangayFolders = useMemo(() => {
     const foldersMap: { [key: string]: { count: number; verifiedCount: number; list: ExistingAccountItem[] } } = {};
     
-    // Only aggregate accounts that have been added to files
-    const addedAccounts = existingAccounts.filter(acc => acc.addedToFiles === true);
+    // Only aggregate accounts that have been added to files and not yet submitted
+    const addedAccounts = unsubmittedAccounts.filter(acc => acc.addedToFiles === true);
 
     addedAccounts.forEach(acc => {
       const bName = acc.barangay || 'Unknown Barangay';
@@ -314,7 +379,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       verifiedCount: foldersMap[name].verifiedCount,
       list: foldersMap[name].list
     })).sort((a, b) => b.count - a.count || a.barangay.localeCompare(b.barangay));
-  }, [existingAccounts]);
+  }, [unsubmittedAccounts]);
 
   // Filter folders in Folder Overview mode
   const filteredFolders = useMemo(() => {
@@ -425,48 +490,161 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
     setStagedFiles(prev => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleSaveFiles = async () => {
+  // GPS Live Sensor Capture
+  const handleCaptureGPS = () => {
+    if (!navigator.geolocation) {
+      showToast('GPS Geolocation is not supported by your browser. You can enter coordinates manually.', 'error');
+      setShowManualCoords(true);
+      return;
+    }
+
+    setIsGpsCapturing(true);
+    showToast('Acquiring real-time GPS coordinates from device sensor...', 'info');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setEditLatitude(lat.toFixed(6));
+        setEditLongitude(lng.toFixed(6));
+        setEditGeotagged(true);
+        setIsGpsCapturing(false);
+        showToast(`GPS location captured: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, 'success');
+      },
+      (error) => {
+        console.error('Error capturing GPS:', error);
+        setIsGpsCapturing(false);
+        setShowManualCoords(true);
+        showToast(`Could not acquire GPS: ${error.message}. You can enter coordinates manually.`, 'error');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+
+  const handleClearGPS = () => {
+    setEditLatitude('');
+    setEditLongitude('');
+    setEditGeotagged(false);
+    showToast('Geotag coordinates cleared.', 'info');
+  };
+
+  // Discard edits in modal
+  const handleDiscardChanges = () => {
     if (!selectedItem) return;
-    const isFacebookLinkChanged = facebookLink !== (selectedItem.facebookLink || '');
-    if (stagedFiles.length === 0 && !isFacebookLinkChanged) return;
-    
-    setUploading(true);
+    setEditFullName(selectedItem.full_name || '');
+    setEditBarangay(selectedItem.barangay || '');
+    setEditPurok(selectedItem.purok || '');
+    setEditContactNumber(selectedItem.contact_number || '');
+    setEditPin(selectedItem.pin || '');
+    setEditLatitude(selectedItem.latitude !== undefined && selectedItem.latitude !== null ? selectedItem.latitude.toString() : '');
+    setEditLongitude(selectedItem.longitude !== undefined && selectedItem.longitude !== null ? selectedItem.longitude.toString() : '');
+    setEditGeotagged(!!selectedItem.geotagged);
+    setFacebookLink(selectedItem.facebookLink || '');
+    setStagedFiles([]);
+    setShowManualCoords(false);
+    showToast('Changes discarded.', 'info');
+  };
+
+  // Check whether user modified any modal field or staged files
+  const isFormChanged = useMemo(() => {
+    if (!selectedItem) return false;
+    const origLat = selectedItem.latitude !== undefined && selectedItem.latitude !== null ? selectedItem.latitude.toString() : '';
+    const origLng = selectedItem.longitude !== undefined && selectedItem.longitude !== null ? selectedItem.longitude.toString() : '';
+
+    return (
+      editFullName.trim() !== (selectedItem.full_name || '').trim() ||
+      editBarangay.trim() !== (selectedItem.barangay || '').trim() ||
+      editPurok.trim() !== (selectedItem.purok || '').trim() ||
+      editContactNumber.trim() !== (selectedItem.contact_number || '').trim() ||
+      editPin.trim() !== (selectedItem.pin || '').trim() ||
+      facebookLink.trim() !== (selectedItem.facebookLink || '').trim() ||
+      editLatitude.trim() !== origLat ||
+      editLongitude.trim() !== origLng ||
+      stagedFiles.length > 0
+    );
+  }, [selectedItem, editFullName, editBarangay, editPurok, editContactNumber, editPin, facebookLink, editLatitude, editLongitude, stagedFiles]);
+
+  // Save all modified details, geotag telemetry, and attached files
+  const handleSaveRecord = async () => {
+    if (!selectedItem) return;
+    if (!editFullName.trim()) {
+      showToast('Patient full name is required.', 'error');
+      return;
+    }
+    if (!editBarangay.trim()) {
+      showToast('Barangay is required.', 'error');
+      return;
+    }
+
+    setIsSavingRecord(true);
     try {
-      const res = await fetch(`/api/existing-accounts/${selectedItem.id}/files`, {
-        method: 'POST',
+      const latNum = editLatitude.trim() ? parseFloat(editLatitude.trim()) : undefined;
+      const lngNum = editLongitude.trim() ? parseFloat(editLongitude.trim()) : undefined;
+      const isGeotagged = !!(latNum !== undefined && !isNaN(latNum) && lngNum !== undefined && !isNaN(lngNum));
+
+      // 1. If files are staged, upload them first
+      if (stagedFiles.length > 0) {
+        await fetch(`/api/existing-accounts/${selectedItem.id}/files`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            files: stagedFiles,
+            facebookLink: facebookLink.trim()
+          })
+        });
+      }
+
+      // 2. Update record details & geotag telemetry
+      const updatePayload: Partial<ExistingAccountItem> = {
+        full_name: editFullName.trim().toUpperCase(),
+        barangay: editBarangay.trim().toUpperCase(),
+        purok: editPurok.trim(),
+        contact_number: editContactNumber.trim(),
+        pin: editPin.trim(),
+        latitude: isGeotagged ? latNum : undefined,
+        longitude: isGeotagged ? lngNum : undefined,
+        geotagged: isGeotagged,
+        facebookLink: facebookLink.trim()
+      };
+
+      const res = await fetch(`/api/existing-accounts/${selectedItem.id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`
         },
-        body: JSON.stringify({
-          files: stagedFiles,
-          facebookLink: facebookLink
-        })
+        body: JSON.stringify(updatePayload)
       });
-      const updatedItem = await res.json();
+
+      const updatedData = await res.json();
       if (!res.ok) {
-        throw new Error(updatedItem.error || 'Failed to save changes.');
+        throw new Error(updatedData.error || 'Failed to update record details.');
       }
+
+      // Update state
+      setExistingAccounts(prev => prev.map(acc => acc.id === selectedItem.id ? updatedData : acc));
       
-      // Update local state lists
-      setExistingAccounts(prev => prev.map(acc => acc.id === selectedItem.id ? updatedItem : acc));
-      setSelectedItem(null); // Close the popup upon sync, transferring it out of current view
-      setStagedFiles([]);
-      
-      let msg = '';
-      if (stagedFiles.length > 0 && isFacebookLinkChanged) {
-        msg = `Successfully uploaded ${stagedFiles.length} file(s) and updated Facebook link!`;
-      } else if (stagedFiles.length > 0) {
-        msg = `Successfully uploaded ${stagedFiles.length} file(s) and synced with Base44 database!`;
+      if (stagedFiles.length > 0 || (updatedData.uploadedFiles && updatedData.uploadedFiles.length > 0)) {
+        setSelectedItem(null);
+        setStagedFiles([]);
+        showToast(`Record for "${updatedData.full_name}" with attached document(s) submitted to Base44 & transferred to "Recent Upload"!`, 'success');
       } else {
-        msg = `Successfully updated Facebook link and synced with Base44 database!`;
+        setSelectedItem(updatedData);
+        setStagedFiles([]);
+        showToast('Patient record details & geotag location updated and synced successfully!', 'success');
       }
-      showToast(msg, 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to save changes.', 'error');
     } finally {
-      setUploading(false);
+      setIsSavingRecord(false);
     }
+  };
+
+  const handleSaveFiles = async () => {
+    await handleSaveRecord();
   };
 
   // Handle adding bulk accounts
@@ -490,9 +668,9 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         barangay: r.barangay,
         purok: r.purok,
         contact_number: r.contactNumber,
-        status: formStatus,
-        existingAccVerified: formVerified,
-        existingAccVisited: formVerified,
+        status: 'approved',
+        existingAccVerified: true,
+        existingAccVisited: true,
         pin: ''
       }));
 
@@ -514,8 +692,6 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       
       // Reset bulk form and close modal
       setBulkText('');
-      setFormStatus('approved');
-      setFormVerified(true);
       setShowAddModal(false);
 
       // Refresh directory
@@ -530,40 +706,40 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   return (
     <div className="space-y-6">
       {/* Redesigned Header Panel */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 relative overflow-hidden">
         {/* Subtle background graphics */}
         <div className="absolute -right-24 -top-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -left-12 -bottom-24 w-48 h-48 bg-teal-500/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex items-start sm:items-center gap-4 relative z-10">
+        <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 relative z-10 min-w-0 flex-1">
           {activeTab === 'exist-acc-files' && activeFolder ? (
             <button
               onClick={() => {
                 setActiveFolder(null);
                 setSearchQuery('');
               }}
-              className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-emerald-400 font-bold text-xs rounded-2xl transition-all cursor-pointer flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-emerald-400 font-bold text-xs rounded-2xl transition-all cursor-pointer flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shrink-0"
               title="Back to Folders"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
           ) : (
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold shadow-lg shadow-emerald-900/20">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold shadow-lg shadow-emerald-900/20 shrink-0">
               {activeTab === 'exist-acc-files' ? (
-                <Folder className="w-6 h-6 text-white" />
+                <Folder className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               ) : (
-                <UserCheck className="w-6 h-6 text-white" />
+                <UserCheck className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               )}
             </div>
           )}
 
-          <div>
-            <h2 className="text-xl font-black text-white font-display tracking-tight flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-xl font-black text-white font-display tracking-tight flex items-center gap-2 flex-wrap">
               {activeTab === 'exist-acc-files' ? (
                 activeFolder ? (
-                  <span className="flex items-center gap-2">
-                    <FolderOpen className="w-6 h-6 text-emerald-400 fill-emerald-500/10" />
-                    Existing Accounts in <span className="text-emerald-300 capitalize">{activeFolder.toLowerCase()}</span>
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <FolderOpen className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 fill-emerald-500/10 shrink-0" />
+                    <span>Existing Accounts in <span className="text-emerald-300 capitalize">{activeFolder.toLowerCase()}</span></span>
                   </span>
                 ) : (
                   'Existing Account Files'
@@ -572,7 +748,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                 'Existing Account Directory'
               )}
             </h2>
-            <p className="text-xs text-slate-400 font-medium mt-1">
+            <p className="text-xs sm:text-[13px] text-slate-400 font-medium mt-1 leading-relaxed max-w-2xl">
               {activeTab === 'exist-acc-files' ? (
                 activeFolder ? (
                   `Detailed clinical directory of registered existing account patient profiles under ${activeFolder}`
@@ -586,23 +762,34 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 relative z-10 w-full md:w-auto self-stretch md:self-auto justify-end">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 relative z-10 w-full xl:w-auto shrink-0 justify-start sm:justify-end pt-2 xl:pt-0 border-t xl:border-t-0 border-slate-800/80">
+          {isMasterAdmin && existingAccounts.length > 0 && (
+            <button
+              onClick={() => setShowClearAllModal(true)}
+              className="flex-1 sm:flex-initial px-3.5 sm:px-4 py-2.5 sm:py-3 bg-red-950/60 hover:bg-red-900 border border-red-800/80 text-red-300 hover:text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none shadow-sm whitespace-nowrap"
+              title="Permanently remove all existing account records"
+            >
+              <Trash2 className="w-4 h-4 text-red-400 shrink-0" />
+              <span>Clear All</span>
+            </button>
+          )}
+
           <button
             onClick={fetchExistingAccounts}
             disabled={loading}
-            className="flex-1 md:flex-none px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none"
+            className="flex-1 sm:flex-initial px-3.5 sm:px-4 py-2.5 sm:py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none whitespace-nowrap"
             title="Reload local existing accounts directory"
           >
-            <RotateCw className={`w-4 h-4 text-emerald-400 ${loading ? 'animate-spin' : ''}`} />
+            <RotateCw className={`w-4 h-4 text-emerald-400 shrink-0 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
 
           {activeTab === 'existing-account' && (
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex-1 md:flex-none px-5 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none hover:-translate-y-0.5 active:translate-y-0"
+              className="w-full sm:w-auto px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap"
             >
-              <Plus className="w-4 h-4 text-white font-bold" />
+              <Plus className="w-4 h-4 text-white font-bold shrink-0" />
               <span>Add Existing Acc.</span>
             </button>
           )}
@@ -1158,38 +1345,6 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                       </div>
                     </div>
                   </div>
-
-                  {/* Status & Verification Switches for all imported bulk records */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-                    <div className="space-y-1">
-                      <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wider block">
-                        Bulk Approval Status
-                      </label>
-                      <select
-                        value={formStatus}
-                        onChange={(e) => setFormStatus(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                      >
-                        <option value="approved">Approved</option>
-                        <option value="pending">Pending</option>
-                      </select>
-                    </div>
-
-                    <div className="flex flex-col justify-end pb-1">
-                      <label className="flex items-center gap-3 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 p-3 rounded-xl cursor-pointer transition-all">
-                        <input
-                          type="checkbox"
-                          checked={formVerified}
-                          onChange={(e) => setFormVerified(e.target.checked)}
-                          className="w-4.5 h-4.5 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
-                        />
-                        <span className="text-xs font-bold text-slate-700 select-none">
-                          Mark Imported Accounts as Verified
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-
                 </div>
 
                 <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
@@ -1231,6 +1386,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
               exit={{ opacity: 0, scale: 0.95 }}
               className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]"
             >
+              {/* Modal Header */}
               <div className="bg-gradient-to-r from-emerald-900 to-slate-950 px-6 py-5 flex items-center justify-between text-white">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
@@ -1238,10 +1394,10 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-extrabold text-base font-display capitalize truncate">
-                      {selectedItem.full_name.toLowerCase()}
+                      {editFullName || selectedItem.full_name.toLowerCase()}
                     </h3>
                     <p className="text-xs text-emerald-300 font-medium truncate">
-                      Household submission record
+                      Existing Account Profile • Edit & Telemetry Details
                     </p>
                   </div>
                 </div>
@@ -1254,95 +1410,235 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                 </button>
               </div>
 
-              <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-                {/* Information cards */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Barangay</span>
-                    <span className="text-sm font-bold text-slate-800 capitalize mt-1 block">
-                      {selectedItem.barangay ? selectedItem.barangay.toLowerCase() : 'Not Set'}
-                    </span>
+              {/* Modal Body */}
+              <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+                {/* 1. Editable Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <UserIcon className="w-3.5 h-3.5 text-emerald-600" /> Patient Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    placeholder="e.g. JUAN DELA CRUZ"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs font-bold text-slate-800 outline-none transition-all uppercase"
+                  />
+                </div>
+
+                {/* 2. Barangay & Purok Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Barangay
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        list="edit-barangay-modal-options"
+                        value={editBarangay}
+                        onChange={(e) => setEditBarangay(e.target.value)}
+                        placeholder="Select or enter barangay"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs font-bold text-slate-800 outline-none transition-all uppercase"
+                      />
+                      <datalist id="edit-barangay-modal-options">
+                        {barangayList.map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </datalist>
+                    </div>
                   </div>
 
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Purok</span>
-                    <span className="text-sm font-bold text-slate-800 capitalize mt-1 block">
-                      {selectedItem.purok ? selectedItem.purok.toLowerCase() : '—'}
-                    </span>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Navigation className="w-3.5 h-3.5 text-emerald-600" /> Purok / Sitio
+                    </label>
+                    <input
+                      type="text"
+                      value={editPurok}
+                      onChange={(e) => setEditPurok(e.target.value)}
+                      placeholder="e.g. Purok 1"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs font-semibold text-slate-800 outline-none transition-all"
+                    />
                   </div>
                 </div>
 
-                <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Verification Status</span>
-                    {selectedItem.existingAccVerified ? (
-                      <span className="text-sm font-extrabold text-emerald-800 mt-1 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Verified Existing Account
-                      </span>
-                    ) : (
-                      <span className="text-sm font-bold text-amber-800 mt-1 flex items-center gap-1.5">
-                        <Clock className="w-4 h-4 text-amber-600" /> Verification Pending
-                      </span>
-                    )}
+                {/* 3. Mobile Number & PhilHealth PIN */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-emerald-600" /> Mobile Number
+                    </label>
+                    <input
+                      type="text"
+                      value={editContactNumber}
+                      onChange={(e) => setEditContactNumber(e.target.value)}
+                      placeholder="e.g. 09171234567"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs font-mono font-semibold text-slate-800 outline-none transition-all"
+                    />
                   </div>
-                  <span className="px-2.5 py-1 text-[10px] font-extrabold text-emerald-800 bg-white border border-emerald-200 rounded-lg">
-                    {selectedItem.status.toUpperCase()}
-                  </span>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> PhilHealth PIN Code
+                    </label>
+                    <input
+                      type="text"
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value)}
+                      placeholder="e.g. 12-345678901-2"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs font-mono font-semibold text-slate-800 outline-none transition-all"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Record Details</h4>
-                  
-                  <div className="space-y-2 text-xs font-semibold text-slate-600">
-                    <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                      <span className="flex items-center gap-1.5 text-slate-400">
-                        <Phone className="w-3.5 h-3.5" /> Mobile Number
+                {/* 4. GPS Geotagging & Telemetry */}
+                <div className="p-4 bg-emerald-50/40 border border-emerald-100/80 rounded-2xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                        <Crosshair className="w-4 h-4 text-emerald-700" /> Geographic Tagging & Telemetry
                       </span>
-                      <span className="font-mono text-slate-800 font-bold">{selectedItem.contact_number || '—'}</span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Capture device sensor GPS coordinates or enter telemetry points manually.
+                      </p>
                     </div>
-
-                    <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                      <span className="flex items-center gap-1.5 text-slate-400">
-                        <UserCheck className="w-3.5 h-3.5" /> PhilHealth PIN Code
-                      </span>
-                      <span className="font-mono text-slate-800 font-bold">{selectedItem.pin || '—'}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                      <span className="flex items-center gap-1.5 text-slate-400">
-                        <Calendar className="w-3.5 h-3.5" /> Registration Date
-                      </span>
-                      <span className="text-slate-800 font-bold">
-                        {new Date(selectedItem.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                      <span className="flex items-center gap-1.5 text-slate-400">
-                        <UserIcon className="w-3.5 h-3.5" /> Registered By
-                      </span>
-                      <span className="text-slate-800 font-bold">{selectedItem.submittedBy}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between py-2">
-                      <span className="flex items-center gap-1.5 text-slate-400">
-                        <MapPin className="w-3.5 h-3.5" /> Geographic Tagging
-                      </span>
-                      {selectedItem.geotagged && selectedItem.latitude && selectedItem.longitude ? (
-                        <span className="text-teal-700 font-bold font-mono">
-                          {selectedItem.latitude.toFixed(6)}, {selectedItem.longitude.toFixed(6)}
+                    <div>
+                      {editLatitude && editLongitude ? (
+                        <span className="px-2.5 py-1 bg-teal-100 text-teal-800 border border-teal-200 rounded-full text-[10px] font-extrabold flex items-center gap-1 shadow-xs">
+                          <Check className="w-3 h-3 text-teal-700" /> Geotagged
                         </span>
                       ) : (
-                        <span className="text-slate-300 font-normal">No coordinate telemetry available</span>
+                        <span className="px-2.5 py-1 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold">
+                          Not Geotagged
+                        </span>
                       )}
                     </div>
                   </div>
+
+                  {/* GPS Coordinates Display & Controls */}
+                  {editLatitude && editLongitude ? (
+                    /* Once captured: Hide buttons and only display the captured coordinates */
+                    <div className="bg-white/90 border border-emerald-200/90 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+                          <MapPin className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Captured Coordinates</span>
+                          <span className="font-mono font-black text-sm text-emerald-950 truncate block">
+                            {editLatitude}, {editLongitude}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a
+                          href={`https://www.google.com/maps?q=${editLatitude},${editLongitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-all"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>View on Google Maps</span>
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={handleClearGPS}
+                          className="px-2.5 py-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Remove Geotag Coordinates"
+                        >
+                          Recapture
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* When not yet captured: Show capture buttons and manual input toggle */
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCaptureGPS}
+                          disabled={isGpsCapturing}
+                          className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {isGpsCapturing ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Locking GPS Sensor...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Crosshair className="w-3.5 h-3.5" />
+                              <span>Capture Current GPS</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowManualCoords(!showManualCoords)}
+                          className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                        >
+                          {showManualCoords ? 'Hide Manual Inputs' : 'Manual Coordinates'}
+                        </button>
+                      </div>
+
+                      {showManualCoords && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Latitude</label>
+                            <input
+                              type="text"
+                              value={editLatitude}
+                              onChange={(e) => {
+                                setEditLatitude(e.target.value);
+                                setEditGeotagged(!!(e.target.value.trim() && editLongitude.trim()));
+                              }}
+                              placeholder="e.g. 7.824123"
+                              className="w-full px-3 py-2 bg-white border border-slate-200 focus:border-emerald-500 rounded-xl text-xs font-mono font-bold text-slate-700 outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Longitude</label>
+                            <input
+                              type="text"
+                              value={editLongitude}
+                              onChange={(e) => {
+                                setEditLongitude(e.target.value);
+                                setEditGeotagged(!!(editLatitude.trim() && e.target.value.trim()));
+                              }}
+                              placeholder="e.g. 123.432109"
+                              className="w-full px-3 py-2 bg-white border border-slate-200 focus:border-emerald-500 rounded-xl text-xs font-mono font-bold text-slate-700 outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Facebook Link Input Field */}
+                {/* 5. Metadata (Registration Info) */}
+                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl grid grid-cols-2 gap-3 text-xs text-slate-600">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Registration Date</span>
+                    <span className="text-slate-800 font-bold mt-0.5 block">
+                      {new Date(selectedItem.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Registered By</span>
+                    <span className="text-slate-800 font-bold mt-0.5 block truncate">
+                      {selectedItem.submittedBy || 'Admin'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6. Facebook Link Field */}
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Facebook className="w-3.5 h-3.5 text-blue-600" /> Facebook link (Optional)
+                    <Facebook className="w-3.5 h-3.5 text-blue-600" /> Facebook Link (Optional)
                   </span>
                   <div className="mt-1">
                     <input
@@ -1367,7 +1663,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   )}
                 </div>
 
-                {/* File Upload & Managed Attached Documents Section */}
+                {/* 7. File Upload & Managed Attached Documents Section */}
                 <div className="pt-4 border-t border-slate-100 space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1473,49 +1769,50 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                 </div>
               </div>
 
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-                {selectedItem && facebookLink !== (selectedItem.facebookLink || '') && (
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+                <div>
+                  {isFormChanged && (
+                    <button
+                      type="button"
+                      onClick={handleDiscardChanges}
+                      disabled={isSavingRecord}
+                      className="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer focus:outline-none"
+                    >
+                      Discard
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setFacebookLink(selectedItem.facebookLink || '')}
-                    disabled={uploading}
+                    onClick={() => setSelectedItem(null)}
+                    disabled={isSavingRecord}
                     className="px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer focus:outline-none"
                   >
-                    Discard
+                    Close View
                   </button>
-                )}
 
-                {stagedFiles.length > 0 || (selectedItem && facebookLink !== (selectedItem.facebookLink || '')) ? (
                   <button
                     type="button"
-                    onClick={handleSaveFiles}
-                    disabled={uploading}
-                    className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer focus:outline-none"
+                    onClick={handleSaveRecord}
+                    disabled={isSavingRecord}
+                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-900/20 transition-all flex items-center gap-2 cursor-pointer focus:outline-none"
                   >
-                    {uploading ? (
+                    {isSavingRecord ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>Saving & Syncing...</span>
                       </>
                     ) : (
                       <>
-                        <UploadCloud className="w-3.5 h-3.5" />
-                        <span>
-                          {stagedFiles.length > 0 
-                            ? `Save & Sync to Base44 (${stagedFiles.length})` 
-                            : 'Save Changes to Base44'}
-                        </span>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Changes</span>
                       </>
                     )}
                   </button>
-                ) : (
-                  <button
-                    onClick={() => setSelectedItem(null)}
-                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer focus:outline-none"
-                  >
-                    Close View
-                  </button>
-                )}
+                </div>
               </div>
             </motion.div>
           </div>
@@ -1673,6 +1970,86 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   )}
                   <span>
                     {deletingAccount ? 'Deleting...' : 'Confirm Permanent Delete'}
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* CLEAR ALL ACCOUNTS DIALOG MODAL */}
+      <AnimatePresence>
+        {showClearAllModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 max-w-md w-full overflow-hidden text-left"
+            >
+              <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 border border-red-500/30">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base font-display">
+                      Clear All Existing Accounts
+                    </h3>
+                    <p className="text-xs text-red-300 font-medium">
+                      This action requires Master Admin authorization
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowClearAllModal(false)}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-white transition-colors cursor-pointer"
+                  title="Close Dialog"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-slate-600 font-medium leading-relaxed">
+                  Are you sure you want to permanently delete <span className="font-black text-red-600">ALL {existingAccounts.length}</span> existing account patient records from the database?
+                </p>
+
+                <div className="p-4 bg-red-50/50 rounded-2xl border border-red-100 text-xs font-semibold text-red-800 space-y-2">
+                  <p className="font-bold flex items-center gap-1.5 text-red-950 text-sm">
+                    ⚠️ Warning: This action is permanent and irreversible
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1 text-red-900">
+                    <li>All {existingAccounts.length} existing patient account records will be permanently deleted.</li>
+                    <li>All associated Barangay folders in this directory will be emptied.</li>
+                    <li>The remote ExistingAccounts sheet in Google Sheets will be reset.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowClearAllModal(false)}
+                  disabled={clearingAll}
+                  className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer focus:outline-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmClearAllAccounts}
+                  disabled={clearingAll}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 focus:outline-none"
+                >
+                  {clearingAll ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {clearingAll ? 'Clearing All Records...' : 'Confirm Clear All'}
                   </span>
                 </button>
               </div>

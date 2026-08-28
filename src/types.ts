@@ -16,6 +16,9 @@ export interface Contact {
   pcu_uploaded_at?: string;
   added_from_print_list?: boolean;
   isExistingAccount?: boolean;
+  category?: 'pcu' | 'existing_account';
+  pin?: string;
+  facebookLink?: string;
   uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
 }
 
