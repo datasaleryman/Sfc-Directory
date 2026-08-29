@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, MapPin, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3, Compass, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Contact } from '../types.js';
-import { GeotagPopupModal } from './GeotagPopupModal.js';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -11,14 +10,14 @@ export interface BarangayFolderInfo {
   barangay: string;
   count: number;
   purokCount: number;
-  geotaggedCount: number;
+  geotaggedCount?: number;
 }
 
 export interface PurokFolderInfo {
   purok: string;
   count: number;
   barangayCount: number;
-  geotaggedCount: number;
+  geotaggedCount?: number;
   barangays: string[];
 }
 
@@ -182,12 +181,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const [modalEditBarangay, setModalEditBarangay] = useState('');
   const [modalEditPurok, setModalEditPurok] = useState('');
   const [modalEditContactNumber, setModalEditContactNumber] = useState('');
-  const [modalEditLatitude, setModalEditLatitude] = useState<string>('');
-  const [modalEditLongitude, setModalEditLongitude] = useState<string>('');
-  const [modalEditGeotagged, setModalEditGeotagged] = useState(false);
   const [modalIsSaving, setModalIsSaving] = useState(false);
-  const [isGpsCapturing, setIsGpsCapturing] = useState(false);
-  const [showManualCoordsInModal, setShowManualCoordsInModal] = useState(false);
 
   useEffect(() => {
     if (viewContact) {
@@ -195,20 +189,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setModalEditBarangay(viewContact.barangay || '');
       setModalEditPurok(viewContact.purok || '');
       setModalEditContactNumber(viewContact.contact_number || '');
-      setModalEditLatitude(viewContact.latitude !== undefined && viewContact.latitude !== null ? String(viewContact.latitude) : '');
-      setModalEditLongitude(viewContact.longitude !== undefined && viewContact.longitude !== null ? String(viewContact.longitude) : '');
-      setModalEditGeotagged(!!viewContact.geotagged);
       setIsEditingContactInModal(false);
-      setIsGpsCapturing(false);
-      setShowManualCoordsInModal(false);
     } else {
       setIsEditingContactInModal(false);
-      setIsGpsCapturing(false);
-      setShowManualCoordsInModal(false);
     }
   }, [viewContact]);
 
-  const [geotagMapTarget, setGeotagMapTarget] = useState<Contact | null>(null);
   const [highlightedContactId, setHighlightedContactId] = useState<number | string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -437,30 +423,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       return;
     }
 
-    // Validate Geotag: GPS coordinates must be captured and valid
-    const currentLatStr = modalEditLatitude.trim() || (viewContact.latitude !== undefined && viewContact.latitude !== null ? String(viewContact.latitude) : '');
-    const currentLngStr = modalEditLongitude.trim() || (viewContact.longitude !== undefined && viewContact.longitude !== null ? String(viewContact.longitude) : '');
-    const currentLat = currentLatStr ? parseFloat(currentLatStr) : null;
-    const currentLng = currentLngStr ? parseFloat(currentLngStr) : null;
-
-    const isGeotagValid = (modalEditGeotagged || !!viewContact.geotagged) &&
-      currentLat !== null && !isNaN(currentLat) &&
-      currentLng !== null && !isNaN(currentLng);
-
-    if (!isGeotagValid) {
-      showToast('Geotagging is required before submitting files. Please capture device GPS coordinates.', 'warning');
-      return;
-    }
-
     setPcuUploading(true);
     try {
-      // 1. If Barangay, Purok or Geotag was updated or newly captured, synchronize contact record first
+      // 1. If Barangay or Purok was updated, synchronize contact record first
       const needsContactUpdate = 
         currentBarangay !== (viewContact.barangay || '') ||
-        currentPurok !== (viewContact.purok || '') ||
-        modalEditGeotagged !== !!viewContact.geotagged ||
-        currentLat !== (viewContact.latitude ?? null) ||
-        currentLng !== (viewContact.longitude ?? null);
+        currentPurok !== (viewContact.purok || '');
 
       if (needsContactUpdate) {
         const updateRes = await fetch(`/api/contacts/${viewContact.id}`, {
@@ -473,10 +441,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             full_name: modalEditFullName.trim() || viewContact.full_name,
             barangay: currentBarangay,
             purok: currentPurok,
-            contact_number: modalEditContactNumber.trim() || viewContact.contact_number,
-            latitude: currentLat,
-            longitude: currentLng,
-            geotagged: true
+            contact_number: modalEditContactNumber.trim() || viewContact.contact_number
           })
         });
 
@@ -498,9 +463,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           barangay: currentBarangay,
           purok: currentPurok,
           contact_number: modalEditContactNumber.trim() || viewContact.contact_number,
-          latitude: currentLat,
-          longitude: currentLng,
-          geotagged: true,
           files: stagedPcuFiles.map(f => ({ fileName: f.fileName, fileData: f.fileData }))
         })
       });
@@ -513,7 +475,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setViewContact(null);
       setStagedPcuFiles([]);
       fetchContacts();
-      showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s) with Geotag & Purok verified! Member "${viewContact.full_name}" has been transferred to Recent Upload.`, 'success');
+      showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s) for member "${viewContact.full_name}". Transferred to Recent Upload.`, 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -687,27 +649,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       return;
     }
 
-    let latNum: number | null = null;
-    let lngNum: number | null = null;
-
-    if (modalEditLatitude.trim()) {
-      const parsed = parseFloat(modalEditLatitude);
-      if (isNaN(parsed)) {
-        showToast('Latitude must be a valid number.', 'error');
-        return;
-      }
-      latNum = parsed;
-    }
-
-    if (modalEditLongitude.trim()) {
-      const parsed = parseFloat(modalEditLongitude);
-      if (isNaN(parsed)) {
-        showToast('Longitude must be a valid number.', 'error');
-        return;
-      }
-      lngNum = parsed;
-    }
-
     setModalIsSaving(true);
 
     try {
@@ -721,10 +662,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           full_name: modalEditFullName.trim(),
           barangay: modalEditBarangay.trim(),
           purok: modalEditPurok.trim(),
-          contact_number: modalEditContactNumber.trim(),
-          latitude: latNum,
-          longitude: lngNum,
-          geotagged: modalEditGeotagged || (latNum !== null && lngNum !== null)
+          contact_number: modalEditContactNumber.trim()
         })
       });
 
@@ -746,33 +684,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     } finally {
       setModalIsSaving(false);
     }
-  };
-
-  const handleAutoGeotagInModal = () => {
-    if (!navigator.geolocation) {
-      showToast('Geolocation is not supported by your browser. You can enter coordinates manually.', 'error');
-      setShowManualCoordsInModal(true);
-      return;
-    }
-
-    setIsGpsCapturing(true);
-    showToast('Retrieving GPS coordinates from device sensor...', 'info');
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setModalEditLatitude(position.coords.latitude.toFixed(6));
-        setModalEditLongitude(position.coords.longitude.toFixed(6));
-        setModalEditGeotagged(true);
-        setIsGpsCapturing(false);
-        showToast('Successfully locked and captured GPS coordinates!', 'success');
-      },
-      (error) => {
-        console.error('Error getting location:', error);
-        setIsGpsCapturing(false);
-        setShowManualCoordsInModal(true);
-        showToast(`Failed to fetch location: ${error.message}. Please input coordinates manually.`, 'error');
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
   };
 
   // Perform soft delete operations
@@ -875,7 +786,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         'Barangay': item.barangay || '',
         'Purok': item.purok || '',
         'Contact Number': item.contact_number,
-        'Geotagged': item.geotagged ? 'Yes' : 'No',
         'Date Recorded': formatDate(item.created_at)
       }));
 
@@ -944,13 +854,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         item.barangay || '',
         item.purok || '',
         item.contact_number,
-        item.geotagged ? 'Geotagged' : 'Standard',
         formatDate(item.created_at)
       ]);
 
       autoTable(doc, {
         startY: 30,
-        head: [['#', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Location Status', 'Date Added']],
+        head: [['#', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Date Added']],
         body: tableData,
         theme: 'striped',
         headStyles: {
@@ -1629,7 +1538,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     <th className="py-4 px-5">Barangay</th>
                     <th className="py-4 px-5">Purok</th>
                     <th className="py-4 px-5">Contact Number</th>
-                    <th className="py-4 px-5">Location Status</th>
 
                     <th
                       onClick={() => handleSort('date')}
@@ -1657,14 +1565,13 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-32" /></td>
                         <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-28" /></td>
                         <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-36" /></td>
-                        <td className="py-4 px-5"><div className="h-6 bg-slate-100 rounded-lg w-24" /></td>
                         <td className="py-4 px-5"><div className="h-4 bg-slate-100 rounded w-28" /></td>
                         <td className="py-4 px-5"><div className="h-8 bg-slate-100 rounded-lg w-28 mx-auto" /></td>
                       </tr>
                     ))
                   ) : contacts.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 px-5 text-center text-slate-400">
+                      <td colSpan={7} className="py-12 px-5 text-center text-slate-400">
                         <Folder className="w-10 h-10 mb-3 mx-auto text-slate-300" />
                         <p className="font-semibold text-slate-600">No member records stored in this Barangay folder.</p>
                         <p className="text-xs text-slate-400 mt-0.5">Try clearing search filters or add a new record.</p>
@@ -1724,17 +1631,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               {contact.contact_number}
                             </div>
                           </td>
-                          <td className="py-3.5 px-5">
-                            {contact.geotagged ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-xs font-extrabold">
-                                <MapPin className="w-3 h-3 text-teal-600" /> Geotagged
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
-                                Standard
-                              </span>
-                            )}
-                          </td>
                           <td className="py-3.5 px-5 text-xs text-slate-400 font-medium">
                             {formatDate(contact.created_at)}
                           </td>
@@ -1754,22 +1650,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
-                              {onNavigateToMap && (
-                                <button
-                                  onClick={(e) => { 
-                                    e.stopPropagation(); 
-                                    if (contact.geotagged && contact.latitude && contact.longitude) {
-                                      setGeotagMapTarget(contact);
-                                    } else {
-                                      showToast(`This member record has not been geotagged yet. Please edit the member record to add GPS coordinates.`, 'warning');
-                                    }
-                                  }}
-                                  className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
-                                  title="Locate on Map"
-                                >
-                                  <MapPin className="w-4 h-4" />
-                                </button>
-                              )}
                               <button
                                 onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
                                 className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -1860,15 +1740,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                             Purok {contact.purok}
                           </span>
                         )}
-                        {contact.geotagged ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 font-bold">
-                            <MapPin className="w-3 h-3 text-teal-600" /> Geotagged
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-500 font-medium">
-                            Standard
-                          </span>
-                        )}
                       </div>
 
                       <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
@@ -1892,22 +1763,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          {onNavigateToMap && (
-                            <button
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                if (contact.geotagged && contact.latitude && contact.longitude) {
-                                  setGeotagMapTarget(contact);
-                                } else {
-                                  showToast(`This member record has not been geotagged yet. Please edit the member record to add GPS coordinates.`, 'warning');
-                                }
-                              }}
-                              className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
-                              title="Locate on Map"
-                            >
-                              <MapPin className="w-4 h-4" />
-                            </button>
-                          )}
                           <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
@@ -2042,51 +1897,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     />
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider">Geotag Coordinates</label>
-                      <button
-                        type="button"
-                        onClick={handleAutoGeotagInModal}
-                        className="flex items-center gap-1 text-[11px] font-bold text-teal-600 hover:text-teal-800 transition-colors cursor-pointer"
-                        title="Auto-detect using device GPS"
-                      >
-                        <Compass className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '6s' }} /> Geotag Device GPS
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mb-2">
-                      <div>
-                        <input
-                          type="text"
-                          value={modalEditLatitude}
-                          onChange={(e) => setModalEditLatitude(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
-                          placeholder="Latitude (e.g. 14.1234)"
-                        />
-                      </div>
-                      <div>
-                        <input
-                          type="text"
-                          value={modalEditLongitude}
-                          onChange={(e) => setModalEditLongitude(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl outline-none font-semibold text-slate-700 text-xs transition-all"
-                          placeholder="Longitude (e.g. 121.1234)"
-                        />
-                      </div>
-                    </div>
-
-                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={modalEditGeotagged}
-                        onChange={(e) => setModalEditGeotagged(e.target.checked)}
-                        className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 border-slate-300"
-                      />
-                      <span className="text-xs text-slate-500 font-medium select-none">Mark explicitly as geotagged</span>
-                    </label>
-                  </div>
-
                   <div className="pt-4 flex gap-3">
                     <button
                       onClick={() => setIsEditingContactInModal(false)}
@@ -2110,7 +1920,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   </div>
                 </div>
               ) : (
-                /* READ-ONLY INFORMATION VIEW WITH MANDATORY BARANGAY, PUROK & GEOTAG CAPTURE */
+                /* READ-ONLY INFORMATION VIEW WITH MANDATORY BARANGAY & PUROK */
                 (() => {
                   const currentModalBarangay = (modalEditBarangay || viewContact.barangay || '').trim();
                   const isBarangayMissingInitially = !viewContact.barangay || 
@@ -2127,21 +1937,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   const currentModalPurok = (modalEditPurok || viewContact.purok || '').trim();
                   const hasModalPurok = currentModalPurok !== '' && currentModalPurok.toLowerCase() !== 'not specified';
 
-                  const currentModalLatStr = modalEditLatitude.trim() || (viewContact.latitude !== undefined && viewContact.latitude !== null ? String(viewContact.latitude) : '');
-                  const currentModalLngStr = modalEditLongitude.trim() || (viewContact.longitude !== undefined && viewContact.longitude !== null ? String(viewContact.longitude) : '');
-                  const currentModalLat = currentModalLatStr ? parseFloat(currentModalLatStr) : null;
-                  const currentModalLng = currentModalLngStr ? parseFloat(currentModalLngStr) : null;
-
-                  const hasModalGeotag = (modalEditGeotagged || !!viewContact.geotagged) &&
-                    currentModalLat !== null && !isNaN(currentModalLat) &&
-                    currentModalLng !== null && !isNaN(currentModalLng);
-
-                  const canSubmitFiles = hasModalBarangay && hasModalPurok && hasModalGeotag;
+                  const canSubmitFiles = hasModalBarangay && hasModalPurok;
 
                   const missingRequirements = [
                     !hasModalBarangay && 'Barangay',
-                    !hasModalPurok && 'Purok',
-                    !hasModalGeotag && 'Geotag'
+                    !hasModalPurok && 'Purok'
                   ].filter(Boolean) as string[];
 
                   return (
@@ -2193,53 +1993,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           <span className="font-mono font-bold text-slate-800">{viewContact.contact_number}</span>
                         </div>
 
-                        {/* Geotag Section - Required */}
-                        {hasModalGeotag ? (
-                          <div className="p-3 bg-teal-50/70 border border-teal-200/80 rounded-2xl flex items-center justify-between">
-                            <div>
-                              <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 uppercase">
-                                <CheckCircle2 className="w-4 h-4 text-teal-600" /> Geotagged (GPS Locked)
-                              </div>
-                              <div className="font-mono text-xs text-slate-700 font-semibold mt-0.5">
-                                {currentModalLat?.toFixed(5)}, {currentModalLng?.toFixed(5)}
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleAutoGeotagInModal}
-                              disabled={isGpsCapturing}
-                              className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white text-[11px] font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                              title="Re-capture GPS coordinates"
-                            >
-                              {isGpsCapturing ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Compass className="w-3.5 h-3.5" />
-                              )}
-                              <span>Re-capture GPS</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={handleAutoGeotagInModal}
-                            disabled={isGpsCapturing}
-                            className="w-full py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[46px]"
-                          >
-                            {isGpsCapturing ? (
-                              <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>Acquiring Device GPS Sensor...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Compass className="w-4 h-4" />
-                                <span>🛰️ Capture Device GPS (Required)</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-
                         {/* Existing PCU File info if present */}
                         {viewContact.pcu_file_url && (
                           <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between gap-2">
@@ -2278,7 +2031,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                             {canSubmitFiles ? 'Ready to Submit' : 'Action Required'}
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-semibold">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-semibold">
                           <div className="flex items-center gap-1.5">
                             {hasModalBarangay ? (
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -2297,16 +2050,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                             )}
                             <span className={hasModalPurok ? 'text-emerald-800' : 'text-amber-800'}>
                               Purok: {hasModalPurok ? currentModalPurok : 'Required'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {hasModalGeotag ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            ) : (
-                              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                            )}
-                            <span className={hasModalGeotag ? 'text-emerald-800' : 'text-rose-800'}>
-                              Geotag: {hasModalGeotag ? 'Captured' : 'Required'}
                             </span>
                           </div>
                         </div>
@@ -2680,21 +2423,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           </div>
         )}
       </AnimatePresence>
-
-      {/* Modal: Geotag Map Quick Tracker */}
-      {geotagMapTarget && (
-        <GeotagPopupModal
-          contact={geotagMapTarget}
-          onClose={() => setGeotagMapTarget(null)}
-          onTrackInFullMap={() => {
-            if (onNavigateToMap) {
-              onNavigateToMap(geotagMapTarget);
-            }
-            setGeotagMapTarget(null);
-          }}
-          showToast={showToast}
-        />
-      )}
     </div>
   );
 };
