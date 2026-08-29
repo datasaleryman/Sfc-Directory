@@ -2856,6 +2856,25 @@ export function isBarangayMatch(b1?: string, b2?: string): boolean {
   return false;
 }
 
+// Helper to check if a contact has already been submitted with PCU file(s)
+export function isContactSubmitted(c: Contact): boolean {
+  if (!c) return false;
+  if (c.pcu_file_url && typeof c.pcu_file_url === 'string' && c.pcu_file_url.trim() !== '') {
+    return true;
+  }
+  if (c.uploadedFiles && Array.isArray(c.uploadedFiles) && c.uploadedFiles.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+// Helper to filter active, non-submitted contacts for PCU Directory
+export function isAvailableForDirectory(c: Contact): boolean {
+  if (!c || c.deleted_at) return false;
+  if (c.added_from_print_list === false) return false;
+  return !isContactSubmitted(c);
+}
+
 // Get contacts with flexible pagination, sorting, searching, and filtering
 export async function getContacts(params: {
   search?: string;
@@ -2883,8 +2902,8 @@ export async function getContacts(params: {
 
   const filterBarangay = barangay || address;
 
-  // Query all active (non-soft-deleted) contacts
-  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
+  // Query all active (non-soft-deleted, non-submitted) contacts for PCU DIRECTORY
+  let filtered = contactsCache.filter(isAvailableForDirectory);
 
   // Get ALL unique barangays from Google Sheet database (getBarangayList) + contactsCache
   const rawBarangaysList: string[] = [];
@@ -2899,9 +2918,9 @@ export async function getContacts(params: {
     });
   }
 
-  // 2. Add any barangay from active contacts in contactsCache
+  // 2. Add any barangay from active non-submitted contacts in contactsCache
   contactsCache.forEach(c => {
-    if (!c.deleted_at && (c.added_from_print_list !== false) && c.barangay && c.barangay.trim()) {
+    if (isAvailableForDirectory(c) && c.barangay && c.barangay.trim()) {
       rawBarangaysList.push(c.barangay.trim());
     }
   });
@@ -2910,8 +2929,7 @@ export async function getContacts(params: {
 
   // Compute NO ADDRESS folder statistics if there are contacts without address
   const noAddressContacts = contactsCache.filter(c => 
-    !c.deleted_at && 
-    (c.added_from_print_list !== false) && 
+    isAvailableForDirectory(c) && 
     (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
   );
 
@@ -2923,7 +2941,7 @@ export async function getContacts(params: {
   const allPuroksSet = new Set<string>();
   let hasNoPurokContacts = false;
   contactsCache.forEach(c => {
-    if (!c.deleted_at && (c.added_from_print_list !== false)) {
+    if (isAvailableForDirectory(c)) {
       if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
         allPuroksSet.add(c.purok.trim());
       } else {
@@ -2988,9 +3006,9 @@ export async function getContacts(params: {
   const paginated = filtered.slice(startIndex, startIndex + limit);
   const totalPages = Math.ceil(total / limit);
 
-  // Compute folder statistics for each barangay
+  // Compute folder statistics for each barangay (only for active non-submitted contacts)
   let barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false) && isBarangayMatch(c.barangay, bg));
+    const bgContacts = contactsCache.filter(c => isAvailableForDirectory(c) && isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -3032,11 +3050,11 @@ export async function getContacts(params: {
     }
   }
 
-  // Compute folder statistics for each purok sorted alphabetically
+  // Compute folder statistics for each purok sorted alphabetically (only for active non-submitted contacts)
   let purokFolders = allPuroks.map(purok => {
     const isNoPurok = purok === 'No Purok';
     const pContacts = contactsCache.filter(c => {
-      if (c.deleted_at || (c.added_from_print_list === false)) return false;
+      if (!isAvailableForDirectory(c)) return false;
       if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
         if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
           if (c.barangay && c.barangay.trim() && c.barangay.trim().toLowerCase() !== 'no address' && c.barangay.trim().toLowerCase() !== 'no barangay') return false;
@@ -3071,9 +3089,9 @@ export async function getContacts(params: {
     barangayFolders = barangayFolders.filter(f => {
       // 1. Folder name matches search query
       if (f.barangay.toLowerCase().includes(term)) return true;
-      // 2. OR any active contact in this folder matches search query
+      // 2. OR any active non-submitted contact in this folder matches search query
       return contactsCache.some(c => {
-        if (c.deleted_at || (c.added_from_print_list === false)) return false;
+        if (!isAvailableForDirectory(c)) return false;
         
         const matchesFolder = f.barangay.toUpperCase() === 'NO ADDRESS'
           ? (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
@@ -3089,9 +3107,9 @@ export async function getContacts(params: {
     purokFolders = purokFolders.filter(f => {
       // 1. Folder name matches search query
       if (f.purok.toLowerCase().includes(term)) return true;
-      // 2. OR any active contact in this folder matches search query
+      // 2. OR any active non-submitted contact in this folder matches search query
       return contactsCache.some(c => {
-        if (c.deleted_at || (c.added_from_print_list === false)) return false;
+        if (!isAvailableForDirectory(c)) return false;
         
         if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
           const isNoAddressFolder = filterBarangay.toUpperCase() === 'NO ADDRESS';
@@ -3130,7 +3148,7 @@ export async function getContacts(params: {
   };
 }
 
-// Get all non-deleted contacts for exporting and printing without pagination
+// Get all non-deleted, non-submitted contacts for exporting and printing without pagination
 export function getAllFilteredContacts(params: {
   search?: string;
   barangay?: string;
@@ -3145,7 +3163,7 @@ export function getAllFilteredContacts(params: {
   syncPCUFieldsToCache();
 
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(c => !c.deleted_at && (c.added_from_print_list !== false));
+  let filtered = contactsCache.filter(isAvailableForDirectory);
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
@@ -4175,9 +4193,9 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
 
 // Dashboard statistics
 export function getDashboardStats() {
-  const activeContacts = contactsCache.filter(c => !c.deleted_at && c.added_from_print_list !== false);
+  const activeContacts = contactsCache.filter(isAvailableForDirectory);
   
-  // Total Contacts
+  // Total Contacts in PCU Directory
   const totalContacts = activeContacts.length;
 
   // Total Barangays (previously Addresses)
@@ -6867,7 +6885,7 @@ export function getRecentUploads(params: {
   // 1. Get uploaded contacts from contactsCache
   const uploadedContacts = contactsCache.filter(c => {
     if (c.deleted_at) return false;
-    if (!c.pcu_file_url) return false;
+    if (!isContactSubmitted(c)) return false;
 
     const uploader = (c.pcu_uploaded_by || '').toLowerCase().trim();
     const current = (username || '').toLowerCase().trim();
@@ -6878,10 +6896,11 @@ export function getRecentUploads(params: {
       // Fallback check in pcuUpdatesCache if pcu_uploaded_by was missing
       const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === c.id && (p.uploadedBy || '').toLowerCase().trim() === current);
       if (matchedUpdate) return true;
+      if (c.uploadedFiles && c.uploadedFiles.some(f => (f.uploadedBy || '').toLowerCase().trim() === current)) return true;
       return false;
     }
 
-    return uploader === current || uploader === 'admin';
+    return uploader === current || uploader === 'admin' || (c.uploadedFiles && c.uploadedFiles.some(f => (f.uploadedBy || '').toLowerCase().trim() === current));
   }).map(c => {
     const uploadedFiles = c.uploadedFiles && c.uploadedFiles.length > 0 ? c.uploadedFiles : [{
       name: c.pcu_file_url ? (c.pcu_file_url.includes('/') ? (c.pcu_file_url.split('/').pop() || 'PCU Document').replace(/^\d+_/,'') : c.pcu_file_url) : 'PCU Document',

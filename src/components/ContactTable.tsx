@@ -475,6 +475,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setViewContact(null);
       setStagedPcuFiles([]);
       fetchContacts();
+      onDeleted?.();
       showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s) for member "${viewContact.full_name}". Transferred to Recent Upload.`, 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
