@@ -28,6 +28,13 @@ try {
       msg.includes('error data:') ||
       msg.includes('too many requests') ||
       msg.includes('suppressed rate-limit') ||
+      msg.includes('quota exceeded') ||
+      msg.includes('read requests per minute') ||
+      msg.includes('read requests') ||
+      msg.includes('sheets.googleapis.com') ||
+      msg.includes('resource_exhausted') ||
+      msg.includes('quota metric') ||
+      msg.includes('rate limit') ||
       msg.includes('429')
     );
   };
@@ -4827,6 +4834,23 @@ export async function saveSheetsConfig(config: SheetsConfig, username: string) {
   }
 }
 
+export function isQuotaOrRateLimitError(err: any): boolean {
+  if (!err) return false;
+  const errMsg = (err?.message || err?.toString() || '').toString().toLowerCase();
+  return (
+    errMsg.includes('quota exceeded') ||
+    errMsg.includes('quota') ||
+    err?.status === 429 ||
+    (err?.response && err.response.status === 429) ||
+    errMsg.includes('resource_exhausted') ||
+    errMsg.includes('rate limit') ||
+    errMsg.includes('read requests') ||
+    errMsg.includes('read requests per minute') ||
+    errMsg.includes('write requests') ||
+    errMsg.includes('quota metric')
+  );
+}
+
 export function handleGoogleSheetsError(err: any, context: string) {
   const errMsg = (err?.message || err?.toString() || '').toString();
   
@@ -4840,13 +4864,7 @@ export function handleGoogleSheetsError(err: any, context: string) {
     return;
   }
   
-  const isQuota = errMsg.includes('Quota exceeded') || 
-                  errMsg.includes('quota') || 
-                  err?.status === 429 || 
-                  (err?.response && err.response.status === 429) ||
-                  errMsg.includes('RESOURCE_EXHAUSTED') ||
-                  errMsg.includes('rate limit') ||
-                  errMsg.includes('Read requests per minute');
+  const isQuota = isQuotaOrRateLimitError(err);
                   
   if (isQuota) {
     if (Date.now() >= googleSheetsQuotaCooldownUntil) {
@@ -5010,18 +5028,18 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     return { success: true, message: 'Google Sheets sync paused during quota cooldown; served from local database.', count: contactsCache.length };
   }
 
-  // 1. Pull latest deleted records and tombstones first
+  // 1. Pull latest deleted records and tombstones first (using throttled cached method)
   try {
-    await pullDeletedRecordsFromGoogleSheets();
+    await pullDeletedRecordsOnce();
   } catch (err: any) {
-    console.warn('[Sync] Failed to pull deleted records in syncWithGoogleSheets:', err.message || err);
+    // Graceful fallback
   }
 
-  // 2. Pull latest Barangays list from Google Sheets first if available
+  // 2. Pull latest Barangays list from Google Sheets first if available (using throttled cached method)
   try {
-    await pullBarangaysFromGoogleSheets();
+    await pullBarangaysOnce();
   } catch (err: any) {
-    console.warn('[Sync] Failed to pull Barangays in syncWithGoogleSheets:', err.message || err);
+    // Graceful fallback
   }
 
   let rows: string[][] = [];
@@ -5051,8 +5069,13 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       });
       rows = (res.data.values || []) as string[][];
     } catch (err: any) {
-      console.error('Google Sheets Service Account read error:', err.message || err);
       handleGoogleSheetsError(err, 'syncWithGoogleSheets [Service Account read]');
+      if (isQuotaOrRateLimitError(err)) {
+        return { success: true, message: 'Google Sheets sync paused during quota cooldown; served from local database.', count: contactsCache.length };
+      }
+      if (!err.message?.includes('Precondition')) {
+        console.warn('Google Sheets Service Account read error (serving local cache):', err.message || err);
+      }
       let errMsg = 'Failed to fetch spreadsheet using Service Account. Please verify that your Spreadsheet ID is correct and that the Google Sheet is shared with your Service Account Email.';
       if (err.status === 403) {
         let emailUsed = sheetsConfig.clientEmail;
@@ -5628,117 +5651,112 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
 
     let loadedAny = false;
 
-    // 1. Pull DeletedBarangays
+    // Batch fetch all deleted record ranges in a single API call to preserve read quota
     const bgSheetName = 'DeletedBarangays';
-    if (existingSheets.has(bgSheetName)) {
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${bgSheetName}!A:A` });
-      const rows = res.data.values || [];
-      if (rows.length > 1) {
-        const pulledBgs = rows.slice(1).map(r => (r[0] || '').toString().trim()).filter(Boolean);
-        // Merge into cache
-        pulledBgs.forEach(bg => {
-          if (!deletedBarangaysCache.some(localBg => localBg.trim().toLowerCase() === bg.toLowerCase())) {
-            deletedBarangaysCache.push(bg);
-          }
-        });
-        await safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8');
-        loadedAny = true;
-      }
-    }
-
-    // 2. Pull DeletedContacts
     const contactSheetName = 'DeletedContacts';
-    if (existingSheets.has(contactSheetName)) {
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${contactSheetName}!A:D` });
-      const rows = res.data.values || [];
-      if (rows.length > 1) {
-        const pulledContacts = rows.slice(1).map(row => ({
-          id: row[0] ? (isNaN(parseInt(row[0], 10)) ? row[0] : parseInt(row[0], 10)) : '',
-          full_name: (row[1] || '').toString().trim(),
-          barangay: (row[2] || '').toString().trim(),
-          deletedAt: (row[3] || '').toString().trim() || new Date().toISOString()
-        })).filter(c => c.full_name);
-
-        pulledContacts.forEach(pc => {
-          const isActiveInSheet = contactsCache.some(ac => 
-            (pc.id && ac.id && pc.id.toString() === ac.id.toString()) ||
-            (normalizeCompareName(pc.full_name, ac.full_name) && 
-             normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(ac.barangay).toLowerCase())
-          );
-          if (isActiveInSheet) return; // Do not tombstone active records present in sheet
-
-          const alreadyLocal = deletedContactsCache.some(lc => 
-            (pc.id && lc.id && pc.id.toString() === lc.id.toString()) ||
-            (normalizeCompareName(pc.full_name, lc.full_name) && 
-             normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
-          );
-          if (!alreadyLocal) {
-            deletedContactsCache.push(pc);
-          }
-        });
-        await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
-        loadedAny = true;
-      }
-    }
-
-    // 3. Pull DeletedExistingAccounts
     const existSheetName = 'DeletedExistingAccounts';
-    if (existingSheets.has(existSheetName)) {
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${existSheetName}!A:D` });
-      const rows = res.data.values || [];
-      if (rows.length > 1) {
-        const pulledExists = rows.slice(1).map(row => ({
-          id: (row[0] || '').toString().trim(),
-          full_name: (row[1] || '').toString().trim(),
-          barangay: (row[2] || '').toString().trim(),
-          deletedAt: (row[3] || '').toString().trim() || new Date().toISOString()
-        })).filter(c => c.full_name);
-
-        pulledExists.forEach(pe => {
-          const isActive = existingAccountsCache.some(ea =>
-            (pe.id && ea.id && pe.id.toString() === ea.id.toString()) ||
-            (normalizeCompareName(pe.full_name, ea.full_name) && 
-             normalizeBarangayName(pe.barangay).toLowerCase() === normalizeBarangayName(ea.barangay).toLowerCase())
-          );
-          if (isActive) return;
-
-          const alreadyLocal = deletedExistingAccountsCache.some(lc => 
-            (pe.id && lc.id && pe.id.toString() === lc.id.toString()) ||
-            (normalizeCompareName(pe.full_name, lc.full_name) && 
-             normalizeBarangayName(pe.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
-          );
-          if (!alreadyLocal) {
-            deletedExistingAccountsCache.push(pe);
-          }
-        });
-        await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
-        loadedAny = true;
-      }
-    }
-
-    // 4. Pull DeletedUsers
     const userSheetName = 'DeletedUsers';
-    if (existingSheets.has(userSheetName)) {
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${userSheetName}!A:C` });
-      const rows = res.data.values || [];
-      if (rows.length > 1) {
-        const pulledUsers = rows.slice(1).map(row => ({
-          username: (row[0] || '').toString().trim(),
-          email: (row[1] || '').toString().trim(),
-          deletedAt: (row[2] || '').toString().trim() || new Date().toISOString()
-        })).filter(u => u.username || u.email);
 
-        pulledUsers.forEach(pu => {
-          const alreadyLocal = deletedUsersCache.some(lu => 
-            (pu.username && lu.username && pu.username.toLowerCase() === lu.username.toLowerCase()) ||
-            (pu.email && lu.email && pu.email.toLowerCase() === lu.email.toLowerCase())
-          );
-          if (!alreadyLocal) {
-            deletedUsersCache.push(pu);
-          }
-        });
-        await safeWriteFile(DELETED_USERS_FILE, JSON.stringify(deletedUsersCache, null, 2), 'utf-8');
-        loadedAny = true;
+    const rangesToFetch: { name: string; range: string }[] = [];
+    if (existingSheets.has(bgSheetName)) rangesToFetch.push({ name: bgSheetName, range: `${bgSheetName}!A:A` });
+    if (existingSheets.has(contactSheetName)) rangesToFetch.push({ name: contactSheetName, range: `${contactSheetName}!A:D` });
+    if (existingSheets.has(existSheetName)) rangesToFetch.push({ name: existSheetName, range: `${existSheetName}!A:D` });
+    if (existingSheets.has(userSheetName)) rangesToFetch.push({ name: userSheetName, range: `${userSheetName}!A:C` });
+
+    if (rangesToFetch.length > 0) {
+      const batchRes = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges: rangesToFetch.map(r => r.range)
+      });
+      const valueRanges = batchRes.data.valueRanges || [];
+
+      for (const vr of valueRanges) {
+        const rangeStr = vr.range || '';
+        const rows = (vr.values || []) as string[][];
+        if (rows.length <= 1) continue;
+
+        if (rangeStr.includes('DeletedBarangays')) {
+          const pulledBgs = rows.slice(1).map(r => (r[0] || '').toString().trim()).filter(Boolean);
+          pulledBgs.forEach(bg => {
+            if (!deletedBarangaysCache.some(localBg => localBg.trim().toLowerCase() === bg.toLowerCase())) {
+              deletedBarangaysCache.push(bg);
+            }
+          });
+          await safeWriteFile(DELETED_BARANGAYS_FILE, JSON.stringify(deletedBarangaysCache, null, 2), 'utf-8');
+          loadedAny = true;
+        } else if (rangeStr.includes('DeletedContacts')) {
+          const pulledContacts = rows.slice(1).map(row => ({
+            id: row[0] ? (isNaN(parseInt(row[0], 10)) ? row[0] : parseInt(row[0], 10)) : '',
+            full_name: (row[1] || '').toString().trim(),
+            barangay: (row[2] || '').toString().trim(),
+            deletedAt: (row[3] || '').toString().trim() || new Date().toISOString()
+          })).filter(c => c.full_name);
+
+          pulledContacts.forEach(pc => {
+            const isActiveInSheet = contactsCache.some(ac => 
+              (pc.id && ac.id && pc.id.toString() === ac.id.toString()) ||
+              (normalizeCompareName(pc.full_name, ac.full_name) && 
+               normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(ac.barangay).toLowerCase())
+            );
+            if (isActiveInSheet) return;
+
+            const alreadyLocal = deletedContactsCache.some(lc => 
+              (pc.id && lc.id && pc.id.toString() === lc.id.toString()) ||
+              (normalizeCompareName(pc.full_name, lc.full_name) && 
+               normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
+            );
+            if (!alreadyLocal) {
+              deletedContactsCache.push(pc);
+            }
+          });
+          await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+          loadedAny = true;
+        } else if (rangeStr.includes('DeletedExistingAccounts')) {
+          const pulledExists = rows.slice(1).map(row => ({
+            id: (row[0] || '').toString().trim(),
+            full_name: (row[1] || '').toString().trim(),
+            barangay: (row[2] || '').toString().trim(),
+            deletedAt: (row[3] || '').toString().trim() || new Date().toISOString()
+          })).filter(c => c.full_name);
+
+          pulledExists.forEach(pe => {
+            const isActive = existingAccountsCache.some(ea =>
+              (pe.id && ea.id && pe.id.toString() === ea.id.toString()) ||
+              (normalizeCompareName(pe.full_name, ea.full_name) && 
+               normalizeBarangayName(pe.barangay).toLowerCase() === normalizeBarangayName(ea.barangay).toLowerCase())
+            );
+            if (isActive) return;
+
+            const alreadyLocal = deletedExistingAccountsCache.some(lc => 
+              (pe.id && lc.id && pe.id.toString() === lc.id.toString()) ||
+              (normalizeCompareName(pe.full_name, lc.full_name) && 
+               normalizeBarangayName(pe.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase())
+            );
+            if (!alreadyLocal) {
+              deletedExistingAccountsCache.push(pe);
+            }
+          });
+          await safeWriteFile(DELETED_EXISTING_ACCOUNTS_FILE, JSON.stringify(deletedExistingAccountsCache, null, 2), 'utf-8');
+          loadedAny = true;
+        } else if (rangeStr.includes('DeletedUsers')) {
+          const pulledUsers = rows.slice(1).map(row => ({
+            username: (row[0] || '').toString().trim(),
+            email: (row[1] || '').toString().trim(),
+            deletedAt: (row[2] || '').toString().trim() || new Date().toISOString()
+          })).filter(u => u.username || u.email);
+
+          pulledUsers.forEach(pu => {
+            const alreadyLocal = deletedUsersCache.some(lu => 
+              (pu.username && lu.username && pu.username.toLowerCase() === lu.username.toLowerCase()) ||
+              (pu.email && lu.email && pu.email.toLowerCase() === lu.email.toLowerCase())
+            );
+            if (!alreadyLocal) {
+              deletedUsersCache.push(pu);
+            }
+          });
+          await safeWriteFile(DELETED_USERS_FILE, JSON.stringify(deletedUsersCache, null, 2), 'utf-8');
+          loadedAny = true;
+        }
       }
     }
 
@@ -5754,10 +5772,10 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
     }
     return loadedAny;
   } catch (err: any) {
-    if (!err.message?.includes('Precondition')) {
-      console.error('Failed to pull deleted records from Google Sheets:', err.message || err);
-    }
     handleGoogleSheetsError(err, 'pullDeletedRecordsFromGoogleSheets');
+    if (!isQuotaOrRateLimitError(err) && !err.message?.includes('Precondition')) {
+      console.warn('Could not pull deleted records from Google Sheets (serving local):', err.message || err);
+    }
     return false;
   }
 }
@@ -5883,11 +5901,11 @@ export async function pullBarangaysFromGoogleSheets(): Promise<boolean> {
       return true;
     }
   } catch (err: any) {
-    if (!err.message?.includes('Precondition')) {
-      console.error('Failed to pull Barangays from Google Sheets:', err.message || err);
-    }
     handleGoogleSheetsError(err, 'pullBarangaysFromGoogleSheets');
-    markSheetsDisconnected(err);
+    if (!isQuotaOrRateLimitError(err) && !err.message?.includes('Precondition')) {
+      console.warn('Could not pull Barangays from Google Sheets (serving local):', err.message || err);
+      markSheetsDisconnected(err);
+    }
   }
   return false;
 }
@@ -6077,11 +6095,11 @@ export async function pullSiteSettingsFromGoogleSheets(): Promise<boolean> {
       return true;
     }
   } catch (err: any) {
-    if (!err.message?.includes('Precondition')) {
-      console.error('Failed to pull WebsiteSettings from Google Sheets:', err.message || err);
-    }
     handleGoogleSheetsError(err, 'pullSiteSettingsFromGoogleSheets');
-    markSheetsDisconnected(err);
+    if (!isQuotaOrRateLimitError(err) && !err.message?.includes('Precondition')) {
+      console.warn('Could not pull WebsiteSettings from Google Sheets (serving local):', err.message || err);
+      markSheetsDisconnected(err);
+    }
   }
   return false;
 }
@@ -6327,11 +6345,11 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
       return true;
     }
   } catch (err: any) {
-    if (!err.message?.includes('Precondition')) {
-      console.error('Failed to pull administrators from Google Sheets:', err.message || err);
-    }
     handleGoogleSheetsError(err, 'pullAdminsFromGoogleSheets');
-    markSheetsDisconnected(err);
+    if (!isQuotaOrRateLimitError(err) && !err.message?.includes('Precondition')) {
+      console.warn('Could not pull administrators from Google Sheets (serving local):', err.message || err);
+      markSheetsDisconnected(err);
+    }
   }
   return false;
 }
@@ -6590,11 +6608,11 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
     console.log('[Google Sheets] Successfully pulled existing accounts from Google Sheets. Total count:', existingAccountsCache.length);
     return true;
   } catch (err: any) {
-    if (!err.message?.includes('Precondition')) {
-      console.error('Failed to pull existing accounts from Google Sheets:', err.message || err);
-    }
     handleGoogleSheetsError(err, 'pullExistingAccountsFromGoogleSheets');
-    markSheetsDisconnected(err);
+    if (!isQuotaOrRateLimitError(err) && !err.message?.includes('Precondition')) {
+      console.warn('Could not pull existing accounts from Google Sheets (serving local):', err.message || err);
+      markSheetsDisconnected(err);
+    }
   }
   return false;
 }

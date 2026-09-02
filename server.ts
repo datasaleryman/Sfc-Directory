@@ -70,7 +70,8 @@ import {
   getMatchingAnalysis,
   mergeAccountToContact,
   createContactFromAccount,
-  autoMergeAllPerfectMatches
+  autoMergeAllPerfectMatches,
+  isQuotaOrRateLimitError
 } from './server/db.js';
 import {
   createToken,
@@ -173,7 +174,9 @@ export async function getApp() {
         try {
           await pullAdminsOnce();
         } catch (err: any) {
-          console.error('Failed to pull administrators on login request:', err.message);
+          if (!isQuotaOrRateLimitError(err)) {
+            console.warn('Could not pull administrators on login request (using local cache):', err.message);
+          }
         }
       }
 
@@ -956,19 +959,25 @@ export async function getApp() {
       try {
         await pullSiteSettingsFromGoogleSheets();
       } catch (err: any) {
-        console.error('Failed to pull site settings on manual force sync:', err.message);
+        if (!isQuotaOrRateLimitError(err)) {
+          console.warn('Could not pull site settings on manual force sync:', err.message);
+        }
       }
 
       try {
         await pullAdminsFromGoogleSheets();
       } catch (err: any) {
-        console.error('Failed to pull administrators on manual force sync:', err.message);
+        if (!isQuotaOrRateLimitError(err)) {
+          console.warn('Could not pull administrators on manual force sync:', err.message);
+        }
       }
 
       try {
         await pullBarangaysFromGoogleSheets();
       } catch (err: any) {
-        console.error('Failed to pull barangays on manual force sync:', err.message);
+        if (!isQuotaOrRateLimitError(err)) {
+          console.warn('Could not pull barangays on manual force sync:', err.message);
+        }
       }
 
       const result = await syncWithGoogleSheets(username);
@@ -1025,7 +1034,9 @@ export async function getApp() {
         try {
           await pullAdminsOnce();
         } catch (err: any) {
-          console.error('Failed to pull administrators on getUsers request:', err.message);
+          if (!isQuotaOrRateLimitError(err)) {
+            console.warn('Could not pull administrators on getUsers request (using local cache):', err.message);
+          }
         }
       }
       const users = getUsers();
@@ -1110,7 +1121,9 @@ export async function getApp() {
         try {
           await pullAdminsOnce();
         } catch (err: any) {
-          console.error('Failed to pull administrators on getAdmins request:', err.message);
+          if (!isQuotaOrRateLimitError(err)) {
+            console.warn('Could not pull administrators on getAdmins request (using local cache):', err.message);
+          }
         }
       }
       const admins = getUsers();
