@@ -924,8 +924,10 @@ export async function initDb() {
         if (updated) migrated = true;
         return anyC as Contact;
       });
-      // Filter out auto-synced base44 items & tombstoned contacts
-      contactsCache = contactsCache.filter(c => c && !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay));
+      // Filter out auto-synced base44 items & tombstoned contacts and strictly deduplicate by Full Name
+      contactsCache = deduplicateContactsByName(
+        contactsCache.filter(c => c && !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay))
+      );
       safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
     }
 
@@ -2875,6 +2877,84 @@ export function isAvailableForDirectory(c: Contact): boolean {
   return !isContactSubmitted(c);
 }
 
+// Canonical name normalization key for strict duplicate detection and resolution
+export function getCanonicalNameKey(name?: string): string {
+  if (!name) return '';
+  const clean = name.trim().toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+  if (clean.length === 0) return name.trim().toLowerCase();
+  return clean.sort().join(' ');
+}
+
+// Deduplicate contacts list strictly by Full Name, merging and retaining the highest quality record
+export function deduplicateContactsByName(contacts: Contact[]): Contact[] {
+  const result: Contact[] = [];
+  const seenKeys = new Map<string, number>(); // canonicalKey -> index in result
+
+  for (const c of contacts) {
+    if (!c || c.deleted_at) continue;
+    const key = getCanonicalNameKey(c.full_name);
+    if (!key) {
+      result.push(c);
+      continue;
+    }
+
+    if (!seenKeys.has(key)) {
+      seenKeys.set(key, result.length);
+      result.push(c);
+    } else {
+      const existingIdx = seenKeys.get(key)!;
+      const existing = result[existingIdx];
+
+      // Prioritize submitted records if any, then completeness and newest timestamps
+      const existingSub = isContactSubmitted(existing);
+      const cSub = isContactSubmitted(c);
+
+      let replaceExisting = false;
+      if (!existingSub && cSub) {
+        replaceExisting = true;
+      } else if (existingSub === cSub) {
+        const scoreExisting = (existing.contact_number ? 2 : 0) + (existing.purok ? 1 : 0) + (existing.photo_url ? 1 : 0);
+        const scoreC = (c.contact_number ? 2 : 0) + (c.purok ? 1 : 0) + (c.photo_url ? 1 : 0);
+        if (scoreC > scoreExisting) {
+          replaceExisting = true;
+        } else if (scoreC === scoreExisting) {
+          const timeExisting = new Date(existing.updated_at || existing.created_at || 0).getTime();
+          const timeC = new Date(c.updated_at || c.created_at || 0).getTime();
+          if (timeC > timeExisting || (timeC === timeExisting && c.id > existing.id)) {
+            replaceExisting = true;
+          }
+        }
+      }
+
+      if (replaceExisting) {
+        result[existingIdx] = {
+          ...existing,
+          ...c,
+          contact_number: c.contact_number || existing.contact_number,
+          purok: c.purok || existing.purok,
+          barangay: c.barangay || existing.barangay,
+          photo_url: c.photo_url || existing.photo_url,
+          pcu_file_url: c.pcu_file_url || existing.pcu_file_url,
+          uploadedFiles: (c.uploadedFiles && c.uploadedFiles.length > 0) ? c.uploadedFiles : existing.uploadedFiles
+        };
+      } else {
+        result[existingIdx] = {
+          ...c,
+          ...existing,
+          contact_number: existing.contact_number || c.contact_number,
+          purok: existing.purok || c.purok,
+          barangay: existing.barangay || c.barangay,
+          photo_url: existing.photo_url || c.photo_url,
+          pcu_file_url: existing.pcu_file_url || c.pcu_file_url,
+          uploadedFiles: (existing.uploadedFiles && existing.uploadedFiles.length > 0) ? existing.uploadedFiles : c.uploadedFiles
+        };
+      }
+    }
+  }
+
+  return result;
+}
+
 // Get contacts with flexible pagination, sorting, searching, and filtering
 export async function getContacts(params: {
   search?: string;
@@ -2902,10 +2982,11 @@ export async function getContacts(params: {
 
   const filterBarangay = barangay || address;
 
-  // Query all active (non-soft-deleted, non-submitted) contacts for PCU DIRECTORY
-  let filtered = contactsCache.filter(isAvailableForDirectory);
+  // Query all active (non-soft-deleted, non-submitted) contacts for PCU DIRECTORY and strictly deduplicate by Full Name
+  const availableContacts = deduplicateContactsByName(contactsCache.filter(isAvailableForDirectory));
+  let filtered = [...availableContacts];
 
-  // Get ALL unique barangays from Google Sheet database (getBarangayList) + contactsCache
+  // Get ALL unique barangays from Google Sheet database (getBarangayList) + deduplicated active contacts
   const rawBarangaysList: string[] = [];
 
   // 1. Fetch barangay list from Google Sheet database cache/file
@@ -2919,8 +3000,8 @@ export async function getContacts(params: {
   }
 
   // 2. Add any barangay from active non-submitted contacts in contactsCache
-  contactsCache.forEach(c => {
-    if (isAvailableForDirectory(c) && c.barangay && c.barangay.trim()) {
+  availableContacts.forEach(c => {
+    if (c.barangay && c.barangay.trim()) {
       rawBarangaysList.push(c.barangay.trim());
     }
   });
@@ -2928,9 +3009,8 @@ export async function getContacts(params: {
   const allBarangays = normalizeAndDeduplicateBarangays(rawBarangaysList);
 
   // Compute NO ADDRESS folder statistics if there are contacts without address
-  const noAddressContacts = contactsCache.filter(c => 
-    isAvailableForDirectory(c) && 
-    (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
+  const noAddressContacts = availableContacts.filter(c => 
+    !c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay'
   );
 
   if (noAddressContacts.length > 0 && !allBarangays.includes('NO ADDRESS')) {
@@ -2940,13 +3020,11 @@ export async function getContacts(params: {
   // Get ALL unique non-empty puroks for filtering dropdown before search filters are applied
   const allPuroksSet = new Set<string>();
   let hasNoPurokContacts = false;
-  contactsCache.forEach(c => {
-    if (isAvailableForDirectory(c)) {
-      if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
-        allPuroksSet.add(c.purok.trim());
-      } else {
-        hasNoPurokContacts = true;
-      }
+  availableContacts.forEach(c => {
+    if (c.purok && c.purok.trim() && c.purok.trim().toLowerCase() !== 'no purok') {
+      allPuroksSet.add(c.purok.trim());
+    } else {
+      hasNoPurokContacts = true;
     }
   });
   const allPuroks = Array.from(allPuroksSet).sort((a, b) => a.localeCompare(b));
@@ -3006,9 +3084,9 @@ export async function getContacts(params: {
   const paginated = filtered.slice(startIndex, startIndex + limit);
   const totalPages = Math.ceil(total / limit);
 
-  // Compute folder statistics for each barangay (only for active non-submitted contacts)
+  // Compute folder statistics for each barangay (only for deduplicated active non-submitted contacts)
   let barangayFolders = allBarangays.map(bg => {
-    const bgContacts = contactsCache.filter(c => isAvailableForDirectory(c) && isBarangayMatch(c.barangay, bg));
+    const bgContacts = availableContacts.filter(c => isBarangayMatch(c.barangay, bg));
     const purokSet = new Set<string>();
     let geotaggedCount = 0;
     bgContacts.forEach(c => {
@@ -3050,11 +3128,10 @@ export async function getContacts(params: {
     }
   }
 
-  // Compute folder statistics for each purok sorted alphabetically (only for active non-submitted contacts)
+  // Compute folder statistics for each purok sorted alphabetically (only for deduplicated active non-submitted contacts)
   let purokFolders = allPuroks.map(purok => {
     const isNoPurok = purok === 'No Purok';
-    const pContacts = contactsCache.filter(c => {
-      if (!isAvailableForDirectory(c)) return false;
+    const pContacts = availableContacts.filter(c => {
       if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
         if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
           if (c.barangay && c.barangay.trim() && c.barangay.trim().toLowerCase() !== 'no address' && c.barangay.trim().toLowerCase() !== 'no barangay') return false;
@@ -3090,9 +3167,7 @@ export async function getContacts(params: {
       // 1. Folder name matches search query
       if (f.barangay.toLowerCase().includes(term)) return true;
       // 2. OR any active non-submitted contact in this folder matches search query
-      return contactsCache.some(c => {
-        if (!isAvailableForDirectory(c)) return false;
-        
+      return availableContacts.some(c => {
         const matchesFolder = f.barangay.toUpperCase() === 'NO ADDRESS'
           ? (!c.barangay || !c.barangay.trim() || c.barangay.trim().toLowerCase() === 'no address' || c.barangay.trim().toLowerCase() === 'no barangay')
           : isBarangayMatch(c.barangay, f.barangay);
@@ -3108,9 +3183,7 @@ export async function getContacts(params: {
       // 1. Folder name matches search query
       if (f.purok.toLowerCase().includes(term)) return true;
       // 2. OR any active non-submitted contact in this folder matches search query
-      return contactsCache.some(c => {
-        if (!isAvailableForDirectory(c)) return false;
-        
+      return availableContacts.some(c => {
         if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
           const isNoAddressFolder = filterBarangay.toUpperCase() === 'NO ADDRESS';
           const matchesBg = isNoAddressFolder
@@ -3163,7 +3236,8 @@ export function getAllFilteredContacts(params: {
   syncPCUFieldsToCache();
 
   const filterBarangay = barangay || address;
-  let filtered = contactsCache.filter(isAvailableForDirectory);
+  const availableContacts = deduplicateContactsByName(contactsCache.filter(isAvailableForDirectory));
+  let filtered = [...availableContacts];
 
   if (filterBarangay && filterBarangay !== 'All Addresses' && filterBarangay !== 'All Barangays') {
     if (filterBarangay.toUpperCase() === 'NO ADDRESS') {
@@ -3402,12 +3476,13 @@ export async function addContact(
   const formattedBarangay = normalizeBarangayName(rawBarangay);
   const formattedPurok = rawPurok ? capitalizeWords(rawPurok) : '';
 
-  // Check for duplicate among active records or reactivate inactive ones
+  const nameKey = getCanonicalNameKey(formattedName);
+
+  // Check for duplicate among active records or reactivate inactive ones strictly by Full Name
   const existing = contactsCache.find(
     c =>
       !c.deleted_at &&
-      c.full_name.toLowerCase() === formattedName.toLowerCase() &&
-      c.contact_number === rawNumber
+      getCanonicalNameKey(c.full_name) === nameKey
   );
 
   const hasGeo = (contact.latitude !== undefined && contact.latitude !== null && !isNaN(Number(contact.latitude)) &&
@@ -3419,6 +3494,9 @@ export async function addContact(
   if (existing) {
     if (existing.added_from_print_list === false) {
       existing.added_from_print_list = true;
+      existing.barangay = formattedBarangay;
+      if (formattedPurok) existing.purok = formattedPurok;
+      if (rawNumber) existing.contact_number = rawNumber;
       if (updateLat !== undefined) existing.latitude = updateLat;
       if (updateLng !== undefined) existing.longitude = updateLng;
       if (updateGeotag !== undefined) existing.geotagged = updateGeotag;
@@ -3430,7 +3508,7 @@ export async function addContact(
       saveContactToBase44(existing, username).catch(err => console.warn('Failed to save to Base44:', err));
       return existing;
     }
-    throw new Error(`Duplicate contact: "${formattedName}" with number ${rawNumber} already exists.`);
+    throw new Error(`Duplicate contact: A contact named "${formattedName}" already exists.`);
   }
 
   const newId = getNextLocalId();
@@ -3876,18 +3954,15 @@ export function previewBulkImport(text: string): {
       continue;
     }
 
-    // Check duplicate in database
+    const nameKey = getCanonicalNameKey(name);
+    // Check duplicate in database strictly based on full name
     const dbDuplicate = contactsCache.some(
       c =>
         !c.deleted_at &&
-        c.full_name.toLowerCase() === name.toLowerCase() &&
-        (number ? c.contact_number === number : (!c.contact_number && c.barangay === barangay))
+        getCanonicalNameKey(c.full_name) === nameKey
     );
 
-    const batchKey = number 
-      ? `${name.toLowerCase()}|||num:${number}` 
-      : `${name.toLowerCase()}|||bg:${barangay.toLowerCase()}`;
-    const batchDuplicate = batchSeen.has(batchKey);
+    const batchDuplicate = batchSeen.has(nameKey);
 
     if (dbDuplicate || batchDuplicate) {
       results.push({
@@ -3897,7 +3972,7 @@ export function previewBulkImport(text: string): {
         purok: purok,
         contact_number: number,
         status: 'duplicate',
-        reason: dbDuplicate ? 'Contact already exists in database.' : 'Duplicate contact present in this bulk list.'
+        reason: dbDuplicate ? 'Contact with this Full Name already exists in database.' : 'Duplicate Full Name present earlier in this bulk list.'
       });
       duplicateCount++;
     } else {
@@ -3912,7 +3987,7 @@ export function previewBulkImport(text: string): {
       validCount++;
     }
 
-    batchSeen.add(batchKey);
+    batchSeen.add(nameKey);
   }
 
   return {
@@ -3939,6 +4014,7 @@ export async function saveBulkImport(
 
   const appended: Contact[] = [];
   const updated: Contact[] = [];
+  const batchSavedKeys = new Set<string>();
 
   for (const item of items) {
     const formattedName = capitalizeWords(item.full_name);
@@ -3951,12 +4027,34 @@ export async function saveBulkImport(
       continue;
     }
 
-    // Find database duplicate
+    const nameKey = getCanonicalNameKey(formattedName);
+
+    // Strictly check for duplicate in batch already processed
+    if (batchSavedKeys.has(nameKey)) {
+      if (option === 'replace_duplicate') {
+        const idx = contactsCache.findIndex(c => !c.deleted_at && getCanonicalNameKey(c.full_name) === nameKey);
+        if (idx !== -1) {
+          contactsCache[idx] = {
+            ...contactsCache[idx],
+            barangay: formattedBarangay,
+            purok: formattedPurok || contactsCache[idx].purok,
+            contact_number: number || contactsCache[idx].contact_number,
+            updated_at: new Date().toISOString()
+          };
+          updated.push(contactsCache[idx]);
+          replacedCount++;
+        }
+      } else {
+        skippedCount++;
+      }
+      continue;
+    }
+
+    // Find database duplicate strictly by Full Name
     const duplicateIndex = contactsCache.findIndex(
       c =>
         !c.deleted_at &&
-        c.full_name.toLowerCase() === formattedName.toLowerCase() &&
-        (number ? c.contact_number === number : (!c.contact_number && c.barangay === formattedBarangay))
+        getCanonicalNameKey(c.full_name) === nameKey
     );
 
     if (duplicateIndex !== -1) {
@@ -3965,36 +4063,20 @@ export async function saveBulkImport(
         contactsCache[duplicateIndex] = {
           ...contactsCache[duplicateIndex],
           barangay: formattedBarangay,
-          purok: formattedPurok,
+          purok: formattedPurok || contactsCache[duplicateIndex].purok,
+          contact_number: number || contactsCache[duplicateIndex].contact_number,
           updated_at: new Date().toISOString()
         };
         updated.push(contactsCache[duplicateIndex]);
         replacedCount++;
         savedCount++;
-      } else if (option === 'save_all') {
-        // Save as another entry anyway (unlikely as it matches both, but let's allow saving if explicitly chosen)
-        const newId = getNextLocalId();
-        const newContact: Contact = {
-          id: newId,
-          full_name: formattedName,
-          barangay: formattedBarangay,
-          purok: formattedPurok,
-          contact_number: number,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          deleted_at: null,
-          added_locally: true,
-          added_from_print_list: true
-        };
-        contactsCache.push(newContact);
-        appended.push(newContact);
-        savedCount++;
+        batchSavedKeys.add(nameKey);
       } else {
-        // skip_invalid / skip duplicate (default for 'skip_invalid' choice handles skip_duplicate)
+        // Strictly skip duplicate to ensure no duplicate full names
         skippedCount++;
       }
     } else {
-      // Valid record
+      // Valid record (no duplicate in database or batch)
       if (item.status === 'invalid' && option !== 'save_all') {
         skippedCount++;
         continue;
@@ -4016,9 +4098,12 @@ export async function saveBulkImport(
       contactsCache.push(newContact);
       appended.push(newContact);
       savedCount++;
+      batchSavedKeys.add(nameKey);
     }
   }
 
+  // Deduplicate contactsCache to guarantee 100% strict uniqueness by Full Name
+  contactsCache = deduplicateContactsByName(contactsCache);
   await saveContacts();
   await addActivity(
     username,
@@ -4193,7 +4278,7 @@ async function pushBulkToSheets(appended: Contact[], updated: Contact[]) {
 
 // Dashboard statistics
 export function getDashboardStats() {
-  const activeContacts = contactsCache.filter(isAvailableForDirectory);
+  const activeContacts = deduplicateContactsByName(contactsCache.filter(isAvailableForDirectory));
   
   // Total Contacts in PCU Directory
   const totalContacts = activeContacts.length;
@@ -5174,7 +5259,7 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     }
   }
 
-  contactsCache = mergedContacts.filter(c => !c.deleted_at);
+  contactsCache = deduplicateContactsByName(mergedContacts.filter(c => !c.deleted_at));
   syncPCUFieldsToCache();
   await saveContacts();
 
