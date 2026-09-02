@@ -837,57 +837,56 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                     <p className="text-slate-400 text-xs mt-1">Add patient profiles to files list first from the Existing Account Directory page.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {filteredFolders.map((folder) => (
                       <motion.div
                         key={folder.barangay}
-                        whileHover={{ y: -4, shadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)' }}
-                        className="bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:border-emerald-300 transition-all overflow-hidden flex flex-col justify-between group cursor-pointer"
+                        whileHover={{ y: -3, shadow: '0 8px 20px -4px rgba(0, 0, 0, 0.05)' }}
+                        className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:border-emerald-300 transition-all overflow-hidden flex flex-col justify-between group cursor-pointer"
                         onClick={() => {
                           setActiveFolder(folder.barangay);
                           setSearchQuery('');
                         }}
                       >
-                        <div className="p-6">
-                          <div className="flex items-start justify-between gap-4 mb-4">
-                            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-100 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600 transition-all shadow-xs">
-                              <Folder className="w-6 h-6 fill-emerald-100/40 group-hover:fill-white/10 transition-colors" />
+                        <div className="p-4 sm:p-4.5">
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-100 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600 transition-all shadow-xs">
+                              <Folder className="w-5 h-5 fill-emerald-100/40 group-hover:fill-white/10 transition-colors" />
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              {isMasterAdmin && (
+                            {isMasterAdmin && (
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setFolderToDelete(folder.barangay);
                                   }}
-                                  className="p-1.5 bg-red-50 hover:bg-red-600 border border-red-100 hover:border-red-600 text-red-600 hover:text-white rounded-xl transition-all cursor-pointer shadow-xs focus:outline-none"
+                                  className="p-1.5 bg-red-50 hover:bg-red-600 border border-red-100 hover:border-red-600 text-red-600 hover:text-white rounded-lg transition-all cursor-pointer shadow-xs focus:outline-none"
                                   title="Delete Barangay Folder"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              )}
-                              <span className="px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-slate-700 font-extrabold text-xs">
-                                {folder.count} {folder.count === 1 ? 'Record' : 'Records'}
-                              </span>
-                            </div>
+                              </div>
+                            )}
                           </div>
 
-                          <h3 className="text-base font-black text-slate-800 font-display group-hover:text-emerald-700 transition-colors capitalize">
+                          <h3 className="text-sm sm:text-[15px] font-black text-slate-800 font-display group-hover:text-emerald-700 transition-colors capitalize truncate" title={folder.barangay}>
                             {folder.barangay.toLowerCase()}
                           </h3>
-                          <p className="text-xs text-slate-400 font-bold mt-1 uppercase tracking-wider">
+                          <p className="text-[10px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider">
                             BARANGAY DIRECTORY
                           </p>
                         </div>
 
-                        <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs font-black text-emerald-800 group-hover:bg-emerald-50/20 transition-all">
-                          <div className="flex items-center gap-1.5 text-slate-500 font-bold">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span>{folder.verifiedCount} Verified</span>
+                        <div className="px-4 py-2.5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs font-black text-emerald-800 group-hover:bg-emerald-50/20 transition-all">
+                          <div className="flex items-center gap-2 text-slate-700 font-extrabold text-[11px] px-2.5 py-1 rounded-full bg-emerald-50/90 border border-emerald-200/80 shadow-xs relative overflow-hidden">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                            </span>
+                            <span className="text-emerald-900 tracking-tight">{folder.count || folder.verifiedCount} {folder.count === 1 ? 'Patient' : 'Patients'}</span>
                           </div>
-                          <span className="group-hover:translate-x-1 transition-transform">Explore Patients →</span>
                         </div>
                       </motion.div>
                     ))}
