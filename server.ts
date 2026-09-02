@@ -33,6 +33,8 @@ import {
   getSiteSettings,
   saveSiteSettings,
   pullSiteSettingsOnce,
+  pullAdminsOnce,
+  pullBarangaysOnce,
   pullSiteSettingsFromGoogleSheets,
   pullAdminsFromGoogleSheets,
   pullBarangaysFromGoogleSheets,
@@ -169,7 +171,7 @@ export async function getApp() {
       const sheetsConfig = getSheetsConfig();
       if (sheetsConfig.syncEnabled) {
         try {
-          await pullAdminsFromGoogleSheets();
+          await pullAdminsOnce();
         } catch (err: any) {
           console.error('Failed to pull administrators on login request:', err.message);
         }
@@ -618,9 +620,9 @@ export async function getApp() {
       const username = req.user?.username || 'Admin';
       const role = (req.user?.role || '').toUpperCase().trim();
       
-      const allowedRoles = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'];
-      if (!allowedRoles.includes(role)) {
-        return res.status(403).json({ error: 'Permission denied: Only administrators can clear all existing accounts.' });
+      const isMaster = role === 'MASTER ADMIN' || role === 'MASTER_ADMIN' || role === 'MASTERADMIN' || (req.user?.username || '').toLowerCase() === 'admin';
+      if (!isMaster) {
+        return res.status(403).json({ error: 'Permission denied: Only Master Admin can clear all existing accounts.' });
       }
 
       const updatedAccounts = await clearAllExistingAccounts(username);
@@ -1021,7 +1023,7 @@ export async function getApp() {
       const sheetsConfig = getSheetsConfig();
       if (sheetsConfig.syncEnabled) {
         try {
-          await pullAdminsFromGoogleSheets();
+          await pullAdminsOnce();
         } catch (err: any) {
           console.error('Failed to pull administrators on getUsers request:', err.message);
         }
@@ -1106,7 +1108,7 @@ export async function getApp() {
       const sheetsConfig = getSheetsConfig();
       if (sheetsConfig.syncEnabled) {
         try {
-          await pullAdminsFromGoogleSheets();
+          await pullAdminsOnce();
         } catch (err: any) {
           console.error('Failed to pull administrators on getAdmins request:', err.message);
         }

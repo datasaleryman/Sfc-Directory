@@ -29,9 +29,11 @@ import {
   Crosshair,
   Save,
   Check,
-  AlertCircle
+  AlertCircle,
+  ChevronRight
 } from 'lucide-react';
 import { ExistingAccountItem } from '../types.js';
+import { BarangaySummaryAnalytics } from './BarangaySummaryAnalytics.js';
 
 interface ExistingAccountProps {
   authToken: string | null;
@@ -54,10 +56,13 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       return null;
     }
   })();
-  const isMasterAdmin = ['MASTER ADMIN', 'ADMINISTRATOR', 'ADMIN', 'IT'].includes((userObj?.role || '').toUpperCase().trim());
+  const userRole = (userObj?.role || '').toUpperCase().trim();
+  const username = (userObj?.username || '').toLowerCase().trim();
+  const isMasterAdmin = userRole === 'MASTER ADMIN' || userRole === 'MASTER_ADMIN' || userRole === 'MASTERADMIN' || username === 'admin';
   const [existingAccounts, setExistingAccounts] = useState<ExistingAccountItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [activePurokFolder, setActivePurokFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<ExistingAccountItem | null>(null);
   const [selectedBarangay, setSelectedBarangay] = useState<string>('all');
@@ -84,8 +89,14 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   // Reset folder and searches when active tab changes
   useEffect(() => {
     setActiveFolder(null);
+    setActivePurokFolder(null);
     setSearchQuery('');
   }, [activeTab]);
+
+  useEffect(() => {
+    setActivePurokFolder(null);
+    setSearchQuery('');
+  }, [activeFolder]);
 
   // Synchronize modal state whenever a record is selected
   useEffect(() => {
@@ -147,7 +158,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
 
   useEffect(() => {
     setFolderPage(1);
-  }, [searchQuery, activeFolder]);
+  }, [searchQuery, activeFolder, activePurokFolder]);
 
   const handleConfirmDeleteFolder = async (barangay: string) => {
     setDeletingFolder(true);
@@ -389,7 +400,72 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
     );
   }, [barangayFolders, searchQuery, activeFolder]);
 
-  // Filter accounts inside the active folder
+  // Aggregate Purok folders inside the active Barangay folder
+  const purokFolders = useMemo(() => {
+    if (!activeFolder) return [];
+    const folderData = barangayFolders.find(f => f.barangay === activeFolder);
+    if (!folderData) return [];
+
+    const map: { [key: string]: { purok: string; count: number; verifiedCount: number; list: ExistingAccountItem[] } } = {};
+
+    folderData.list.forEach(acc => {
+      const rawP = acc.purok ? acc.purok.trim() : '';
+      const pName = rawP ? rawP : 'No Purok';
+      const key = pName.toUpperCase();
+      if (!map[key]) {
+        map[key] = { purok: pName, count: 0, verifiedCount: 0, list: [] };
+      }
+      map[key].count += 1;
+      if (acc.existingAccVerified) {
+        map[key].verifiedCount += 1;
+      }
+      map[key].list.push(acc);
+    });
+
+    // Sort patient records inside each purok folder alphabetically by Full Name
+    Object.values(map).forEach(p => {
+      p.list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+    });
+
+    // Sort purok folders based on patient population (highest population count first)
+    return Object.values(map).sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (a.purok.toLowerCase() === 'no purok') return 1;
+      if (b.purok.toLowerCase() === 'no purok') return -1;
+      return a.purok.localeCompare(b.purok, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [barangayFolders, activeFolder]);
+
+  // Filter Purok folders when searching inside Barangay (in Purok folder overview)
+  const filteredPurokFolders = useMemo(() => {
+    if (!searchQuery || activePurokFolder) return purokFolders;
+    const lowerQuery = searchQuery.toLowerCase();
+    return purokFolders.filter(f =>
+      f.purok.toLowerCase().includes(lowerQuery) ||
+      f.list.some(acc => (acc.full_name || '').toLowerCase().includes(lowerQuery))
+    );
+  }, [purokFolders, searchQuery, activePurokFolder]);
+
+  // Filter accounts inside the active Purok folder
+  const filteredAccountsInPurok = useMemo(() => {
+    if (!activeFolder || !activePurokFolder) return [];
+    const pData = purokFolders.find(f => f.purok.toUpperCase() === activePurokFolder.toUpperCase());
+    if (!pData) return [];
+
+    let list = [...pData.list];
+    if (!searchQuery) return list;
+
+    const lowerQuery = searchQuery.toLowerCase();
+    return list.filter(acc => 
+      (acc.full_name || '').toLowerCase().includes(lowerQuery) ||
+      (acc.contact_number || '').toLowerCase().includes(lowerQuery) ||
+      (acc.pin || '').toLowerCase().includes(lowerQuery)
+    );
+  }, [purokFolders, activeFolder, activePurokFolder, searchQuery]);
+
+  // Filter accounts inside the active folder (fallback or all records)
   const filteredAccountsInFolder = useMemo(() => {
     if (!activeFolder) return [];
     const folderData = barangayFolders.find(f => f.barangay === activeFolder);
@@ -414,7 +490,15 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
 
   const totalUnifiedPages = Math.ceil(filteredAccounts.length / itemsPerPage);
 
-  // Paginated Folder Accounts
+  // Paginated Folder Accounts (Purok View)
+  const paginatedPurokAccounts = useMemo(() => {
+    const start = (folderPage - 1) * itemsPerPage;
+    return filteredAccountsInPurok.slice(start, start + itemsPerPage);
+  }, [filteredAccountsInPurok, folderPage]);
+
+  const totalPurokPages = Math.ceil(filteredAccountsInPurok.length / itemsPerPage);
+
+  // Paginated Folder Accounts (Legacy/Direct)
   const paginatedFolderAccounts = useMemo(() => {
     const start = (folderPage - 1) * itemsPerPage;
     return filteredAccountsInFolder.slice(start, start + itemsPerPage);
@@ -715,11 +799,19 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
           {activeTab === 'exist-acc-files' && activeFolder ? (
             <button
               onClick={() => {
-                setActiveFolder(null);
-                setSearchQuery('');
+                if (activePurokFolder) {
+                  setActivePurokFolder(null);
+                  setSearchQuery('');
+                  setFolderPage(1);
+                } else {
+                  setActiveFolder(null);
+                  setActivePurokFolder(null);
+                  setSearchQuery('');
+                  setFolderPage(1);
+                }
               }}
               className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-emerald-400 font-bold text-xs rounded-2xl transition-all cursor-pointer flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shrink-0"
-              title="Back to Folders"
+              title={activePurokFolder ? "Back to Purok Folders" : "Back to Barangay Folders"}
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -737,10 +829,29 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
             <h2 className="text-lg sm:text-xl font-black text-white font-display tracking-tight flex items-center gap-2 flex-wrap">
               {activeTab === 'exist-acc-files' ? (
                 activeFolder ? (
-                  <span className="flex items-center gap-2 flex-wrap">
-                    <FolderOpen className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 fill-emerald-500/10 shrink-0" />
-                    <span>Existing Accounts in <span className="text-emerald-300 capitalize">{activeFolder.toLowerCase()}</span></span>
-                  </span>
+                  activePurokFolder ? (
+                    <span className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                      <FolderOpen className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 fill-emerald-500/10 shrink-0" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActivePurokFolder(null);
+                          setSearchQuery('');
+                          setFolderPage(1);
+                        }}
+                        className="text-slate-300 hover:text-emerald-300 capitalize transition-colors cursor-pointer"
+                      >
+                        {activeFolder.toLowerCase()}
+                      </button>
+                      <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span className="text-emerald-300 capitalize font-extrabold">{activePurokFolder.toLowerCase()}</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <FolderOpen className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 fill-emerald-500/10 shrink-0" />
+                      <span>Purok Folders in <span className="text-emerald-300 capitalize">{activeFolder.toLowerCase()}</span></span>
+                    </span>
+                  )
                 ) : (
                   'Existing Account Files'
                 )
@@ -751,7 +862,11 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
             <p className="text-xs sm:text-[13px] text-slate-400 font-medium mt-1 leading-relaxed max-w-2xl">
               {activeTab === 'exist-acc-files' ? (
                 activeFolder ? (
-                  `Detailed clinical directory of registered existing account patient profiles under ${activeFolder}`
+                  activePurokFolder ? (
+                    `Sorted patient profiles under ${activePurokFolder}, Barangay ${activeFolder}`
+                  ) : (
+                    `Organized into ${purokFolders.length} Purok Folders (Highest Population First) under Barangay ${activeFolder}`
+                  )
                 ) : (
                   `Offline-first directory grouped into ${barangayFolders.length} secure Barangay folders`
                 )
@@ -812,6 +927,24 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
             !activeFolder ? (
               // 1. Folders Grid
               <div className="space-y-6">
+                {/* BARANGAY SUMMARY ANALYTICS DASHBOARD */}
+                <BarangaySummaryAnalytics
+                  barangayFolders={barangayFolders}
+                  totalBarangaysInSystem={barangayList.length || 296}
+                  onSelectBarangay={(bName) => {
+                    setActiveFolder(bName);
+                    setActivePurokFolder(null);
+                    setSearchQuery('');
+                    setFolderPage(1);
+                  }}
+                  onSelectPurok={(bName, pName) => {
+                    setActiveFolder(bName);
+                    setActivePurokFolder(pName);
+                    setSearchQuery('');
+                    setFolderPage(1);
+                  }}
+                />
+
                 {/* TOOLBAR FOR SEARCH IN FOLDERS */}
                 <div className="bg-white border border-slate-200/80 rounded-3xl p-4 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
                   <div className="relative w-full sm:max-w-md">
@@ -893,15 +1026,111 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   </div>
                 )}
               </div>
+            ) : !activePurokFolder ? (
+              // 2. Purok Folders Grid inside active Barangay folder
+              <div className="space-y-6">
+                {/* TOOLBAR FOR SEARCH IN PUROK FOLDERS */}
+                <div className="bg-white border border-slate-200/80 rounded-3xl p-4 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
+                  <div className="relative w-full sm:max-w-md">
+                    <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={`Search Purok in ${activeFolder}...`}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveFolder(null);
+                        setActivePurokFolder(null);
+                        setSearchQuery('');
+                        setFolderPage(1);
+                      }}
+                      className="text-xs font-bold text-slate-600 hover:text-emerald-700 bg-slate-50 hover:bg-emerald-50 border border-slate-200/80 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>All Barangays</span>
+                    </button>
+                    <div className="text-xs font-bold text-slate-500 flex items-center gap-2 bg-slate-50 border border-slate-200/60 px-4 py-2.5 rounded-xl">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>{filteredPurokFolders.length} Purok Folders</span>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredPurokFolders.length === 0 ? (
+                  <div className="bg-white border border-slate-200/80 rounded-3xl p-16 text-center shadow-xs animate-fade-in">
+                    <Folder className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                    <p className="text-slate-700 font-extrabold text-base font-display">No Purok Folders Found</p>
+                    <p className="text-slate-400 text-xs mt-1">No patient profiles matching this search under Barangay {activeFolder}.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {filteredPurokFolders.map((pFolder) => (
+                      <motion.div
+                        key={pFolder.purok}
+                        whileHover={{ y: -3, shadow: '0 8px 20px -4px rgba(0, 0, 0, 0.05)' }}
+                        className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:border-teal-300 transition-all overflow-hidden flex flex-col justify-between group cursor-pointer"
+                        onClick={() => {
+                          setActivePurokFolder(pFolder.purok);
+                          setSearchQuery('');
+                          setFolderPage(1);
+                        }}
+                      >
+                        <div className="p-4 sm:p-4.5">
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-800 border border-teal-100 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white group-hover:border-teal-600 transition-all shadow-xs">
+                              <Folder className="w-5 h-5 fill-teal-100/40 group-hover:fill-white/10 transition-colors" />
+                            </div>
+                          </div>
+
+                          <h3 className="text-sm sm:text-[15px] font-black text-slate-800 font-display group-hover:text-teal-700 transition-colors capitalize truncate" title={pFolder.purok}>
+                            {pFolder.purok.toLowerCase()}
+                          </h3>
+                          <p className="text-[10px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider truncate">
+                            PUROK DIRECTORY
+                          </p>
+                        </div>
+
+                        <div className="px-4 py-2.5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs font-black text-teal-800 group-hover:bg-teal-50/20 transition-all">
+                          <div className="flex items-center gap-2 text-slate-700 font-extrabold text-[11px] px-2.5 py-1 rounded-full bg-emerald-50/90 border border-emerald-200/80 shadow-xs relative overflow-hidden">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                            </span>
+                            <span className="text-emerald-900 tracking-tight">{pFolder.count} {pFolder.count === 1 ? 'Patient' : 'Patients'}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
-              // 2. Folder Patient Details View (Patients inside the active barangay folder)
+              // 3. Folder Patient Details View (Patients inside the active Purok folder)
               <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm overflow-hidden">
                 <div className="px-6 py-4 bg-slate-50/60 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div>
-                    <span className="text-xs font-black text-slate-500 uppercase tracking-wider block">
-                      Patient Records inside Folder
-                    </span>
-                    <span className="text-xs text-emerald-800 font-bold capitalize mt-1 block">
+                    <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-wider">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActivePurokFolder(null);
+                          setSearchQuery('');
+                          setFolderPage(1);
+                        }}
+                        className="hover:text-emerald-700 underline transition-colors cursor-pointer"
+                      >
+                        Purok Folders
+                      </button>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-emerald-800 capitalize font-extrabold">{activePurokFolder.toLowerCase()}</span>
+                    </div>
+                    <span className="text-xs text-slate-400 font-bold capitalize mt-1 block">
                       Barangay: {activeFolder.toLowerCase()}
                     </span>
                   </div>
@@ -913,23 +1142,23 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder={`Search inside ${activeFolder}...`}
+                        placeholder={`Search inside ${activePurokFolder}...`}
                         className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition-all placeholder:text-slate-400"
                       />
                     </div>
                     <span className="px-3 py-1.5 text-xs font-extrabold text-emerald-800 bg-emerald-50 rounded-lg border border-emerald-200/60 whitespace-nowrap">
-                      {filteredAccountsInFolder.length} Active Accounts
+                      {filteredAccountsInPurok.length} Patients
                     </span>
                   </div>
                 </div>
 
-                {filteredAccountsInFolder.length === 0 ? (
+                {filteredAccountsInPurok.length === 0 ? (
                   <div className="p-16 text-center">
                     <UserIcon className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-                    <p className="text-slate-700 font-extrabold text-base font-display">No patient records found in this folder</p>
-                    <p className="text-slate-400 text-xs mt-1">Try resetting search filters or add more patient profiles to this Barangay folder.</p>
+                    <p className="text-slate-700 font-extrabold text-base font-display">No patient records found in this Purok</p>
+                    <p className="text-slate-400 text-xs mt-1">Try resetting search filters or add more patient profiles to {activePurokFolder}.</p>
                   </div>
-                                ) : (
+                ) : (
                   <>
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse text-left">
@@ -943,7 +1172,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-600 text-xs font-semibold">
-                          {paginatedFolderAccounts.map((item) => (
+                          {paginatedPurokAccounts.map((item) => (
                             <tr 
                               key={item.id} 
                               onClick={() => setSelectedItem(item)}
@@ -1000,10 +1229,10 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                     </div>
 
                     {/* Folder Patient Directory Pagination bar */}
-                    {totalFolderPages > 1 && (
+                    {totalPurokPages > 1 && (
                       <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-500">
                         <div>
-                          Showing page <span className="text-slate-800 font-extrabold">{folderPage}</span> of <span className="text-slate-800 font-extrabold">{totalFolderPages}</span>
+                          Showing page <span className="text-slate-800 font-extrabold">{folderPage}</span> of <span className="text-slate-800 font-extrabold">{totalPurokPages}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
@@ -1019,9 +1248,9 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setFolderPage(p => Math.min(totalFolderPages, p + 1));
+                              setFolderPage(p => Math.min(totalPurokPages, p + 1));
                             }}
-                            disabled={folderPage === totalFolderPages}
+                            disabled={folderPage === totalPurokPages}
                             className="px-3 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg transition-all font-extrabold cursor-pointer disabled:cursor-not-allowed"
                           >
                             Next
