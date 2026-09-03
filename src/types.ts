@@ -14,6 +14,8 @@ export interface Contact {
   pcu_file_url?: string;
   pcu_uploaded_by?: string;
   pcu_uploaded_at?: string;
+  isSubmitted?: boolean;
+  submittedAt?: string;
   added_from_print_list?: boolean;
   isExistingAccount?: boolean;
   category?: 'pcu' | 'existing_account';

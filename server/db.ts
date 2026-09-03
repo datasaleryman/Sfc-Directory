@@ -167,6 +167,8 @@ export interface Contact {
   pcu_file_url?: string;
   pcu_uploaded_by?: string;
   pcu_uploaded_at?: string;
+  isSubmitted?: boolean;
+  submittedAt?: string;
   isExistingAccount?: boolean;
   uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
 }
@@ -3035,11 +3037,22 @@ export function isBarangayMatch(b1?: string, b2?: string): boolean {
 // Helper to check if a contact has already been submitted with PCU file(s)
 export function isContactSubmitted(c: Contact): boolean {
   if (!c) return false;
+  if (c.isSubmitted === true) {
+    return true;
+  }
   if (c.pcu_file_url && typeof c.pcu_file_url === 'string' && c.pcu_file_url.trim() !== '') {
     return true;
   }
   if (c.uploadedFiles && Array.isArray(c.uploadedFiles) && c.uploadedFiles.length > 0) {
     return true;
+  }
+  // Check if contact has matching submission in pcuUpdatesCache
+  if (Array.isArray(pcuUpdatesCache) && pcuUpdatesCache.length > 0) {
+    const hasPcu = pcuUpdatesCache.some(p => 
+      (c.id && p.contactId && c.id.toString() === p.contactId.toString()) ||
+      (p.fullName && normalizeCompareName(c.full_name, p.fullName))
+    );
+    if (hasPcu) return true;
   }
   return false;
 }
@@ -3546,6 +3559,15 @@ export async function saveContactToBase44(contact: Contact, username: string): P
       },
       uploadedFiles: contact.uploadedFiles || [],
       uploadedFilesJson: JSON.stringify(contact.uploadedFiles || []),
+      attachments: (contact.uploadedFiles || []).map((f: any) => ({
+        name: contact.full_name,
+        fileName: f.name,
+        fileType: 'application/octet-stream',
+        fileUrl: f.url,
+        size: 0
+      })),
+      isSubmitted: true,
+      submittedAt: contact.pcu_uploaded_at || new Date().toISOString(),
       pcu_file_url: contact.pcu_file_url || '',
       pcu_uploaded_by: contact.pcu_uploaded_by || uName,
       pcu_uploaded_at: contact.pcu_uploaded_at || new Date().toISOString(),
@@ -4993,34 +5015,112 @@ export async function syncPCUUpdatesFromBase44(force: boolean = false): Promise<
 }
 
 export function syncPCUFieldsToCache() {
-  if (!Array.isArray(contactsCache) || !Array.isArray(pcuUpdatesCache)) return;
+  if (!Array.isArray(contactsCache)) return;
 
-  // Clear existing PCU fields on all contacts to avoid stale synced states from previous sessions
-  contactsCache.forEach(c => {
-    if (c) {
-      delete c.pcu_file_url;
-      delete c.pcu_uploaded_by;
-      delete c.pcu_uploaded_at;
-    }
-  });
+  // 1. Sync from pcuUpdatesCache into contactsCache (without clearing valid existing fields)
+  if (Array.isArray(pcuUpdatesCache)) {
+    pcuUpdatesCache.forEach(update => {
+      if (!update) return;
 
-  pcuUpdatesCache.forEach(update => {
-    if (!update) return;
+      const contact = contactsCache.find(c =>
+        (c.id && update.contactId && c.id.toString() === update.contactId.toString()) ||
+        (normalizeCompareName(c.full_name, update.fullName) &&
+         (!update.barangay || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(update.barangay).toLowerCase()))
+      );
 
-    const contact = contactsCache.find(c =>
-      (c.id && update.contactId && c.id.toString() === update.contactId.toString()) ||
-      (normalizeCompareName(c.full_name, update.fullName) &&
-       (!update.barangay || normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(update.barangay).toLowerCase()))
-    );
+      if (contact) {
+        contact.isSubmitted = true;
+        if (!contact.submittedAt) {
+          contact.submittedAt = update.uploadedAt;
+        }
+        if (!contact.pcu_file_url) {
+          contact.pcu_file_url = update.fileData || `Uploaded: ${update.fileName}`;
+        }
+        if (!contact.pcu_uploaded_by) {
+          contact.pcu_uploaded_by = update.uploadedBy;
+        }
+        if (!contact.pcu_uploaded_at) {
+          contact.pcu_uploaded_at = update.uploadedAt;
+        }
+        contact.uploadedFiles = contact.uploadedFiles || [];
+        const fileExists = contact.uploadedFiles.some(f => f.name === update.fileName || (update.fileData && f.url === update.fileData));
+        if (!fileExists && update.fileName) {
+          contact.uploadedFiles.push({
+            name: update.fileName,
+            url: update.fileData || '',
+            uploadedAt: update.uploadedAt,
+            uploadedBy: update.uploadedBy
+          });
+        }
+      }
+    });
+  }
 
-    if (contact) {
-      if (!contact.pcu_file_url) {
-        contact.pcu_file_url = update.fileData || `Uploaded: ${update.fileName}`;
-        contact.pcu_uploaded_by = update.uploadedBy;
-        contact.pcu_uploaded_at = update.uploadedAt;
+  // 2. Sync from Base44 HouseholdSubmissions cache (data/base44_households.json)
+  try {
+    if (fs.existsSync(HOUSEHOLDS_CACHE_FILE)) {
+      const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+      if (data && data.trim()) {
+        const households = JSON.parse(data);
+        if (Array.isArray(households)) {
+          households.forEach((h: any) => {
+            const hasAttachments = Array.isArray(h.attachments) && h.attachments.length > 0;
+            const hasUploadedFiles = Array.isArray(h.uploadedFiles) && h.uploadedFiles.length > 0;
+            const hasUrl = typeof h.pcu_file_url === 'string' && h.pcu_file_url.trim() !== '';
+            const isApproved = h.status === 'approved' && Boolean(hasAttachments || hasUploadedFiles || hasUrl);
+
+            if (hasAttachments || hasUploadedFiles || hasUrl || isApproved) {
+              const hName = h.memberName || (h.fpe && h.fpe.fullName) || h.full_name || '';
+              if (!hName) return;
+
+              const contact = contactsCache.find(c =>
+                (h.contactId && c.id && c.id.toString() === h.contactId.toString()) ||
+                (h.id && (h.id === `hh_${c.id}` || h.id === String(c.id))) ||
+                normalizeCompareName(c.full_name, hName)
+              );
+
+              if (contact) {
+                contact.isSubmitted = true;
+                const submissionDate = h.created_date || h.submittedDate || h.created_at || new Date().toISOString();
+                const uploader = h.submittedBy || h['Submitted by'] || h.submittedByEmail || 'Admin';
+
+                if (!contact.submittedAt) contact.submittedAt = submissionDate;
+                if (!contact.pcu_uploaded_by) contact.pcu_uploaded_by = uploader;
+                if (!contact.pcu_uploaded_at) contact.pcu_uploaded_at = submissionDate;
+
+                contact.uploadedFiles = contact.uploadedFiles || [];
+                if (hasAttachments && contact.uploadedFiles.length === 0) {
+                  contact.uploadedFiles = h.attachments.map((att: any) => ({
+                    name: att.fileName || att.name || 'Base44 Attachment',
+                    url: att.fileUrl || att.url || '',
+                    uploadedAt: submissionDate,
+                    uploadedBy: uploader
+                  }));
+                } else if (hasUploadedFiles && contact.uploadedFiles.length === 0) {
+                  contact.uploadedFiles = h.uploadedFiles.map((f: any) => ({
+                    name: f.name || f.fileName || 'Base44 File',
+                    url: f.url || f.fileData || '',
+                    uploadedAt: f.uploadedAt || submissionDate,
+                    uploadedBy: f.uploadedBy || uploader
+                  }));
+                }
+
+                if (!contact.pcu_file_url) {
+                  if (contact.uploadedFiles && contact.uploadedFiles.length > 0) {
+                    contact.pcu_file_url = contact.uploadedFiles[0].url || `Uploaded: ${contact.uploadedFiles[0].name}`;
+                  } else if (hasUrl) {
+                    contact.pcu_file_url = h.pcu_file_url;
+                  }
+                }
+              }
+            }
+          });
+        }
       }
     }
-  });
+  } catch (err: any) {
+    // Non-blocking fallback
+  }
 }
 
 export async function syncWithGoogleSheets(username: string): Promise<{ success: boolean; message: string; count?: number }> {
@@ -5356,6 +5456,9 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
           pcu_file_url: mergedContacts[targetIndex].pcu_file_url || lc.pcu_file_url,
           pcu_uploaded_by: mergedContacts[targetIndex].pcu_uploaded_by || lc.pcu_uploaded_by,
           pcu_uploaded_at: mergedContacts[targetIndex].pcu_uploaded_at || lc.pcu_uploaded_at,
+          uploadedFiles: (lc.uploadedFiles && lc.uploadedFiles.length > 0) ? lc.uploadedFiles : mergedContacts[targetIndex].uploadedFiles,
+          isSubmitted: lc.isSubmitted || Boolean(lc.pcu_file_url) || Boolean(lc.uploadedFiles && lc.uploadedFiles.length > 0) || mergedContacts[targetIndex].isSubmitted,
+          submittedAt: lc.submittedAt || lc.pcu_uploaded_at || mergedContacts[targetIndex].submittedAt,
           latitude: mergedContacts[targetIndex].latitude !== undefined ? mergedContacts[targetIndex].latitude : lc.latitude,
           longitude: mergedContacts[targetIndex].longitude !== undefined ? mergedContacts[targetIndex].longitude : lc.longitude,
           geotagged: mergedContacts[targetIndex].geotagged || lc.geotagged,
@@ -6988,14 +7091,23 @@ export async function addPCUUpdate(
   // Update contact's PCU file url status
   if (contact) {
     // If upload was successful, store the CDN link, otherwise store a friendly "Uploaded" string indicating local availability
+    contact.isSubmitted = true;
+    contact.submittedAt = newUpdate.uploadedAt;
     contact.pcu_file_url = uploadSuccess ? finalFileUrlOrData : `Uploaded: ${fileName} (Local Cache)`;
     contact.pcu_uploaded_by = username;
     contact.pcu_uploaded_at = newUpdate.uploadedAt;
+    contact.uploadedFiles = contact.uploadedFiles || [];
+    contact.uploadedFiles.push({
+      name: fileName,
+      url: finalFileUrlOrData,
+      uploadedAt: newUpdate.uploadedAt,
+      uploadedBy: username
+    });
     contact.updated_at = new Date().toISOString();
     await saveContacts();
     await addActivity(username, `Uploaded PCU File "${fileName}" for: "${fullName}"`);
     forwardToWebApp('edit', contact).catch(err => console.error('Error forwarding PCU file update to Sheets Web App:', err));
-    saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
+    await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
   } else {
     await addActivity(username, `Uploaded PCU File "${fileName}" for unregistered household: "${fullName}"`);
   }
@@ -7160,6 +7272,8 @@ export async function addPCUUpdatesMultiple(
   }
 
   // Update contact's main PCU fields
+  contact.isSubmitted = true;
+  contact.submittedAt = lastUploadedAt;
   contact.pcu_file_url = lastFileUrl;
   contact.pcu_uploaded_by = username;
   contact.pcu_uploaded_at = lastUploadedAt;
@@ -7170,7 +7284,7 @@ export async function addPCUUpdatesMultiple(
 
   await addActivity(username, `Uploaded ${files.length} PCU File(s) for: "${fullName}"`);
   forwardToWebApp('edit', contact).catch(err => console.error('Error forwarding PCU file update to Sheets Web App:', err));
-  saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
+  await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
 
   return contact;
 }
@@ -7197,24 +7311,43 @@ export function getRecentUploads(params: {
   syncPCUFieldsToCache();
 
   // 1. Get uploaded contacts from contactsCache
+  const current = (username || '').toLowerCase().trim();
+  const userObj = findUser(username);
+  const uName = (userObj?.fullName || userObj?.displayName || '').toLowerCase().trim();
+  const userRole = (userObj?.role || '').toUpperCase();
+  const isSuper = !current || current === 'admin' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || userRole === 'IT';
+
   const uploadedContacts = contactsCache.filter(c => {
     if (c.deleted_at) return false;
     if (!isContactSubmitted(c)) return false;
 
+    if (isSuper) return true;
+
     const uploader = (c.pcu_uploaded_by || '').toLowerCase().trim();
-    const current = (username || '').toLowerCase().trim();
-
-    if (!current || current === 'admin') return true;
-
-    if (!uploader) {
-      // Fallback check in pcuUpdatesCache if pcu_uploaded_by was missing
-      const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === c.id && (p.uploadedBy || '').toLowerCase().trim() === current);
-      if (matchedUpdate) return true;
-      if (c.uploadedFiles && c.uploadedFiles.some(f => (f.uploadedBy || '').toLowerCase().trim() === current)) return true;
-      return false;
+    if (uploader === current || (uName && uploader === uName) || uploader === 'admin') {
+      return true;
     }
 
-    return uploader === current || uploader === 'admin' || (c.uploadedFiles && c.uploadedFiles.some(f => (f.uploadedBy || '').toLowerCase().trim() === current));
+    if (c.uploadedFiles && c.uploadedFiles.some(f => {
+      const up = (f.uploadedBy || '').toLowerCase().trim();
+      return up === current || (uName && up === uName) || up === 'admin';
+    })) {
+      return true;
+    }
+
+    // Check pcuUpdatesCache
+    const matchedUpdate = pcuUpdatesCache.find(p => 
+      (p.contactId === c.id || normalizeCompareName(p.fullName, c.full_name)) && 
+      ((p.uploadedBy || '').toLowerCase().trim() === current || (uName && (p.uploadedBy || '').toLowerCase().trim() === uName))
+    );
+    if (matchedUpdate) return true;
+
+    // Check designated barangay
+    if (userObj?.barangay && c.barangay && normalizeBarangayName(userObj.barangay).toLowerCase() === normalizeBarangayName(c.barangay).toLowerCase()) {
+      return true;
+    }
+
+    return false;
   }).map(c => {
     const uploadedFiles = c.uploadedFiles && c.uploadedFiles.length > 0 ? c.uploadedFiles : [{
       name: c.pcu_file_url ? (c.pcu_file_url.includes('/') ? (c.pcu_file_url.split('/').pop() || 'PCU Document').replace(/^\d+_/,'') : c.pcu_file_url) : 'PCU Document',
@@ -7426,7 +7559,29 @@ export async function removePCUFileFromContact(contactId: number, username: stri
   delete contact.pcu_uploaded_by;
   delete contact.pcu_uploaded_at;
   delete contact.uploadedFiles;
+  contact.isSubmitted = false;
+  delete contact.submittedAt;
   contact.updated_at = new Date().toISOString();
+
+  // Also clear from local Base44 households cache if present
+  try {
+    if (fs.existsSync(HOUSEHOLDS_CACHE_FILE)) {
+      const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+      if (data && data.trim()) {
+        const submissions = JSON.parse(data);
+        if (Array.isArray(submissions)) {
+          const filtered = submissions.filter((sub: any) => {
+            if (sub.contactId && sub.contactId.toString() === contactId.toString()) return false;
+            if (sub.id && (sub.id === `hh_${contactId}` || sub.id === String(contactId))) return false;
+            const sName = sub.memberName || (sub.fpe && sub.fpe.fullName) || sub.full_name || '';
+            if (sName && normalizeCompareName(sName, contact.full_name)) return false;
+            return true;
+          });
+          safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+        }
+      }
+    }
+  } catch (e) {}
 
   await saveContacts();
   await addActivity(username, `Restored household record to Clinic Directory and deleted associated PCU file: "${contact.full_name}"`);

@@ -472,11 +472,20 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         throw new Error(data.error || 'Failed to upload files.');
       }
 
+      const submittedContactId = viewContact.id;
+      const submittedName = (viewContact.full_name || '').trim().toLowerCase();
+      const memberName = viewContact.full_name;
+      const filesCount = stagedPcuFiles.length;
+
+      // Optimistically remove from directory table immediately so it disappears without delay
+      setContacts(prev => prev.filter(c => c.id !== submittedContactId && (c.full_name || '').trim().toLowerCase() !== submittedName));
+      setTotal(prev => Math.max(0, prev - 1));
+
       setViewContact(null);
       setStagedPcuFiles([]);
       fetchContacts();
       onDeleted?.();
-      showToast(`Successfully uploaded ${stagedPcuFiles.length} file(s) for member "${viewContact.full_name}". Transferred to Recent Upload.`, 'success');
+      showToast(`Successfully submitted ${filesCount} file(s) for "${memberName}" to Base44! Removed from PCU Directory and transferred to Recent Upload.`, 'success');
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
