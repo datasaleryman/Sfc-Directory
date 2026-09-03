@@ -640,11 +640,11 @@ export async function getApp() {
     try {
       const username = req.user?.username || 'Admin';
       const id = req.params.id;
-      const { files, facebookLink } = req.body;
+      const { files, facebookLink, submitToBase44 } = req.body;
       if (files !== undefined && !Array.isArray(files)) {
         return res.status(400).json({ error: 'files must be an array of objects with fileName and fileData' });
       }
-      const updated = await uploadFilesForExistingAccount(id, files || [], facebookLink, username);
+      const updated = await uploadFilesForExistingAccount(id, files || [], facebookLink, username, submitToBase44 === true);
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ error: err.message });

@@ -104,7 +104,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       setEditFullName(selectedItem.full_name || '');
       setEditBarangay(selectedItem.barangay || '');
       setEditPurok(selectedItem.purok || '');
-      setEditContactNumber(selectedItem.contact_number || '');
+      setEditContactNumber(formatDisplayPhone(selectedItem.contact_number));
       setEditPin(selectedItem.pin || '');
       setEditLatitude(selectedItem.latitude !== undefined && selectedItem.latitude !== null ? selectedItem.latitude.toString() : '');
       setEditLongitude(selectedItem.longitude !== undefined && selectedItem.longitude !== null ? selectedItem.longitude.toString() : '');
@@ -229,7 +229,16 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
     }
   };
 
-  // Parse bulk text live
+  // Format display phone number to guarantee 09... format
+  const formatDisplayPhone = (phone?: string) => {
+    if (!phone) return '';
+    let clean = phone.trim();
+    if (clean.startsWith("'")) clean = clean.substring(1).trim();
+    if (/^9\d{9}$/.test(clean)) return '0' + clean;
+    return clean;
+  };
+
+  // Parse bulk text live with multi-delimiter support (tabs, pipes, commas, semicolons)
   const parsedRecords = useMemo(() => {
     if (!bulkText.trim()) return [];
     const lines = bulkText.split('\n');
@@ -238,11 +247,29 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         const trimmed = line.trim();
         if (!trimmed) return null;
         
-        const parts = trimmed.split('|').map(s => s.trim());
+        let parts: string[] = [];
+        if (trimmed.includes('\t')) {
+          parts = trimmed.split('\t').map(s => s.trim());
+        } else if (trimmed.includes('|')) {
+          parts = trimmed.split('|').map(s => s.trim());
+        } else if (trimmed.includes(';')) {
+          parts = trimmed.split(';').map(s => s.trim());
+        } else if (trimmed.includes(',')) {
+          parts = trimmed.split(',').map(s => s.trim());
+        } else {
+          parts = [trimmed];
+        }
+
         const fullName = parts[0] || '';
         const barangay = parts[1] || '';
         const purok = parts[2] || '';
-        const contactNumber = parts[3] || '';
+        
+        let contactNumber = parts[3] || '';
+        if (contactNumber.startsWith("'")) contactNumber = contactNumber.substring(1).trim();
+        if (/^9\d{9}$/.test(contactNumber)) contactNumber = '0' + contactNumber;
+
+        let pin = parts[4] || '';
+        if (pin.startsWith("'")) pin = pin.substring(1).trim();
         
         // Validation check
         const errors: string[] = [];
@@ -260,6 +287,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
           barangay: barangay.toUpperCase(),
           purok,
           contactNumber,
+          pin,
           isValid: errors.length === 0,
           errors
         };
@@ -271,6 +299,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         barangay: string;
         purok: string;
         contactNumber: string;
+        pin: string;
         isValid: boolean;
         errors: string[];
       }>;
@@ -649,7 +678,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   }, [selectedItem, editFullName, editBarangay, editPurok, editContactNumber, editPin, facebookLink, editLatitude, editLongitude, stagedFiles]);
 
   // Save all modified details, geotag telemetry, and attached files
-  const handleSaveRecord = async () => {
+  const handleSaveRecord = async (submitToBase44: boolean = false) => {
     if (!selectedItem) return;
     if (!editFullName.trim()) {
       showToast('Patient full name is required.', 'error');
@@ -666,7 +695,10 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       const lngNum = editLongitude.trim() ? parseFloat(editLongitude.trim()) : undefined;
       const isGeotagged = !!(latNum !== undefined && !isNaN(latNum) && lngNum !== undefined && !isNaN(lngNum));
 
-      // 1. If files are staged, upload them first
+      // CRITICAL: Only submit to Base44 if explicitly requested via "Submit to Base44" button
+      const isSubmitting = submitToBase44 === true;
+
+      // 1. If files are staged, upload/save them
       if (stagedFiles.length > 0) {
         await fetch(`/api/existing-accounts/${selectedItem.id}/files`, {
           method: 'POST',
@@ -676,13 +708,14 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
           },
           body: JSON.stringify({
             files: stagedFiles,
-            facebookLink: facebookLink.trim()
+            facebookLink: facebookLink.trim(),
+            submitToBase44: isSubmitting
           })
         });
       }
 
       // 2. Update record details & geotag telemetry
-      const updatePayload: Partial<ExistingAccountItem> = {
+      const updatePayload: Partial<ExistingAccountItem> & { submitToBase44?: boolean } = {
         full_name: editFullName.trim().toUpperCase(),
         barangay: editBarangay.trim().toUpperCase(),
         purok: editPurok.trim(),
@@ -691,7 +724,9 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         latitude: isGeotagged ? latNum : undefined,
         longitude: isGeotagged ? lngNum : undefined,
         geotagged: isGeotagged,
-        facebookLink: facebookLink.trim()
+        facebookLink: facebookLink.trim(),
+        submitToBase44: isSubmitting,
+        isSubmitted: isSubmitting ? true : selectedItem.isSubmitted
       };
 
       const res = await fetch(`/api/existing-accounts/${selectedItem.id}`, {
@@ -710,15 +745,14 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
 
       // Update state
       setExistingAccounts(prev => prev.map(acc => acc.id === selectedItem.id ? updatedData : acc));
+      setStagedFiles([]);
       
-      if (stagedFiles.length > 0 || (updatedData.uploadedFiles && updatedData.uploadedFiles.length > 0)) {
+      if (isSubmitting) {
         setSelectedItem(null);
-        setStagedFiles([]);
-        showToast(`Record for "${updatedData.full_name}" with attached document(s) submitted to Base44 & transferred to "Recent Upload"!`, 'success');
+        showToast(`Record for "${updatedData.full_name}" submitted to Base44 database & transferred to "Recent Upload"!`, 'success');
       } else {
         setSelectedItem(updatedData);
-        setStagedFiles([]);
-        showToast('Patient record details & geotag location updated and synced successfully!', 'success');
+        showToast('Patient record details & attached files saved locally (not submitted to Base44 database).', 'success');
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to save changes.', 'error');
@@ -728,7 +762,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
   };
 
   const handleSaveFiles = async () => {
-    await handleSaveRecord();
+    await handleSaveRecord(true);
   };
 
   // Handle adding bulk accounts
@@ -755,7 +789,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         status: 'approved',
         existingAccVerified: true,
         existingAccVisited: true,
-        pin: ''
+        pin: r.pin || ''
       }));
 
       const res = await fetch('/api/existing-accounts/bulk', {
@@ -772,13 +806,24 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
         throw new Error(data.error || 'Failed to register existing accounts in bulk.');
       }
 
-      showToast(`Successfully registered ${data.count} existing accounts in bulk!`, 'success');
+      // Merge newly added records directly into state so they are rendered instantly without bouncing back
+      if (data.data && Array.isArray(data.data)) {
+        setExistingAccounts(prev => {
+          const map = new Map(prev.map(a => [a.id, a]));
+          data.data.forEach((acc: ExistingAccountItem) => {
+            map.set(acc.id, acc);
+          });
+          return Array.from(map.values());
+        });
+      }
+
+      showToast(`Successfully registered ${data.count} existing accounts and synced to Google Sheets!`, 'success');
       
       // Reset bulk form and close modal
       setBulkText('');
       setShowAddModal(false);
 
-      // Refresh directory
+      // Refresh directory from server
       await fetchExistingAccounts();
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -1192,7 +1237,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                                 {item.purok ? item.purok.toLowerCase() : <span className="text-slate-300 font-normal">—</span>}
                               </td>
                               <td className="py-4 px-4 font-mono font-semibold">
-                                {item.contact_number || <span className="text-slate-300 font-normal">—</span>}
+                                {formatDisplayPhone(item.contact_number) || <span className="text-slate-300 font-normal">—</span>}
                               </td>
                               <td className="py-4 px-4 font-mono text-slate-500 font-semibold">
                                 {item.pin || <span className="text-slate-300 font-normal">—</span>}
@@ -1367,7 +1412,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                                 {item.purok ? item.purok.toLowerCase() : <span className="text-slate-300 font-normal">—</span>}
                               </td>
                               <td className="py-4 px-4 font-mono font-semibold">
-                                {item.contact_number || <span className="text-slate-300 font-normal">—</span>}
+                                {formatDisplayPhone(item.contact_number) || <span className="text-slate-300 font-normal">—</span>}
                               </td>
                               <td className="py-4 px-4 font-mono text-slate-500 font-semibold">
                                 {item.pin || <span className="text-slate-300 font-normal">—</span>}
@@ -1487,14 +1532,14 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-4 text-xs text-emerald-900 font-semibold space-y-2">
                     <p className="font-extrabold text-sm flex items-center gap-2">
                       <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px]">FORMAT</span>
-                      <span>Full Name | Barangay | Purok | Contact #</span>
+                      <span>Full Name | Barangay | Purok | Contact # | PIN Code (optional)</span>
                     </p>
                     <p className="text-emerald-700 font-medium">
-                      Enter each patient record on a new line. Separate details with pipes ( | ). E.g.:
+                      Enter each patient record on a new line. Supports Pipe ( | ), Tab (Google Sheet/Excel copy-paste), or Comma separation:
                     </p>
                     <pre className="font-mono bg-white/80 p-2.5 rounded-lg border border-emerald-200 text-slate-700 select-all block text-[11px] leading-relaxed">
-                      JUAN DELA CRUZ | DAMPALAN | Purok Mabuhay | 09171234567{"\n"}
-                      MARIA SANTIAGO | KALINGAYAN | Narra | 09228881122
+                      JUAN DELA CRUZ | DAMPALAN | Purok Mabuhay | 09171234567 | 12-345678901-2{"\n"}
+                      MARIA SANTIAGO	KALINGAYAN	Narra	09228881122	23-456789012-3
                     </pre>
                   </div>
 
@@ -1559,7 +1604,8 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                                       {rec.barangay}
                                     </span>
                                     {rec.purok && <span>Purok: {rec.purok}</span>}
-                                    {rec.contactNumber && <span>No: {rec.contactNumber}</span>}
+                                    {rec.contactNumber && <span>No: {formatDisplayPhone(rec.contactNumber)}</span>}
+                                    {rec.pin && <span className="font-mono">PIN: {rec.pin}</span>}
                                   </div>
                                 </div>
                               ) : (
@@ -1621,10 +1667,21 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                     <UserIcon className="w-5 h-5 text-emerald-200" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-extrabold text-base font-display capitalize truncate">
-                      {editFullName || selectedItem.full_name.toLowerCase()}
-                    </h3>
-                    <p className="text-xs text-emerald-300 font-medium truncate">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-extrabold text-base font-display capitalize truncate">
+                        {editFullName || selectedItem.full_name.toLowerCase()}
+                      </h3>
+                      {selectedItem.isSubmitted || (selectedItem.uploadedFiles && selectedItem.uploadedFiles.length > 0) ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-300" /> Submitted to Base44
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-200 border border-amber-400/30">
+                          <Clock className="w-3 h-3 text-amber-300" /> Not Submitted (Local Only)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-emerald-300 font-medium truncate mt-0.5">
                       Existing Account Profile • Edit & Telemetry Details
                     </p>
                   </div>
@@ -2012,7 +2069,7 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                   <button
                     type="button"
                     onClick={() => setSelectedItem(null)}
@@ -2024,7 +2081,18 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
 
                   <button
                     type="button"
-                    onClick={handleSaveRecord}
+                    onClick={() => handleSaveRecord(false)}
+                    disabled={isSavingRecord}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer focus:outline-none"
+                    title="Save edits locally without pushing to Base44 database"
+                  >
+                    <Save className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Save Changes</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSaveRecord(true)}
                     disabled={isSavingRecord}
                     className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-900/20 transition-all flex items-center gap-2 cursor-pointer focus:outline-none"
                   >
@@ -2035,8 +2103,8 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
                       </>
                     ) : (
                       <>
-                        <Save className="w-3.5 h-3.5" />
-                        <span>Save Changes</span>
+                        <UploadCloud className="w-3.5 h-3.5" />
+                        <span>{selectedItem.isSubmitted ? 'Save & Sync to Base44' : 'Submit to Base44'}</span>
                       </>
                     )}
                   </button>

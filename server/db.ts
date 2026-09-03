@@ -227,6 +227,8 @@ export interface ExistingAccountItem {
   facebookLink?: string;
   added_from_website?: boolean;
   isBulkEntry?: boolean;
+  isSubmitted?: boolean;
+  submittedAt?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -6354,103 +6356,147 @@ export async function pullAdminsFromGoogleSheets(): Promise<boolean> {
   return false;
 }
 
-export async function syncExistingAccountsToGoogleSheets() {
-  const sheets = getSheetsClient();
-  if (!sheets) return;
+let existingAccountsSyncPromise: Promise<boolean> | null = null;
 
-  if (Date.now() < googleSheetsQuotaCooldownUntil) {
-    return;
+export async function syncExistingAccountsToGoogleSheets(force: boolean = false): Promise<boolean> {
+  // If a sync is already running, wait for it
+  if (existingAccountsSyncPromise) {
+    try {
+      await existingAccountsSyncPromise;
+    } catch (e) {}
   }
 
-  try {
-    let spreadsheetId = sheetsConfig.spreadsheetId;
-    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match) {
-      spreadsheetId = match[1];
+  existingAccountsSyncPromise = (async () => {
+    const sheets = getSheetsClient();
+    if (!sheets) return false;
+
+    if (!force && Date.now() < googleSheetsQuotaCooldownUntil) {
+      console.log('[Google Sheets] Existing accounts sync skipped due to cooldown. Will sync when cooldown expires.');
+      return false;
     }
-    const existSheetName = 'ExistingAccounts';
-    const existSheetCandidates = ['ExistingAccounts', 'Existing Accounts', 'Existing_Accounts', 'Existing'];
 
-    // Verify sheet exists, if not create it
-    const existingSheets = await getExistingSheets(sheets, spreadsheetId);
-    markSheetsConnected();
-    const exists = existingSheets.has(existSheetName);
+    try {
+      let spreadsheetId = sheetsConfig.spreadsheetId;
+      if (!spreadsheetId) return false;
 
-    if (!exists) {
-      console.log(`Sheet "${existSheetName}" not found. Creating ExistingAccounts table automatically...`);
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [{
-            addSheet: {
-              properties: {
-                title: existSheetName
-              }
+      const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (match) {
+        spreadsheetId = match[1];
+      }
+      const existSheetName = 'ExistingAccounts';
+      const existSheetCandidates = ['ExistingAccounts', 'Existing Accounts', 'Existing_Accounts', 'Existing'];
+
+      // Verify sheet exists, if not create it
+      const existingSheets = await getExistingSheets(sheets, spreadsheetId);
+      markSheetsConnected();
+
+      let targetSheetName = '';
+      for (const cand of existSheetCandidates) {
+        if (existingSheets.has(cand)) {
+          targetSheetName = cand;
+          break;
+        }
+      }
+
+      if (!targetSheetName) {
+        console.log(`Sheet "${existSheetName}" not found. Creating ExistingAccounts table automatically...`);
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: [{
+                addSheet: {
+                  properties: {
+                    title: existSheetName
+                  }
+                }
+              }]
             }
-          }]
+          });
+          targetSheetName = existSheetName;
+          existingSheets.add(existSheetName);
+        } catch (addErr: any) {
+          console.warn('Could not add sheet (may already exist):', addErr.message || addErr);
+          targetSheetName = existSheetName;
+        }
+      }
+
+      // Write headers and data
+      const headers = [
+        'ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At',
+        'Latitude', 'Longitude', 'Geotagged', 'ExistingAcc', 'Verified',
+        'Visited', 'Status', 'Submitted By', 'PIN', 'Facebook Link',
+        'Uploaded Files JSON', 'Added To Files', 'Is Submitted'
+      ];
+      
+      const rowsToPut = [
+        headers,
+        ...existingAccountsCache.map(acc => {
+          let phone = (acc.contact_number || '').trim();
+          if (phone && phone.startsWith('0')) {
+            phone = `'${phone}`;
+          }
+          let pin = (acc.pin || '').trim();
+          if (pin && pin.startsWith('0')) {
+            pin = `'${pin}`;
+          }
+
+          return [
+            acc.id || '',
+            acc.full_name || '',
+            acc.barangay || '',
+            acc.purok || '',
+            phone,
+            acc.created_at || '',
+            acc.latitude !== undefined ? acc.latitude.toString() : '',
+            acc.longitude !== undefined ? acc.longitude.toString() : '',
+            acc.geotagged ? 'TRUE' : 'FALSE',
+            acc.existingAcc ? 'TRUE' : 'FALSE',
+            acc.existingAccVerified ? 'TRUE' : 'FALSE',
+            acc.existingAccVisited ? 'TRUE' : 'FALSE',
+            acc.status || 'approved',
+            acc.submittedBy || 'Admin',
+            pin,
+            acc.facebookLink || '',
+            JSON.stringify(acc.uploadedFiles || []),
+            acc.addedToFiles ? 'TRUE' : 'FALSE',
+            acc.isSubmitted ? 'TRUE' : 'FALSE'
+          ];
+        })
+      ];
+
+      // Clear the target sheet first so no residual trailing rows remain
+      try {
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId,
+          range: `'${targetSheetName}'!A:Z`
+        });
+      } catch (clearErr: any) {
+        console.warn('Could not clear range before writing (will overwrite):', clearErr.message);
+      }
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${targetSheetName}'!A1`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: sanitizeRowsForSheets(rowsToPut)
         }
       });
-      existingSheets.add(existSheetName);
+
+      console.log(`[Google Sheets] Synchronized ${existingAccountsCache.length} existing accounts to "${targetSheetName}" successfully!`);
+      return true;
+    } catch (err: any) {
+      console.error('Failed to sync existing accounts to Google Sheets:', err.message || err);
+      handleGoogleSheetsError(err, 'syncExistingAccountsToGoogleSheets');
+      markSheetsDisconnected(err);
+      return false;
+    } finally {
+      existingAccountsSyncPromise = null;
     }
+  })();
 
-    // Clear all existing account sheet variants first to write the fresh state
-    for (const sheetVariant of existSheetCandidates) {
-      if (existingSheets.has(sheetVariant)) {
-        try {
-          await sheets.spreadsheets.values.clear({
-            spreadsheetId,
-            range: `'${sheetVariant}'!A:Z`
-          });
-        } catch (e) {}
-      }
-    }
-
-    // Write headers and data
-    const headers = [
-      'ID', 'Full Name', 'Barangay', 'Purok', 'Contact Number', 'Created At',
-      'Latitude', 'Longitude', 'Geotagged', 'ExistingAcc', 'Verified',
-      'Visited', 'Status', 'Submitted By', 'PIN', 'Facebook Link',
-      'Uploaded Files JSON', 'Added To Files'
-    ];
-    
-    const rowsToPut = [
-      headers,
-      ...existingAccountsCache.map(acc => [
-        acc.id || '',
-        acc.full_name || '',
-        acc.barangay || '',
-        acc.purok || '',
-        acc.contact_number || '',
-        acc.created_at || '',
-        acc.latitude !== undefined ? acc.latitude.toString() : '',
-        acc.longitude !== undefined ? acc.longitude.toString() : '',
-        acc.geotagged ? 'TRUE' : 'FALSE',
-        acc.existingAcc ? 'TRUE' : 'FALSE',
-        acc.existingAccVerified ? 'TRUE' : 'FALSE',
-        acc.existingAccVisited ? 'TRUE' : 'FALSE',
-        acc.status || 'approved',
-        acc.submittedBy || 'Admin',
-        acc.pin || '',
-        acc.facebookLink || '',
-        JSON.stringify(acc.uploadedFiles || []),
-        acc.addedToFiles ? 'TRUE' : 'FALSE'
-      ])
-    ];
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${existSheetName}!A1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: sanitizeRowsForSheets(rowsToPut)
-      }
-    });
-    console.log('[Google Sheets] Synchronized existing accounts list successfully!');
-  } catch (err: any) {
-    console.error('Failed to sync existing accounts to Google Sheets:', err.message || err);
-    handleGoogleSheetsError(err, 'syncExistingAccountsToGoogleSheets');
-    markSheetsDisconnected(err);
-  }
+  return await existingAccountsSyncPromise;
 }
 
 export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
@@ -6525,6 +6571,7 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
     const fbIdx = findCol(['facebooklink', 'facebook', 'fb', 'fblink', 'social']);
     const filesIdx = findCol(['uploadedfiles', 'files', 'attachments', 'documents']);
     const addedToFilesIdx = findCol(['addedtofiles', 'added_to_files', 'added', 'folder']);
+    const isSubmittedIdx = findCol(['issubmitted', 'is_submitted', 'submitted']);
 
     const remoteAccounts: ExistingAccountItem[] = [];
     for (const row of rows.slice(1)) {
@@ -6534,7 +6581,15 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
       const full_name = (nameIdx !== -1 && row[nameIdx] ? row[nameIdx] : (row[1] || row[0] || '')).toString().trim().toUpperCase();
       const barangay = (barangayIdx !== -1 && row[barangayIdx] ? row[barangayIdx] : (row[2] || 'NO ADDRESS')).toString().trim().toUpperCase();
       const purok = (purokIdx !== -1 && row[purokIdx] ? row[purokIdx] : (row[3] || '')).toString().trim();
-      const contact_number = (numberIdx !== -1 && row[numberIdx] ? row[numberIdx] : (row[4] || '')).toString().trim();
+      
+      let contact_number = (numberIdx !== -1 && row[numberIdx] ? row[numberIdx] : (row[4] || '')).toString().trim();
+      if (contact_number.startsWith("'")) {
+        contact_number = contact_number.substring(1).trim();
+      }
+      if (/^9\d{9}$/.test(contact_number)) {
+        contact_number = '0' + contact_number;
+      }
+
       const created_at = (createdIdx !== -1 && row[createdIdx] ? row[createdIdx] : (row[5] || '')).toString().trim() || new Date().toISOString();
       
       let latitude: number | undefined = undefined;
@@ -6554,7 +6609,12 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
       const existingAccVisited = (visitedIdx !== -1 && row[visitedIdx]) ? row[visitedIdx]?.toString().trim().toUpperCase() === 'TRUE' : false;
       const status = (statusIdx !== -1 && row[statusIdx] ? row[statusIdx] : (row[12] || 'approved')).toString().trim();
       const submittedBy = (submittedIdx !== -1 && row[submittedIdx] ? row[submittedIdx] : (row[13] || 'Admin')).toString().trim();
-      const pin = (pinIdx !== -1 && row[pinIdx] ? row[pinIdx] : (row[14] || '')).toString().trim();
+      
+      let pin = (pinIdx !== -1 && row[pinIdx] ? row[pinIdx] : (row[14] || '')).toString().trim();
+      if (pin.startsWith("'")) {
+        pin = pin.substring(1).trim();
+      }
+
       const facebookLink = (fbIdx !== -1 && row[fbIdx] ? row[fbIdx] : (row[15] || '')).toString().trim();
       
       let uploadedFiles: any[] = [];
@@ -6567,8 +6627,15 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
       } catch (e) {}
 
       const addedToFiles = (addedToFilesIdx !== -1 && row[addedToFilesIdx]) ? row[addedToFilesIdx]?.toString().trim().toUpperCase() === 'TRUE' : false;
+      const isSubmitted = (isSubmittedIdx !== -1 && row[isSubmittedIdx]) ? row[isSubmittedIdx]?.toString().trim().toUpperCase() === 'TRUE' : (uploadedFiles.length > 0);
 
-      if (!full_name || isExistingAccountTombstoned({ id, full_name, barangay })) {
+      // Do not discard if active in local cache (prevents newly registered accounts from bouncing back)
+      const isLocallyActive = existingAccountsCache.some(loc => 
+        (loc.id && id && loc.id === id) || 
+        (loc.full_name && loc.barangay && loc.full_name.toUpperCase() === full_name.toUpperCase() && loc.barangay.toUpperCase() === barangay.toUpperCase())
+      );
+
+      if (!full_name || (!isLocallyActive && isExistingAccountTombstoned({ id, full_name, barangay }))) {
         continue;
       }
 
@@ -6590,16 +6657,55 @@ export async function pullExistingAccountsFromGoogleSheets(): Promise<boolean> {
         pin,
         facebookLink,
         uploadedFiles,
-        addedToFiles
+        addedToFiles,
+        isSubmitted
       });
     }
 
-    // Merge remote and local cache
-    const merged: ExistingAccountItem[] = [...remoteAccounts];
-    for (const local of existingAccountsCache) {
-      const alreadyMerged = merged.some(m => m.id === local.id || (m.full_name === local.full_name && m.barangay === local.barangay));
-      if (!alreadyMerged) {
-        merged.push(local);
+    // Smart merge: retain local cache data for newly added or edited fields so local entries never bounce back
+    const merged: ExistingAccountItem[] = [];
+    const localMap = new Map<string, ExistingAccountItem>();
+    for (const loc of existingAccountsCache) {
+      if (loc.id) localMap.set(loc.id.toString(), loc);
+      const compositeKey = `${(loc.full_name || '').trim().toUpperCase()}_${(loc.barangay || '').trim().toUpperCase()}`;
+      if (compositeKey !== '_') localMap.set(compositeKey, loc);
+    }
+
+    for (const rem of remoteAccounts) {
+      const compositeKey = `${(rem.full_name || '').trim().toUpperCase()}_${(rem.barangay || '').trim().toUpperCase()}`;
+      const loc = (rem.id ? localMap.get(rem.id.toString()) : null) || localMap.get(compositeKey);
+
+      if (loc) {
+        // Merge: keep local state if more detailed or updated locally
+        merged.push({
+          ...rem,
+          ...loc,
+          id: rem.id || loc.id,
+          full_name: rem.full_name || loc.full_name,
+          barangay: rem.barangay || loc.barangay,
+          purok: loc.purok || rem.purok,
+          contact_number: loc.contact_number || rem.contact_number,
+          pin: loc.pin || rem.pin,
+          latitude: loc.latitude !== undefined ? loc.latitude : rem.latitude,
+          longitude: loc.longitude !== undefined ? loc.longitude : rem.longitude,
+          geotagged: loc.geotagged !== undefined ? loc.geotagged : rem.geotagged,
+          addedToFiles: loc.addedToFiles !== undefined ? loc.addedToFiles : rem.addedToFiles,
+          isSubmitted: loc.isSubmitted !== undefined ? loc.isSubmitted : rem.isSubmitted,
+          uploadedFiles: (loc.uploadedFiles && loc.uploadedFiles.length > 0) ? loc.uploadedFiles : (rem.uploadedFiles || []),
+          facebookLink: loc.facebookLink || rem.facebookLink,
+          status: loc.status || rem.status || 'approved'
+        });
+        if (loc.id) localMap.delete(loc.id.toString());
+        localMap.delete(compositeKey);
+      } else {
+        merged.push(rem);
+      }
+    }
+
+    // Add remaining local-only accounts (such as newly registered bulk accounts not yet in remote)
+    for (const [, loc] of localMap.entries()) {
+      if (!merged.some(m => m.id === loc.id || (m.full_name === loc.full_name && m.barangay === loc.barangay))) {
+        merged.push(loc);
       }
     }
 
@@ -7382,20 +7488,30 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
     }
   }
 
+  const hasFiles = Boolean(newAccount.uploadedFiles && newAccount.uploadedFiles.length > 0);
+  const isSubmitted = (data as any).isSubmitted === true || (data as any).submitToBase44 === true || hasFiles;
+  newAccount.isSubmitted = isSubmitted;
+  if (isSubmitted) {
+    newAccount.submittedAt = new Date().toISOString();
+  }
+
   existingAccountsCache.push(newAccount);
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
   await addActivity(username, `Manually registered a new existing account record: "${newAccount.full_name}"`);
 
-  // Sync to base44 HouseholdSubmission and MemberVerifiedSubmission databases
-  const realId = await syncToBase44HouseholdSubmission(newAccount, username);
-  if (realId && realId !== newAccount.id) {
-    newAccount.id = realId;
-    const lastIdx = existingAccountsCache.length - 1;
-    existingAccountsCache[lastIdx].id = realId;
-    await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+  // Sync to base44 HouseholdSubmission and MemberVerifiedSubmission databases ONLY if submitted by user
+  if (isSubmitted) {
+    const realId = await syncToBase44HouseholdSubmission(newAccount, username);
+    if (realId && realId !== newAccount.id) {
+      newAccount.id = realId;
+      const lastIdx = existingAccountsCache.length - 1;
+      existingAccountsCache[lastIdx].id = realId;
+      await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
+    }
+    await syncToBase44MemberVerifiedSubmission(newAccount, username);
+  } else {
+    console.log(`[Base44 SDK] New account "${newAccount.full_name}" registered without submission. Skipping Base44 database write.`);
   }
-
-  await syncToBase44MemberVerifiedSubmission(newAccount, username);
 
   // Sync to Google Sheets
   syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing account to Sheets:', err));
@@ -7405,59 +7521,93 @@ export async function addLocalExistingAccount(data: any, username: string): Prom
 
 // Add local existing accounts in bulk
 export async function addLocalExistingAccountsBulk(dataList: any[], username: string): Promise<ExistingAccountItem[]> {
-  const newAccounts: ExistingAccountItem[] = [];
+  const processedAccounts: ExistingAccountItem[] = [];
   const now = Date.now();
   for (let index = 0; index < dataList.length; index++) {
     const data = dataList[index];
-    const newAccount: ExistingAccountItem = {
-      id: `ext_man_${now}_${index}`,
-      full_name: (data.full_name || '').toUpperCase().trim(),
-      barangay: (data.barangay || '').toUpperCase().trim(),
-      purok: (data.purok || '').trim(),
-      contact_number: (data.contact_number || '').trim(),
-      created_at: new Date().toISOString(),
-      latitude: data.latitude,
-      longitude: data.longitude,
-      geotagged: data.latitude !== undefined && data.longitude !== undefined,
-      existingAcc: true,
-      existingAccVerified: data.existingAccVerified === true,
-      existingAccVisited: data.existingAccVisited === true,
-      status: data.status || 'approved',
-      submittedBy: username || 'Admin',
-      pin: data.pin || '',
-      uploadedFiles: [],
-      added_from_website: true,
-      isBulkEntry: true
-    };
+    const fullName = (data.full_name || '').toUpperCase().trim();
+    const barangay = (data.barangay || '').toUpperCase().trim();
+    const purok = (data.purok || '').trim();
+    
+    let contactNumber = (data.contact_number || '').trim();
+    if (contactNumber.startsWith("'")) {
+      contactNumber = contactNumber.substring(1).trim();
+    }
+    if (/^9\d{9}$/.test(contactNumber)) {
+      contactNumber = '0' + contactNumber;
+    }
 
-    // Untombstone account and its barangay so newly registered account displays immediately
-    unTombstoneExistingAccount(newAccount.id, newAccount.full_name, newAccount.barangay);
-    unTombstoneBarangay(newAccount.barangay);
+    let pin = (data.pin || '').trim();
+    if (pin.startsWith("'")) {
+      pin = pin.substring(1).trim();
+    }
 
-    newAccounts.push(newAccount);
-    existingAccountsCache.push(newAccount);
+    // Check if account already exists in cache (by ID or by Name + Barangay)
+    const existingIndex = existingAccountsCache.findIndex(acc => 
+      (data.id && acc.id === data.id) ||
+      (acc.full_name && acc.barangay && acc.full_name.toUpperCase() === fullName && acc.barangay.toUpperCase() === barangay)
+    );
 
-    // Sync to base44 HouseholdSubmission and MemberVerifiedSubmission databases
-    try {
-      const realId = await syncToBase44HouseholdSubmission(newAccount, username);
-      if (realId && realId !== newAccount.id) {
-        newAccount.id = realId;
-        const lastIdx = existingAccountsCache.length - 1;
-        existingAccountsCache[lastIdx].id = realId;
-      }
-      await syncToBase44MemberVerifiedSubmission(newAccount, username);
-    } catch (err: any) {
-      console.error(`[Base44 Sync Warning] Bulk sync failed for ${newAccount.full_name}:`, err.message);
+    if (existingIndex !== -1) {
+      const existing = existingAccountsCache[existingIndex];
+      const updated: ExistingAccountItem = {
+        ...existing,
+        purok: purok || existing.purok,
+        contact_number: contactNumber || existing.contact_number,
+        pin: pin || existing.pin,
+        status: data.status || existing.status || 'approved',
+        existingAcc: true,
+        existingAccVerified: true,
+        existingAccVisited: true,
+        isBulkEntry: true
+      };
+      existingAccountsCache[existingIndex] = updated;
+      processedAccounts.push(updated);
+      unTombstoneExistingAccount(updated.id, updated.full_name, updated.barangay);
+      unTombstoneBarangay(updated.barangay);
+    } else {
+      const newAccount: ExistingAccountItem = {
+        id: data.id || `ext_man_${now}_${index}`,
+        full_name: fullName,
+        barangay: barangay || 'NO ADDRESS',
+        purok,
+        contact_number: contactNumber,
+        created_at: data.created_at || new Date().toISOString(),
+        latitude: data.latitude,
+        longitude: data.longitude,
+        geotagged: data.latitude !== undefined && data.longitude !== undefined,
+        existingAcc: true,
+        existingAccVerified: true,
+        existingAccVisited: true,
+        status: data.status || 'approved',
+        submittedBy: username || 'Admin',
+        pin,
+        uploadedFiles: [],
+        added_from_website: true,
+        isBulkEntry: true,
+        isSubmitted: false
+      };
+
+      unTombstoneExistingAccount(newAccount.id, newAccount.full_name, newAccount.barangay);
+      unTombstoneBarangay(newAccount.barangay);
+
+      existingAccountsCache.push(newAccount);
+      processedAccounts.push(newAccount);
     }
   }
 
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
-  await addActivity(username, `Manually registered ${newAccounts.length} new existing account records in bulk`);
+  await addActivity(username, `Manually registered ${processedAccounts.length} new existing account records in bulk`);
 
-  // Sync to Google Sheets
-  syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing accounts to Sheets:', err));
+  // Direct sync to Google Sheets with force = true and await it so all records are committed to the sheet database
+  try {
+    await syncExistingAccountsToGoogleSheets(true);
+    console.log(`[Google Sheets] Successfully pushed ${processedAccounts.length} bulk-registered existing accounts to Google Sheets.`);
+  } catch (err: any) {
+    console.error('Failed to sync bulk accounts to Google Sheets:', err.message || err);
+  }
 
-  return newAccounts;
+  return processedAccounts;
 }
 
 // Helper to permanently save/sync existing account verification data to Base44 MemberVerifiedSubmission table
@@ -7805,23 +7955,33 @@ export async function syncToBase44HouseholdSubmission(existingAccount: ExistingA
 }
 
 // Update an existing local account
-export async function updateLocalExistingAccount(id: string, updates: Partial<ExistingAccountItem>, username: string): Promise<ExistingAccountItem> {
+export async function updateLocalExistingAccount(id: string, updates: Partial<ExistingAccountItem> & { submitToBase44?: boolean }, username: string): Promise<ExistingAccountItem> {
   const accountIndex = existingAccountsCache.findIndex(acc => acc.id === id);
   if (accountIndex === -1) {
     throw new Error(`Existing account with ID "${id}" not found`);
   }
 
   const existingAccount = existingAccountsCache[accountIndex];
-  const updatedAccount = {
+  const isExplicitSubmit = updates.isSubmitted === true || (updates as any).submitToBase44 === true;
+  const isAlreadySubmitted = existingAccount.isSubmitted === true;
+  
+  // Only sync to Base44 if the user explicitly submitted or it was already submitted previously
+  const shouldSyncToBase44 = isExplicitSubmit || isAlreadySubmitted;
+
+  const updatedAccount: ExistingAccountItem = {
     ...existingAccount,
     ...updates,
-    id: existingAccount.id // Ensure ID does not change
+    id: existingAccount.id, // Ensure ID does not change unless updated by Base44
+    isSubmitted: shouldSyncToBase44 ? true : (existingAccount.isSubmitted || false),
+    submittedAt: shouldSyncToBase44 ? (existingAccount.submittedAt || new Date().toISOString()) : existingAccount.submittedAt
   };
 
-  // Sync to Base44 HouseholdSubmission FIRST and get/update the real Base44 ID
-  const realId = await syncToBase44HouseholdSubmission(updatedAccount, username);
-  if (realId && realId !== updatedAccount.id) {
-    updatedAccount.id = realId;
+  if (shouldSyncToBase44) {
+    // Sync to Base44 HouseholdSubmission FIRST and get/update the real Base44 ID
+    const realId = await syncToBase44HouseholdSubmission(updatedAccount, username);
+    if (realId && realId !== updatedAccount.id) {
+      updatedAccount.id = realId;
+    }
   }
 
   existingAccountsCache[accountIndex] = updatedAccount;
@@ -7830,39 +7990,47 @@ export async function updateLocalExistingAccount(id: string, updates: Partial<Ex
   if (updates.addedToFiles !== undefined) {
     const actionStr = updates.addedToFiles ? 'added to' : 'removed from';
     await addActivity(username, `Updated account: ${actionStr} files list for "${existingAccount.full_name}"`);
+  } else if (isExplicitSubmit) {
+    await addActivity(username, `Submitted existing account record to Base44: "${existingAccount.full_name}"`);
   } else {
     await addActivity(username, `Updated existing account record: "${existingAccount.full_name}"`);
   }
 
-  // Permanently save to base44 database at the MemberVerifiedSubmission table
-  await syncToBase44MemberVerifiedSubmission(updatedAccount, username);
+  if (shouldSyncToBase44) {
+    // Permanently save to base44 database at the MemberVerifiedSubmission table
+    await syncToBase44MemberVerifiedSubmission(updatedAccount, username);
 
-  // Log to Base44 ExistingAccFileUpdate table if files are present
-  try {
-    const userObj = findUser(username);
-    const uName = userObj?.fullName || userObj?.displayName || username;
-    console.log(`[Base44 SDK] Saving Existing Account file update metadata to table ExistingAccFileUpdate on verification save...`);
-    const updateEntity = (base44.entities as any).ExistingAccFileUpdate || {
-      create: async (data: any) => {
-        console.log('[Base44 SDK] Simulating ExistingAccFileUpdate creation dynamically');
-        return data;
+    // Log to Base44 ExistingAccFileUpdate table if files are present or upon explicit submit
+    if (updatedAccount.uploadedFiles && updatedAccount.uploadedFiles.length > 0) {
+      try {
+        const userObj = findUser(username);
+        const uName = userObj?.fullName || userObj?.displayName || username;
+        console.log(`[Base44 SDK] Saving Existing Account file update metadata to table ExistingAccFileUpdate on verification save...`);
+        const updateEntity = (base44.entities as any).ExistingAccFileUpdate || {
+          create: async (data: any) => {
+            console.log('[Base44 SDK] Simulating ExistingAccFileUpdate creation dynamically');
+            return data;
+          }
+        };
+
+        await updateEntity.create({
+          householdSubmissionId: updatedAccount.id,
+          fullName: updatedAccount.full_name,
+          householdName: updatedAccount.full_name || '',
+          barangay: updatedAccount.barangay || '',
+          purok: updatedAccount.purok || '',
+          facebookLink: updatedAccount.facebookLink || '',
+          uploadedFiles: JSON.stringify(updatedAccount.uploadedFiles || []),
+          updatedBy: uName,
+          updatedAt: new Date().toISOString()
+        });
+        console.log('[Base44 SDK] Successfully saved to Base44 ExistingAccFileUpdate on verification save.');
+      } catch (err: any) {
+        console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record on verification save:', err.message);
       }
-    };
-
-    await updateEntity.create({
-      householdSubmissionId: updatedAccount.id,
-      fullName: updatedAccount.full_name,
-      householdName: updatedAccount.full_name || '',
-      barangay: updatedAccount.barangay || '',
-      purok: updatedAccount.purok || '',
-      facebookLink: updatedAccount.facebookLink || '',
-      uploadedFiles: JSON.stringify(updatedAccount.uploadedFiles || []),
-      updatedBy: uName,
-      updatedAt: new Date().toISOString()
-    });
-    console.log('[Base44 SDK] Successfully saved to Base44 ExistingAccFileUpdate on verification save.');
-  } catch (err: any) {
-    console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record on verification save:', err.message);
+    }
+  } else {
+    console.log(`[Base44 SDK] Account "${existingAccount.full_name}" is saved locally. Skipping Base44 database write because it was not submitted.`);
   }
 
   // Sync to Google Sheets
@@ -7871,12 +8039,13 @@ export async function updateLocalExistingAccount(id: string, updates: Partial<Ex
   return updatedAccount;
 }
 
-// Upload multiple files for an existing account and save them locally & to the Base44 database
+// Upload multiple files for an existing account and save them locally & to the Base44 database ONLY if submitted
 export async function uploadFilesForExistingAccount(
   id: string,
   files: { fileName: string; fileData: string }[],
   facebookLink: string | undefined,
-  username: string
+  username: string,
+  submitToBase44: boolean = false
 ): Promise<ExistingAccountItem> {
   const accountIndex = existingAccountsCache.findIndex(acc => acc.id === id);
   if (accountIndex === -1) {
@@ -7897,8 +8066,14 @@ export async function uploadFilesForExistingAccount(
 
     for (const file of files) {
       try {
-        console.log(`[Existing Account Upload] Processing file "${file.fileName}" for account: "${existingAccount.full_name}"`);
-        const fileUrl = await uploadFileToBase44(file.fileData, file.fileName);
+        let fileUrl: string;
+        if (submitToBase44) {
+          console.log(`[Existing Account Upload] Processing file "${file.fileName}" for account: "${existingAccount.full_name}" to Base44`);
+          fileUrl = await uploadFileToBase44(file.fileData, file.fileName);
+        } else {
+          // Store file data as data URL locally so user can view/preview it without uploading to Base44
+          fileUrl = file.fileData.startsWith('data:') ? file.fileData : `data:application/octet-stream;base64,${file.fileData}`;
+        }
         
         const fileObj = {
           name: file.fileName,
@@ -7909,16 +8084,24 @@ export async function uploadFilesForExistingAccount(
 
         existingAccount.uploadedFiles.push(fileObj);
       } catch (err: any) {
-        console.error(`[Existing Account Upload Error] Failed to upload file "${file.fileName}":`, err.message);
-        throw new Error(`Failed to upload file "${file.fileName}": ${err.message}`);
+        console.error(`[Existing Account Upload Error] Failed to process file "${file.fileName}":`, err.message);
+        throw new Error(`Failed to process file "${file.fileName}": ${err.message}`);
       }
     }
   }
 
-  // Sync to Base44 HouseholdSubmission FIRST and get/update the real Base44 ID
-  const realId = await syncToBase44HouseholdSubmission(existingAccount, username);
-  if (realId && realId !== existingAccount.id) {
-    existingAccount.id = realId;
+  if (submitToBase44) {
+    // Mark as submitted upon explicit submission
+    existingAccount.isSubmitted = true;
+    if (!existingAccount.submittedAt) {
+      existingAccount.submittedAt = new Date().toISOString();
+    }
+
+    // Sync to Base44 HouseholdSubmission FIRST and get/update the real Base44 ID
+    const realId = await syncToBase44HouseholdSubmission(existingAccount, username);
+    if (realId && realId !== existingAccount.id) {
+      existingAccount.id = realId;
+    }
   }
 
   // Persist locally
@@ -7928,40 +8111,47 @@ export async function uploadFilesForExistingAccount(
   }
   await safeWriteFile(EXISTING_ACCOUNTS_FILE, JSON.stringify(existingAccountsCache, null, 2), 'utf-8');
   
-  if (files && files.length > 0) {
-    await addActivity(username, `Uploaded ${files.length} file(s) and updated details for existing account: "${existingAccount.full_name}"`);
-  } else {
-    await addActivity(username, `Updated details for existing account: "${existingAccount.full_name}"`);
-  }
+  if (submitToBase44) {
+    if (files && files.length > 0) {
+      await addActivity(username, `Uploaded ${files.length} file(s) and submitted existing account to Base44: "${existingAccount.full_name}"`);
+    } else {
+      await addActivity(username, `Submitted details for existing account to Base44: "${existingAccount.full_name}"`);
+    }
 
-  // Save to Base44 ExistingAccFileUpdate table
-  try {
-    console.log(`[Base44 SDK] Saving Existing Account file update metadata to table ExistingAccFileUpdate...`);
-    const updateEntity = (base44.entities as any).ExistingAccFileUpdate || {
-      create: async (data: any) => {
-        console.log('[Base44 SDK] Simulating ExistingAccFileUpdate creation dynamically');
-        return data;
+    // Save to Base44 ExistingAccFileUpdate table if files are present
+    if (existingAccount.uploadedFiles && existingAccount.uploadedFiles.length > 0) {
+      try {
+        console.log(`[Base44 SDK] Saving Existing Account file update metadata to table ExistingAccFileUpdate...`);
+        const updateEntity = (base44.entities as any).ExistingAccFileUpdate || {
+          create: async (data: any) => {
+            console.log('[Base44 SDK] Simulating ExistingAccFileUpdate creation dynamically');
+            return data;
+          }
+        };
+
+        await updateEntity.create({
+          householdSubmissionId: existingAccount.id,
+          fullName: existingAccount.full_name,
+          householdName: existingAccount.full_name || '',
+          barangay: existingAccount.barangay || '',
+          purok: existingAccount.purok || '',
+          facebookLink: existingAccount.facebookLink || '',
+          uploadedFiles: JSON.stringify(existingAccount.uploadedFiles || []),
+          updatedBy: uName,
+          updatedAt: new Date().toISOString()
+        });
+        console.log('[Base44 SDK] Successfully saved to Base44 ExistingAccFileUpdate.');
+      } catch (err: any) {
+        console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record:', err.message);
       }
-    };
+    }
 
-    await updateEntity.create({
-      householdSubmissionId: existingAccount.id,
-      fullName: existingAccount.full_name,
-      householdName: existingAccount.full_name || '',
-      barangay: existingAccount.barangay || '',
-      purok: existingAccount.purok || '',
-      facebookLink: existingAccount.facebookLink || '',
-      uploadedFiles: JSON.stringify(existingAccount.uploadedFiles || []),
-      updatedBy: uName,
-      updatedAt: new Date().toISOString()
-    });
-    console.log('[Base44 SDK] Successfully saved to Base44 ExistingAccFileUpdate.');
-  } catch (err: any) {
-    console.warn('[Base44 SDK Warning] Failed to create ExistingAccFileUpdate record:', err.message);
+    // Also sync member verification files & data to Base44 MemberVerifiedSubmission table
+    await syncToBase44MemberVerifiedSubmission(existingAccount, username);
+  } else {
+    console.log(`[Base44 SDK] Files for "${existingAccount.full_name}" saved locally without Base44 submission.`);
+    await addActivity(username, `Saved ${files?.length || 0} file(s) locally for "${existingAccount.full_name}" (not submitted to Base44)`);
   }
-
-  // Also sync member verification files & data to Base44 MemberVerifiedSubmission table
-  await syncToBase44MemberVerifiedSubmission(existingAccount, username);
 
   // Sync to Google Sheets
   syncExistingAccountsToGoogleSheets().catch(err => console.error('Failed to sync existing account files update to Sheets:', err));

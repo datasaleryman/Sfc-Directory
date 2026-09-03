@@ -1,5 +1,47 @@
 [
   {
+    "username": "maria",
+    "passwordHash": "94aec9fbed989ece189a7e172c9cf41669050495152bc4c1dbf2a38d7fd85627",
+    "role": "IT",
+    "displayName": "canacan maria",
+    "avatarDataUrl": "",
+    "fullName": "canacan maria",
+    "email": "maria@gmail.com",
+    "barangay": "Balangasan",
+    "status": "Active",
+    "createdAt": "2026-08-29T01:54:46.561Z",
+    "passwordPlain": "maria",
+    "updatedAt": "2026-08-29T01:54:46.561Z"
+  },
+  {
+    "username": "diether",
+    "passwordHash": "29e6af1529cf11fb5c02fc78e4c404fe3298f3b6704b7f8e2fbfe634f27d3a8c",
+    "role": "Admin",
+    "displayName": "diether",
+    "avatarDataUrl": "",
+    "fullName": "diether",
+    "email": "diether@gmail.com",
+    "barangay": "Balangasan",
+    "status": "Active",
+    "createdAt": "2026-08-29T00:49:22.820Z",
+    "passwordPlain": "10062000",
+    "updatedAt": "2026-08-29T00:49:22.820Z"
+  },
+  {
+    "username": "testing2026",
+    "passwordHash": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
+    "role": "Leader",
+    "displayName": "Testing 2026",
+    "avatarDataUrl": "",
+    "fullName": "Testing 2026",
+    "email": "testing2026@gmail.com",
+    "barangay": "Labangan",
+    "status": "Active",
+    "createdAt": "2026-08-28T12:12:06.010Z",
+    "passwordPlain": "2026",
+    "updatedAt": "2026-08-28T12:12:06.010Z"
+  },
+  {
     "username": "candolesabate",
     "passwordHash": "20d367466ce938a622c2917f068962ce4bb8c92e02a84f1bced1e5eef3ea51e3",
     "role": "IT",
@@ -115,15 +157,15 @@
     "username": "shanneloise",
     "passwordHash": "460c5b8c77f5b82e9db77b71cd42b0c5e88a7d6c4469fd6f71ef170033587536",
     "role": "IT",
-    "displayName": "Rolita Oro",
+    "displayName": "Shann Eloise",
     "avatarDataUrl": "",
-    "fullName": "Rolita Oro",
+    "fullName": "Shann Eloise",
     "email": "shanneloise@gmail.com",
     "barangay": "Kawit",
     "status": "Active",
     "createdAt": "2026-08-27T01:55:07.779Z",
     "passwordPlain": "March2000",
-    "updatedAt": "2026-08-27T01:55:07.779Z"
+    "updatedAt": "2026-09-02T02:40:43.877Z"
   },
   {
     "username": "zharrynnj",
@@ -151,7 +193,7 @@
     "status": "Active",
     "createdAt": "2026-08-27T00:02:16.253Z",
     "passwordPlain": "jadausan100802",
-    "updatedAt": "2026-08-27T01:27:54.665Z"
+    "updatedAt": "2026-09-01T14:59:27.739Z"
   },
   {
     "username": "admin",
@@ -1104,5 +1146,19 @@
     "createdAt": "2026-08-27T01:50:39.140Z",
     "passwordPlain": "Db1130",
     "updatedAt": "2026-08-27T01:50:39.140Z"
+  },
+  {
+    "username": "rulene964",
+    "passwordHash": "7b36bd3c0ae1daad83a904b31060777af04fe5c19bf382a82fba640016d28986",
+    "role": "IT",
+    "displayName": "Rulene Jade Henteroliso",
+    "avatarDataUrl": "",
+    "fullName": "Rulene Jade Henteroliso",
+    "email": "rulene964@gmail.com",
+    "barangay": "Santiago",
+    "status": "Active",
+    "createdAt": "2026-08-29T00:19:09.901Z",
+    "passwordPlain": "Cluelots123",
+    "updatedAt": "2026-08-29T00:22:05.539Z"
   }
 ]

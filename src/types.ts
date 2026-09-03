@@ -94,6 +94,9 @@ export interface ExistingAccountItem {
   addedToFiles?: boolean;
   uploadedFiles?: { name: string; url: string; uploadedAt: string; uploadedBy?: string }[];
   facebookLink?: string;
+  isSubmitted?: boolean;
+  submittedAt?: string;
+  isBulkEntry?: boolean;
 }
 
 export interface ParseResult {
