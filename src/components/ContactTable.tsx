@@ -328,10 +328,50 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   const convertFileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
+      // If image is larger than 1MB or has high resolution, optimize via canvas to avoid hitting payload or memory limits
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX_DIM = 1920;
+            let width = img.width;
+            let height = img.height;
+            if (width > MAX_DIM || height > MAX_DIM || file.size > 1.2 * 1024 * 1024) {
+              if (width > height) {
+                if (width > MAX_DIM) {
+                  height = Math.round((height * MAX_DIM) / width);
+                  width = MAX_DIM;
+                }
+              } else {
+                if (height > MAX_DIM) {
+                  width = Math.round((width * MAX_DIM) / height);
+                  height = MAX_DIM;
+                }
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.85));
+                return;
+              }
+            }
+            resolve(e.target?.result as string);
+          };
+          img.onerror = () => resolve(e.target?.result as string);
+          img.src = e.target?.result as string;
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      }
     });
   };
 
@@ -472,8 +512,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         }
       }
 
-      // 2. Submit PCU files in batches of 15 to comfortably handle 20+ files without payload limits
-      const BATCH_SIZE = 15;
+      // 2. Submit PCU files in safe batches of 3 to comfortably handle any number of files without hitting Cloud Run or proxy limits
+      const BATCH_SIZE = 3;
       const totalBatches = Math.ceil(stagedPcuFiles.length / BATCH_SIZE);
 
       for (let i = 0; i < stagedPcuFiles.length; i += BATCH_SIZE) {
@@ -481,6 +521,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1;
         const startFileIdx = i + 1;
         const endFileIdx = Math.min(i + BATCH_SIZE, stagedPcuFiles.length);
+        const isLastBatch = endFileIdx === stagedPcuFiles.length;
 
         if (totalBatches > 1) {
           setUploadProgressText(`Uploading batch ${currentBatchNum} of ${totalBatches} (${startFileIdx}–${endFileIdx} of ${stagedPcuFiles.length} files)...`);
@@ -499,7 +540,9 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             barangay: currentBarangay,
             purok: currentPurok,
             contact_number: modalEditContactNumber.trim() || viewContact.contact_number,
-            files: batch.map(f => ({ fileName: f.fileName, fileData: f.fileData }))
+            files: batch.map(f => ({ fileName: f.fileName, fileData: f.fileData })),
+            isLastBatch,
+            totalFilesCount: stagedPcuFiles.length
           })
         });
         
@@ -2145,10 +2188,10 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               </button>
                             </div>
 
-                            {stagedPcuFiles.length >= 20 && (
+                            {stagedPcuFiles.length > 3 && (
                               <div className="p-2 bg-blue-50 border border-blue-200/80 rounded-xl text-[11px] text-blue-900 font-medium flex items-center gap-1.5">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                <span>Bulk upload ready: {stagedPcuFiles.length} files will be safely sent in fast background batches.</span>
+                                <span>Multi-file safe upload: {stagedPcuFiles.length} files will be uploaded in optimized batches ({Math.ceil(stagedPcuFiles.length / 3)} batches).</span>
                               </div>
                             )}
 

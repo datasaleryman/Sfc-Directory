@@ -6945,15 +6945,18 @@ export async function appendActivityToGoogleSheets(activity: Activity) {
   }
 }
 
-// Helper to parse base64 Data URLs
+// Helper to parse base64 Data URLs without regex backtracking
 function parseDataUrl(dataUrl: string): { mimeType: string, buffer: Buffer } {
-  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!matches) {
-    return { mimeType: 'application/octet-stream', buffer: Buffer.from(dataUrl, 'base64') };
+  if (dataUrl && dataUrl.startsWith('data:')) {
+    const commaIdx = dataUrl.indexOf(',');
+    if (commaIdx !== -1) {
+      const meta = dataUrl.substring(5, commaIdx);
+      const mimeType = meta.split(';')[0] || 'application/octet-stream';
+      const base64Data = dataUrl.substring(commaIdx + 1);
+      return { mimeType, buffer: Buffer.from(base64Data, 'base64') };
+    }
   }
-  const mimeType = matches[1];
-  const base64Data = matches[2];
-  return { mimeType, buffer: Buffer.from(base64Data, 'base64') };
+  return { mimeType: 'application/octet-stream', buffer: Buffer.from(dataUrl || '', 'base64') };
 }
 
 // Upload file to Base44 public CDN storage
@@ -7212,11 +7215,38 @@ export async function addPCUUpdatesMultiple(
   fullName: string, 
   files: { fileName: string; fileData: string }[], 
   username: string,
-  options?: { barangay?: string; purok?: string; contact_number?: string; latitude?: number | null; longitude?: number | null; geotagged?: boolean }
+  options?: { 
+    barangay?: string; 
+    purok?: string; 
+    contact_number?: string; 
+    latitude?: number | null; 
+    longitude?: number | null; 
+    geotagged?: boolean;
+    isLastBatch?: boolean;
+    totalFilesCount?: number;
+  }
 ) {
-  const contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
+  let contact = contactsCache.find(c => c.id === contactId && !c.deleted_at);
   if (!contact) {
-    throw new Error('Contact record not found.');
+    // Check if the contact was already tombstoned in an earlier batch of the same submission
+    const tombstone = deletedContactsCache.find(d => d.id === contactId);
+    const existingPCU = pcuUpdatesCache.find(p => p.contactId === contactId);
+    if (tombstone || existingPCU) {
+      contact = {
+        id: contactId,
+        full_name: fullName || tombstone?.full_name || existingPCU?.fullName || 'Contact',
+        barangay: options?.barangay || tombstone?.barangay || existingPCU?.barangay || '',
+        purok: options?.purok || existingPCU?.purok || '',
+        contact_number: options?.contact_number || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        deleted_at: null,
+        isSubmitted: true,
+        uploadedFiles: []
+      };
+    } else {
+      throw new Error('Contact record not found.');
+    }
   }
 
   if (options?.barangay !== undefined && options.barangay.trim() !== '') {
@@ -7257,8 +7287,8 @@ export async function addPCUUpdatesMultiple(
   let lastFileUrl = '';
   let lastUploadedAt = new Date().toISOString();
 
-  // Process files in concurrent batches of 5 for optimal throughput and stability with 20+ files
-  const BATCH_CONCURRENCY = 5;
+  // Process files in controlled concurrent batches of 2 for maximum network reliability and stability
+  const BATCH_CONCURRENCY = 2;
   for (let i = 0; i < files.length; i += BATCH_CONCURRENCY) {
     const chunk = files.slice(i, i + BATCH_CONCURRENCY);
     await Promise.all(chunk.map(async (file) => {
@@ -7372,8 +7402,6 @@ export async function addPCUUpdatesMultiple(
   }
 
   // Update contact's main PCU fields
-  contact.isSubmitted = true;
-  contact.submittedAt = lastUploadedAt;
   contact.pcu_file_url = lastFileUrl;
   contact.pcu_uploaded_by = username;
   contact.pcu_uploaded_at = lastUploadedAt;
@@ -7381,45 +7409,59 @@ export async function addPCUUpdatesMultiple(
 
   await savePCUUpdates();
 
-  // 1. Tombstone in deletedContactsCache so it is NEVER re-imported from Google Sheets or reloaded
-  deletedContactsCache.push({
-    id: contact.id,
-    full_name: contact.full_name,
-    barangay: contact.barangay,
-    deletedAt: new Date().toISOString(),
-    submitted_to_base44: true
-  });
-  await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
-  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
+  const isLastBatch = options?.isLastBatch !== false;
 
-  // 2. Permanently remove from active contactsCache directory
-  const targetContactId = contact.id;
-  const targetContactName = contact.full_name;
-  contactsCache = contactsCache.filter(c => 
-    c && c.id !== targetContactId && !normalizeCompareName(c.full_name, targetContactName)
-  );
-  await saveContacts();
+  if (isLastBatch) {
+    contact.isSubmitted = true;
+    contact.submittedAt = lastUploadedAt;
 
-  await addActivity(username, `Uploaded ${files.length} PCU File(s) and submitted to Base44 database for: "${fullName}"`);
+    // 1. Tombstone in deletedContactsCache so it is NEVER re-imported from Google Sheets or reloaded
+    const alreadyTombstoned = deletedContactsCache.some(d => d.id === contact.id);
+    if (!alreadyTombstoned) {
+      deletedContactsCache.push({
+        id: contact.id,
+        full_name: contact.full_name,
+        barangay: contact.barangay,
+        deletedAt: new Date().toISOString(),
+        submitted_to_base44: true
+      });
+      await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+      syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
+    }
 
-  // 3. PERMANENT DELETION ON GOOGLE SHEETS:
-  // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
-  resetGoogleSheetsCooldown();
-  if (sheetsConfig.syncEnabled) {
-    try {
-      console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
-      const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
-      if (!deletedFromSheets) {
+    // 2. Permanently remove from active contactsCache directory
+    const targetContactId = contact.id;
+    const targetContactName = contact.full_name;
+    contactsCache = contactsCache.filter(c => 
+      c && c.id !== targetContactId && !normalizeCompareName(c.full_name, targetContactName)
+    );
+    await saveContacts();
+
+    const totalUploadedCount = options?.totalFilesCount || files.length;
+    await addActivity(username, `Uploaded ${totalUploadedCount} PCU File(s) and submitted to Base44 database for: "${fullName}"`);
+
+    // 3. PERMANENT DELETION ON GOOGLE SHEETS:
+    // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
+    resetGoogleSheetsCooldown();
+    if (sheetsConfig.syncEnabled) {
+      try {
+        console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
+        const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
+        if (!deletedFromSheets) {
+          await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
+        }
+      } catch (err: any) {
+        console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
         await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
       }
-    } catch (err: any) {
-      console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
-      await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
     }
-  }
 
-  await forwardToWebApp('delete', contact).catch(() => {});
-  await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
+    await forwardToWebApp('delete', contact).catch(() => {});
+    await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
+  } else {
+    // Intermediate batch: save updated contactsCache without removing the contact yet
+    await saveContacts();
+  }
 
   return contact;
 }

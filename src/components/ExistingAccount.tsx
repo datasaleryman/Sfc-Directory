@@ -698,20 +698,32 @@ export const ExistingAccount: React.FC<ExistingAccountProps> = ({
       // CRITICAL: Only submit to Base44 if explicitly requested via "Submit to Base44" button
       const isSubmitting = submitToBase44 === true;
 
-      // 1. If files are staged, upload/save them
+      // 1. If files are staged, upload/save them in safe chunks of 3
       if (stagedFiles.length > 0) {
-        await fetch(`/api/existing-accounts/${selectedItem.id}/files`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({
-            files: stagedFiles,
-            facebookLink: facebookLink.trim(),
-            submitToBase44: isSubmitting
-          })
-        });
+        const BATCH_SIZE = 3;
+        let currentTargetId = selectedItem.id;
+        for (let i = 0; i < stagedFiles.length; i += BATCH_SIZE) {
+          const chunk = stagedFiles.slice(i, i + BATCH_SIZE);
+          const isLastBatch = (i + BATCH_SIZE) >= stagedFiles.length;
+          const uploadRes = await fetch(`/api/existing-accounts/${currentTargetId}/files`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+              files: chunk,
+              facebookLink: facebookLink.trim(),
+              submitToBase44: isSubmitting && isLastBatch
+            })
+          });
+          if (uploadRes.ok) {
+            const updatedData = await uploadRes.json().catch(() => null);
+            if (updatedData && updatedData.id) {
+              currentTargetId = updatedData.id;
+            }
+          }
+        }
       }
 
       // 2. Update record details & geotag telemetry
