@@ -254,6 +254,7 @@ export interface DeletedContactRecord {
   full_name: string;
   barangay: string;
   deletedAt: string;
+  submitted_to_base44?: boolean;
 }
 
 export interface DeletedExistingAccountRecord {
@@ -1766,66 +1767,17 @@ async function saveContacts() {
   await safeWriteFile(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2), 'utf-8');
 }
 
-// Fetch raw Base44 Household Submissions & Directory contacts for Print List page
+// Fetch Directory contacts for Print List page (we strictly do NOT display contacts from Base44)
 export async function fetchHouseholdSubmissionsFromBase44() {
   await ensureContactsSynced();
-  let base44Households: any[] = [];
-  try {
-    const submissions = await getCachedHouseholdSubmissions(false);
-    if (submissions && Array.isArray(submissions)) {
-      base44Households = submissions.map((sub: any, idx: number) => {
-        let name = sub.memberName || '';
-        if (!name && sub.fpe && sub.fpe.fullName) {
-          name = sub.fpe.fullName;
-        }
-        if (!name && sub.pmrf_front) {
-          name = `${sub.pmrf_front.member_first || ''} ${sub.pmrf_front.member_middle || ''} ${sub.pmrf_front.member_last || ''}`.trim();
-        }
-        if (!name) {
-          name = 'Unnamed Household';
-        }
-
-        const contact_number = sub.pcsf?.contact || 
-                               sub.fpe?.mobile || 
-                               sub.pmrf_front?.mobile || 
-                               '';
-
-        const barangay = getExactBarangay(sub);
-        const purok = sub.purok || (sub.pcsf?.purok || '');
-
-        const hasGeo = sub.geoLocation && typeof sub.geoLocation.latitude === 'number' && typeof sub.geoLocation.longitude === 'number';
-
-        // Check if already in contactsCache (added to directory via + Add List)
-        const isAlreadyAdded = contactsCache.some(c => 
-          !c.deleted_at &&
-          normalizeCompareName(c.full_name, name) &&
-          normalizeBarangayName(c.barangay).toLowerCase() === normalizeBarangayName(barangay).toLowerCase() &&
-          c.added_from_print_list !== false
-        );
-
-        return {
-          id: sub.id || `sub_${idx + 1}`,
-          full_name: name,
-          barangay: barangay,
-          purok: purok,
-          contact_number: contact_number,
-          created_at: sub.created_date || new Date().toISOString(),
-          latitude: hasGeo ? sub.geoLocation.latitude : undefined,
-          longitude: hasGeo ? sub.geoLocation.longitude : undefined,
-          geotagged: hasGeo,
-          addedToDirectory: isAlreadyAdded
-        };
-      });
-    }
-  } catch (err: any) {
-    console.error('[Base44] Failed to fetch household submissions:', err.message);
-  }
-
-  // Combine with active contacts from directory (Bulk Entries & manually added contacts)
-  // Deduplicate strictly by case-insensitive full_name
   const seenNameKeys = new Set<string>();
 
-  const activeContacts = contactsCache.filter(c => !c.deleted_at);
+  const activeContacts = contactsCache.filter(c => 
+    !c.deleted_at && 
+    !isContactTombstoned(c) && 
+    !isContactSubmitted(c) && 
+    c.added_from_print_list !== false
+  );
   const directoryHouseholds: any[] = [];
 
   for (const c of activeContacts) {
@@ -1839,8 +1791,10 @@ export async function fetchHouseholdSubmissionsFromBase44() {
         purok: c.purok || '',
         contact_number: c.contact_number || '',
         created_at: c.created_at || new Date().toISOString(),
-        geotagged: false,
-        addedToDirectory: c.added_from_print_list !== false
+        geotagged: Boolean(c.geotagged),
+        latitude: c.latitude,
+        longitude: c.longitude,
+        addedToDirectory: true
       });
     }
   }
@@ -3846,15 +3800,21 @@ export async function deleteContact(id: number, username: string) {
   await saveContacts();
   await addActivity(username, `Permanently deleted contact from Clinic Directory: "${deletedContact.full_name}"`);
 
+  resetGoogleSheetsCooldown();
   if (sheetsConfig.syncEnabled) {
     try {
       console.log(`[Google Sheets] Permanently deleting contact from Google Sheets database: "${deletedContact.full_name}"...`);
-      await deleteContactPermanentlyFromGoogleSheets(deletedContact);
+      const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(deletedContact);
+      if (!deletedFromSheets) {
+        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed to sync permanent deletions to Google Sheets:', err2));
+      }
     } catch (err: any) {
       console.error('[Google Sheets] Direct row deletion failed, falling back to full sheet rewrite:', err.message || err);
       await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed to sync permanent deletions to Google Sheets:', err2));
     }
   }
+
+  await forwardToWebApp('delete', deletedContact).catch(() => {});
 
   return true;
 }
@@ -4048,10 +4008,7 @@ export async function deleteContactPermanentlyFromGoogleSheets(contact: {
   purok?: string;
   contact_number?: string;
 }): Promise<boolean> {
-  if (Date.now() < googleSheetsQuotaCooldownUntil) {
-    console.log('[Google Sheets] Delete skipped during quota cooldown');
-    return false;
-  }
+  resetGoogleSheetsCooldown();
 
   const sheets = getSheetsClient();
   if (!sheets) {
@@ -4139,7 +4096,7 @@ export async function deleteContactPermanentlyFromGoogleSheets(contact: {
       }
 
       // 2. Match by Name and Barangay (or Name)
-      if (!isMatch && targetName && rName && normalizeCompareName(rName, targetName)) {
+      if (!isMatch && targetName && rName && (normalizeCompareName(rName, targetName) || targetName.toLowerCase() === rName.toLowerCase())) {
         if (targetBarangay && rBarangay) {
           if (isBarangayMatch(rBarangay, targetBarangay) || normalizeBarangayName(rBarangay).toLowerCase() === normalizeBarangayName(targetBarangay).toLowerCase()) {
             isMatch = true;
@@ -4185,10 +4142,12 @@ export async function deleteContactPermanentlyFromGoogleSheets(contact: {
       });
 
       console.log(`[Google Sheets] Successfully permanently deleted ${matchingRowIndices.length} row(s) for "${targetName || targetIdStr}" from Google Sheets (${sheetName}).`);
+      await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     } else {
       console.log(`[Google Sheets] Contact "${targetName || targetIdStr}" not found as explicit row. Performing sheet sync to ensure removal...`);
       await rewriteAllContactsToGoogleSheets();
+      await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     }
   } catch (err: any) {
@@ -4196,6 +4155,7 @@ export async function deleteContactPermanentlyFromGoogleSheets(contact: {
     handleGoogleSheetsError(err, 'deleteContactPermanentlyFromGoogleSheets');
     try {
       await rewriteAllContactsToGoogleSheets();
+      await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     } catch (err2: any) {
       console.error('[Google Sheets] Fallback rewrite failed:', err2.message || err2);
@@ -4713,7 +4673,7 @@ function getSheetsClient() {
       }
 
       // Replace literal '\n' string with actual newline character
-      let formattedKey = privateKey.replace(/\\n/g, '\n');
+      let formattedKey = privateKey.replace(/\\\\n/g, '\n').replace(/\\n/g, '\n');
 
       // Ensure proper BEGIN and END block headers
       if (!formattedKey.includes('-----BEGIN PRIVATE KEY-----')) {
@@ -5203,72 +5163,6 @@ export function syncPCUFieldsToCache() {
         }
       }
     });
-  }
-
-  // 2. Sync from Base44 HouseholdSubmissions cache (data/base44_households.json)
-  try {
-    if (fs.existsSync(HOUSEHOLDS_CACHE_FILE)) {
-      const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
-      if (data && data.trim()) {
-        const households = JSON.parse(data);
-        if (Array.isArray(households)) {
-          households.forEach((h: any) => {
-            const hasAttachments = Array.isArray(h.attachments) && h.attachments.length > 0;
-            const hasUploadedFiles = Array.isArray(h.uploadedFiles) && h.uploadedFiles.length > 0;
-            const hasUrl = typeof h.pcu_file_url === 'string' && h.pcu_file_url.trim() !== '';
-            const isApproved = h.status === 'approved' && Boolean(hasAttachments || hasUploadedFiles || hasUrl);
-
-            if (hasAttachments || hasUploadedFiles || hasUrl || isApproved) {
-              const hName = h.memberName || (h.fpe && h.fpe.fullName) || h.full_name || '';
-              if (!hName) return;
-
-              const contact = contactsCache.find(c =>
-                (h.contactId && c.id && c.id.toString() === h.contactId.toString()) ||
-                (h.id && (h.id === `hh_${c.id}` || h.id === String(c.id))) ||
-                normalizeCompareName(c.full_name, hName)
-              );
-
-              if (contact) {
-                contact.isSubmitted = true;
-                const submissionDate = h.created_date || h.submittedDate || h.created_at || new Date().toISOString();
-                const uploader = h.submittedBy || h['Submitted by'] || h.submittedByEmail || 'Admin';
-
-                if (!contact.submittedAt) contact.submittedAt = submissionDate;
-                if (!contact.pcu_uploaded_by) contact.pcu_uploaded_by = uploader;
-                if (!contact.pcu_uploaded_at) contact.pcu_uploaded_at = submissionDate;
-
-                contact.uploadedFiles = contact.uploadedFiles || [];
-                if (hasAttachments && contact.uploadedFiles.length === 0) {
-                  contact.uploadedFiles = h.attachments.map((att: any) => ({
-                    name: att.fileName || att.name || 'Base44 Attachment',
-                    url: att.fileUrl || att.url || '',
-                    uploadedAt: submissionDate,
-                    uploadedBy: uploader
-                  }));
-                } else if (hasUploadedFiles && contact.uploadedFiles.length === 0) {
-                  contact.uploadedFiles = h.uploadedFiles.map((f: any) => ({
-                    name: f.name || f.fileName || 'Base44 File',
-                    url: f.url || f.fileData || '',
-                    uploadedAt: f.uploadedAt || submissionDate,
-                    uploadedBy: f.uploadedBy || uploader
-                  }));
-                }
-
-                if (!contact.pcu_file_url) {
-                  if (contact.uploadedFiles && contact.uploadedFiles.length > 0) {
-                    contact.pcu_file_url = contact.uploadedFiles[0].url || `Uploaded: ${contact.uploadedFiles[0].name}`;
-                  } else if (hasUrl) {
-                    contact.pcu_file_url = h.pcu_file_url;
-                  }
-                }
-              }
-            }
-          });
-        }
-      }
-    }
-  } catch (err: any) {
-    // Non-blocking fallback
   }
 }
 
@@ -7253,7 +7147,6 @@ export async function addPCUUpdate(
 
   // Update contact's PCU file url status
   if (contact) {
-    // If upload was successful, store the CDN link, otherwise store a friendly "Uploaded" string indicating local availability
     contact.isSubmitted = true;
     contact.submittedAt = newUpdate.uploadedAt;
     contact.pcu_file_url = uploadSuccess ? finalFileUrlOrData : `Uploaded: ${fileName} (Local Cache)`;
@@ -7267,21 +7160,44 @@ export async function addPCUUpdate(
       uploadedBy: username
     });
     contact.updated_at = new Date().toISOString();
-    await saveContacts();
-    await addActivity(username, `Uploaded PCU File "${fileName}" for: "${fullName}"`);
 
-    // PERMANENT DELETION ON GOOGLE SHEETS:
+    // 1. Tombstone in deletedContactsCache so it is NEVER re-imported from Google Sheets or reloaded
+    deletedContactsCache.push({
+      id: contact.id,
+      full_name: contact.full_name,
+      barangay: contact.barangay,
+      deletedAt: new Date().toISOString(),
+      submitted_to_base44: true
+    });
+    await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+    syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
+
+    // 2. Permanently remove from active contactsCache directory
+    const targetContactId = contact.id;
+    const targetContactName = contact.full_name;
+    contactsCache = contactsCache.filter(c => 
+      c && c.id !== targetContactId && !normalizeCompareName(c.full_name, targetContactName)
+    );
+    await saveContacts();
+    await addActivity(username, `Uploaded PCU File "${fileName}" and submitted to Base44 database for: "${fullName}"`);
+
+    // 3. PERMANENT DELETION ON GOOGLE SHEETS:
     // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
+    resetGoogleSheetsCooldown();
     if (sheetsConfig.syncEnabled) {
       try {
         console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
-        await deleteContactPermanentlyFromGoogleSheets(contact);
+        const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
+        if (!deletedFromSheets) {
+          await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
+        }
       } catch (err: any) {
         console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
         await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
       }
     }
 
+    await forwardToWebApp('delete', contact).catch(() => {});
     await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
   } else {
     await addActivity(username, `Uploaded PCU File "${fileName}" for unregistered household: "${fullName}"`);
@@ -7464,22 +7380,45 @@ export async function addPCUUpdatesMultiple(
   contact.updated_at = new Date().toISOString();
 
   await savePCUUpdates();
+
+  // 1. Tombstone in deletedContactsCache so it is NEVER re-imported from Google Sheets or reloaded
+  deletedContactsCache.push({
+    id: contact.id,
+    full_name: contact.full_name,
+    barangay: contact.barangay,
+    deletedAt: new Date().toISOString(),
+    submitted_to_base44: true
+  });
+  await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+  syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
+
+  // 2. Permanently remove from active contactsCache directory
+  const targetContactId = contact.id;
+  const targetContactName = contact.full_name;
+  contactsCache = contactsCache.filter(c => 
+    c && c.id !== targetContactId && !normalizeCompareName(c.full_name, targetContactName)
+  );
   await saveContacts();
 
-  await addActivity(username, `Uploaded ${files.length} PCU File(s) for: "${fullName}"`);
+  await addActivity(username, `Uploaded ${files.length} PCU File(s) and submitted to Base44 database for: "${fullName}"`);
 
-  // PERMANENT DELETION ON GOOGLE SHEETS:
+  // 3. PERMANENT DELETION ON GOOGLE SHEETS:
   // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
+  resetGoogleSheetsCooldown();
   if (sheetsConfig.syncEnabled) {
     try {
       console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
-      await deleteContactPermanentlyFromGoogleSheets(contact);
+      const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
+      if (!deletedFromSheets) {
+        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
+      }
     } catch (err: any) {
       console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
       await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
     }
   }
 
+  await forwardToWebApp('delete', contact).catch(() => {});
   await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
 
   return contact;
@@ -7506,17 +7445,72 @@ export function getRecentUploads(params: {
   // Ensure all PCU statuses are fully restored on any contacts before querying/filtering
   syncPCUFieldsToCache();
 
-  // 1. Get uploaded contacts from contactsCache
+  // 1. Get uploaded contacts from pcuUpdatesCache and contactsCache
   const current = (username || '').toLowerCase().trim();
   const userObj = findUser(username);
   const uName = (userObj?.fullName || userObj?.displayName || '').toLowerCase().trim();
   const userRole = (userObj?.role || '').toUpperCase();
   const isSuper = !current || current === 'admin' || userRole === 'ADMIN' || userRole === 'MASTER ADMIN' || userRole === 'IT';
 
-  const uploadedContacts = contactsCache.filter(c => {
-    if (c.deleted_at) return false;
-    if (!isContactSubmitted(c)) return false;
+  // Group all PCU uploads by person
+  const updatesByPerson = new Map<string, any>();
 
+  for (const u of pcuUpdatesCache) {
+    if (!u) continue;
+    const nameKey = (u.fullName || '').trim().toLowerCase();
+    if (!nameKey) continue;
+
+    if (!updatesByPerson.has(nameKey)) {
+      updatesByPerson.set(nameKey, {
+        id: u.contactId || u.id || Date.now(),
+        full_name: u.fullName,
+        barangay: u.barangay || 'Unassigned',
+        purok: u.purok || '',
+        contact_number: '',
+        created_at: u.uploadedAt || new Date().toISOString(),
+        updated_at: u.uploadedAt || new Date().toISOString(),
+        deleted_at: null,
+        pcu_file_url: u.fileData || '',
+        pcu_uploaded_by: u.uploadedBy || 'Admin',
+        pcu_uploaded_at: u.uploadedAt || new Date().toISOString(),
+        isExistingAccount: false,
+        category: 'pcu',
+        uploadedFiles: []
+      });
+    }
+
+    const item = updatesByPerson.get(nameKey)!;
+    item.uploadedFiles.push({
+      name: u.fileName || 'PCU Document',
+      url: u.fileData || '',
+      uploadedAt: u.uploadedAt || new Date().toISOString(),
+      uploadedBy: u.uploadedBy || 'Admin'
+    });
+  }
+
+  // Also include any in contactsCache that have PCU files
+  for (const c of contactsCache) {
+    if (!c || !isContactSubmitted(c)) continue;
+    const nameKey = (c.full_name || '').trim().toLowerCase();
+    if (!nameKey) continue;
+
+    if (!updatesByPerson.has(nameKey)) {
+      const uploadedFiles = c.uploadedFiles && c.uploadedFiles.length > 0 ? c.uploadedFiles : [{
+        name: c.pcu_file_url ? (c.pcu_file_url.includes('/') ? (c.pcu_file_url.split('/').pop() || 'PCU Document').replace(/^\d+_/,'') : c.pcu_file_url) : 'PCU Document',
+        url: c.pcu_file_url || '',
+        uploadedAt: c.pcu_uploaded_at || c.updated_at || new Date().toISOString(),
+        uploadedBy: c.pcu_uploaded_by || 'Admin'
+      }];
+      updatesByPerson.set(nameKey, {
+        ...c,
+        isExistingAccount: false,
+        category: 'pcu',
+        uploadedFiles
+      });
+    }
+  }
+
+  const uploadedContacts = Array.from(updatesByPerson.values()).filter(c => {
     if (isSuper) return true;
 
     const uploader = (c.pcu_uploaded_by || '').toLowerCase().trim();
@@ -7524,39 +7518,18 @@ export function getRecentUploads(params: {
       return true;
     }
 
-    if (c.uploadedFiles && c.uploadedFiles.some(f => {
+    if (c.uploadedFiles && c.uploadedFiles.some((f: any) => {
       const up = (f.uploadedBy || '').toLowerCase().trim();
       return up === current || (uName && up === uName) || up === 'admin';
     })) {
       return true;
     }
 
-    // Check pcuUpdatesCache
-    const matchedUpdate = pcuUpdatesCache.find(p => 
-      (p.contactId === c.id || normalizeCompareName(p.fullName, c.full_name)) && 
-      ((p.uploadedBy || '').toLowerCase().trim() === current || (uName && (p.uploadedBy || '').toLowerCase().trim() === uName))
-    );
-    if (matchedUpdate) return true;
-
-    // Check designated barangay
     if (userObj?.barangay && c.barangay && normalizeBarangayName(userObj.barangay).toLowerCase() === normalizeBarangayName(c.barangay).toLowerCase()) {
       return true;
     }
 
     return false;
-  }).map(c => {
-    const uploadedFiles = c.uploadedFiles && c.uploadedFiles.length > 0 ? c.uploadedFiles : [{
-      name: c.pcu_file_url ? (c.pcu_file_url.includes('/') ? (c.pcu_file_url.split('/').pop() || 'PCU Document').replace(/^\d+_/,'') : c.pcu_file_url) : 'PCU Document',
-      url: c.pcu_file_url || '',
-      uploadedAt: c.pcu_uploaded_at || c.updated_at || new Date().toISOString(),
-      uploadedBy: c.pcu_uploaded_by || 'Admin'
-    }];
-    return {
-      ...c,
-      isExistingAccount: false,
-      category: 'pcu',
-      uploadedFiles
-    };
   });
 
   // 2. Get uploaded existing accounts from existingAccountsCache (those transferred with uploaded files)

@@ -650,13 +650,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     setPage(1);
   }, [search, folderSearch, purokSearch, addressFilter, purokFilter, activeFolder, activePurokFolder, associatedBarangayForPuroks]);
 
-  // Sync on initial mount
-  useEffect(() => {
-    if (authToken) {
-      handleSyncBase44();
-    }
-  }, [authToken]);
-
   const handleSort = (field: 'name' | 'address' | 'date') => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -1656,11 +1649,6 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               </div>
                               <div className="flex flex-col">
                                 <span>{contact.full_name}</span>
-                                {contact.pcu_file_url && (
-                                  <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded w-max mt-0.5 flex items-center gap-0.5">
-                                    <Check className="w-2.5 h-2.5" /> PCU Attached
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </td>
