@@ -317,7 +317,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
   const [isReadingFiles, setIsReadingFiles] = useState(false);
   const [readingFileProgress, setReadingFileProgress] = useState<string | null>(null);
-  const [stagedPcuFiles, setStagedPcuFiles] = useState<{ fileName: string; fileData: string; size: number }[]>([]);
+  const [stagedPcuFiles, setStagedPcuFiles] = useState<{ file: File; fileName: string; size: number }[]>([]);
 
   useEffect(() => {
     setStagedPcuFiles([]);
@@ -326,52 +326,81 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     setReadingFileProgress(null);
   }, [viewContact]);
 
-  const convertFileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      // If image is larger than 1MB or has high resolution, optimize via canvas to avoid hitting payload or memory limits
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            const MAX_DIM = 1920;
-            let width = img.width;
-            let height = img.height;
-            if (width > MAX_DIM || height > MAX_DIM || file.size > 1.2 * 1024 * 1024) {
-              if (width > height) {
-                if (width > MAX_DIM) {
-                  height = Math.round((height * MAX_DIM) / width);
-                  width = MAX_DIM;
-                }
-              } else {
-                if (height > MAX_DIM) {
-                  width = Math.round((width * MAX_DIM) / height);
-                  height = MAX_DIM;
-                }
-              }
-              const canvas = document.createElement('canvas');
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', 0.85));
-                return;
-              }
-            }
-            resolve(e.target?.result as string);
-          };
-          img.onerror = () => resolve(e.target?.result as string);
-          img.src = e.target?.result as string;
-        };
-        reader.onerror = (error) => reject(error);
-        reader.readAsDataURL(file);
-      } else {
+  const convertFileToBase64 = async (file: File): Promise<string> => {
+    // If not an image or already under 800 KB, read directly as base64 without canvas
+    if (!file.type.startsWith('image/') || file.size < 800 * 1024) {
+      return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
-        reader.onerror = (error) => reject(error);
+        reader.onerror = reject;
         reader.readAsDataURL(file);
+      });
+    }
+
+    // High-performance image optimization using createImageBitmap if available
+    try {
+      if (typeof createImageBitmap === 'function') {
+        const bitmap = await createImageBitmap(file);
+        const MAX_DIM = 1600;
+        let { width, height } = bitmap;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(bitmap, 0, 0, width, height);
+          bitmap.close?.();
+          return canvas.toDataURL('image/jpeg', 0.82);
+        }
+        bitmap.close?.();
       }
+    } catch {
+      // Fallback if createImageBitmap fails
+    }
+
+    // Standard canvas fallback
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_DIM = 1600;
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+            return;
+          }
+          resolve(e.target?.result as string);
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
   };
 
@@ -412,46 +441,29 @@ export const ContactTable: React.FC<ContactTableProps> = ({
     }
   };
 
-  const handlePCUFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePCUFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const filesArray = Array.from(e.target.files) as File[];
-    
-    setIsReadingFiles(true);
-    setReadingFileProgress(`Staging ${filesArray.length} file(s)...`);
 
-    try {
-      const newStagedFiles: { fileName: string; fileData: string; size: number }[] = [];
-      for (let i = 0; i < filesArray.length; i++) {
-        const file = filesArray[i];
-        if (file.size > 25 * 1024 * 1024) {
-          showToast(`File "${file.name}" exceeds the 25MB size limit.`, 'error');
-          continue;
-        }
-        if (filesArray.length > 5) {
-          setReadingFileProgress(`Reading file ${i + 1} of ${filesArray.length}: ${file.name}...`);
-        }
-        try {
-          const base64Data = await convertFileToBase64(file);
-          newStagedFiles.push({
-            fileName: file.name,
-            fileData: base64Data,
-            size: file.size
-          });
-        } catch (err) {
-          console.error(err);
-          showToast(`Failed to read file "${file.name}".`, 'error');
-        }
+    const newItems: { file: File; fileName: string; size: number }[] = [];
+    for (let i = 0; i < filesArray.length; i++) {
+      const file = filesArray[i];
+      if (file.size > 25 * 1024 * 1024) {
+        showToast(`File "${file.name}" exceeds the 25MB size limit.`, 'error');
+        continue;
       }
-      
-      if (newStagedFiles.length > 0) {
-        setStagedPcuFiles(prev => [...prev, ...newStagedFiles]);
-        showToast(`Staged ${newStagedFiles.length} file(s). Total staged: ${stagedPcuFiles.length + newStagedFiles.length}.`, 'info');
-      }
-    } finally {
-      setIsReadingFiles(false);
-      setReadingFileProgress(null);
-      e.target.value = '';
+      newItems.push({
+        file,
+        fileName: file.name,
+        size: file.size
+      });
     }
+
+    if (newItems.length > 0) {
+      setStagedPcuFiles(prev => [...prev, ...newItems]);
+      showToast(`Selected ${newItems.length} file(s). Total staged: ${stagedPcuFiles.length + newItems.length}.`, 'info');
+    }
+    e.target.value = '';
   };
 
   const removeStagedPcuFile = (index: number) => {
@@ -512,8 +524,8 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         }
       }
 
-      // 2. Submit PCU files in safe batches of 3 to comfortably handle any number of files without hitting Cloud Run or proxy limits
-      const BATCH_SIZE = 3;
+      // 2. Submit PCU files in safe, fast batches of 4 with on-demand parallel compression
+      const BATCH_SIZE = 4;
       const totalBatches = Math.ceil(stagedPcuFiles.length / BATCH_SIZE);
 
       for (let i = 0; i < stagedPcuFiles.length; i += BATCH_SIZE) {
@@ -529,6 +541,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           setUploadProgressText(`Uploading ${stagedPcuFiles.length} PCU file(s) to Base44 DB...`);
         }
 
+        // Fast parallel base64 conversion & image optimization for this batch
+        const convertedFiles = await Promise.all(
+          batch.map(async f => ({
+            fileName: f.fileName,
+            fileData: await convertFileToBase64(f.file)
+          }))
+        );
+
         const res = await fetch(`/api/contacts/${viewContact.id}/pcu`, {
           method: 'POST',
           headers: {
@@ -540,7 +560,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
             barangay: currentBarangay,
             purok: currentPurok,
             contact_number: modalEditContactNumber.trim() || viewContact.contact_number,
-            files: batch.map(f => ({ fileName: f.fileName, fileData: f.fileData })),
+            files: convertedFiles,
             isLastBatch,
             totalFilesCount: stagedPcuFiles.length
           })
@@ -2188,10 +2208,10 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                               </button>
                             </div>
 
-                            {stagedPcuFiles.length > 3 && (
+                            {stagedPcuFiles.length > 4 && (
                               <div className="p-2 bg-blue-50 border border-blue-200/80 rounded-xl text-[11px] text-blue-900 font-medium flex items-center gap-1.5">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                <span>Multi-file safe upload: {stagedPcuFiles.length} files will be uploaded in optimized batches ({Math.ceil(stagedPcuFiles.length / 3)} batches).</span>
+                                <span>Multi-file safe upload: {stagedPcuFiles.length} files will be uploaded in optimized batches ({Math.ceil(stagedPcuFiles.length / 4)} batches).</span>
                               </div>
                             )}
 

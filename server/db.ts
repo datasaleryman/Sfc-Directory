@@ -7287,8 +7287,8 @@ export async function addPCUUpdatesMultiple(
   let lastFileUrl = '';
   let lastUploadedAt = new Date().toISOString();
 
-  // Process files in controlled concurrent batches of 2 for maximum network reliability and stability
-  const BATCH_CONCURRENCY = 2;
+  // Process files in controlled concurrent batches of 4 for maximum speed and network reliability
+  const BATCH_CONCURRENCY = 4;
   for (let i = 0; i < files.length; i += BATCH_CONCURRENCY) {
     const chunk = files.slice(i, i + BATCH_CONCURRENCY);
     await Promise.all(chunk.map(async (file) => {
@@ -7440,24 +7440,26 @@ export async function addPCUUpdatesMultiple(
     const totalUploadedCount = options?.totalFilesCount || files.length;
     await addActivity(username, `Uploaded ${totalUploadedCount} PCU File(s) and submitted to Base44 database for: "${fullName}"`);
 
-    // 3. PERMANENT DELETION ON GOOGLE SHEETS:
-    // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
-    resetGoogleSheetsCooldown();
-    if (sheetsConfig.syncEnabled) {
-      try {
-        console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
-        const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
-        if (!deletedFromSheets) {
-          await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
+    // 3. PERMANENT DELETION ON GOOGLE SHEETS & EXTERNAL SYNCS:
+    // Execute in non-blocking background task so the user's PCU upload responds immediately without waiting on external network APIs
+    (async () => {
+      resetGoogleSheetsCooldown();
+      if (sheetsConfig.syncEnabled) {
+        try {
+          console.log(`[Google Sheets Background] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
+          const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
+          if (!deletedFromSheets) {
+            await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets Background] Fallback rewrite failed:', err2));
+          }
+        } catch (err: any) {
+          console.error('[Google Sheets Background] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
+          await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets Background] Fallback rewrite failed:', err2));
         }
-      } catch (err: any) {
-        console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
-        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
       }
-    }
 
-    await forwardToWebApp('delete', contact).catch(() => {});
-    await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
+      await forwardToWebApp('delete', contact).catch(() => {});
+      await saveContactToBase44(contact, username).catch(err => console.warn('[Base44 Background] Error saving uploaded contact to Base44:', err));
+    })().catch(err => console.error('[Background PCU sync error]:', err));
   } else {
     // Intermediate batch: save updated contactsCache without removing the contact yet
     await saveContacts();
