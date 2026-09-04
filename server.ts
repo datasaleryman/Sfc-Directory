@@ -87,8 +87,9 @@ export async function getApp() {
   const app = express();
   const PORT = 3000;
 
-  // Security: Max payload limit (set to 50mb to preserve original high-quality uploads) & XSS sanitization
-  app.use(express.json({ limit: '50mb' }));
+  // Security: Max payload limit (set to 250mb to preserve original high-quality uploads and allow 20+ files) & XSS sanitization
+  app.use(express.json({ limit: '250mb' }));
+  app.use(express.urlencoded({ limit: '250mb', extended: true }));
   app.use(sanitizeInput);
 
   // Middleware to ensure contacts are loaded/synchronized from Google Sheets before accessing contact routes

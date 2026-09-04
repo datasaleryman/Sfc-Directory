@@ -7166,109 +7166,118 @@ export async function addPCUUpdatesMultiple(
   let lastFileUrl = '';
   let lastUploadedAt = new Date().toISOString();
 
-  for (const file of files) {
-    const { fileName, fileData } = file;
-    let finalFileUrlOrData = fileData;
-    let base44EntityValue = '';
-    let uploadSuccess = false;
+  // Process files in concurrent batches of 5 for optimal throughput and stability with 20+ files
+  const BATCH_CONCURRENCY = 5;
+  for (let i = 0; i < files.length; i += BATCH_CONCURRENCY) {
+    const chunk = files.slice(i, i + BATCH_CONCURRENCY);
+    await Promise.all(chunk.map(async (file) => {
+      const { fileName, fileData } = file;
+      let finalFileUrlOrData = fileData;
+      let base44EntityValue = '';
+      let uploadSuccess = false;
 
-    try {
-      // Upload the file to public storage and get the URL to avoid 400 Field limit errors
-      const uploadedUrl = await uploadFileToBase44(fileData, fileName);
-      if (uploadedUrl) {
-        finalFileUrlOrData = uploadedUrl;
-        base44EntityValue = uploadedUrl;
-        uploadSuccess = true;
-      }
-    } catch (err: any) {
-      console.warn('[Base44 PCU Upload Warning] Failed to upload via SDK, saving full file locally and metadata placeholder in Base44 database:', err.message || err);
-      // Fallback: save the full base64 file data in the local JSON cache
-      finalFileUrlOrData = fileData;
-      // Use a lightweight descriptive placeholder for the Base44 DB to prevent the size-exceeded error
-      base44EntityValue = `[Local File Only - SDK upload failed: ${err.message || 'unknown error'}]`;
-      uploadSuccess = false;
-    }
-
-    const newUpdate: PCUUpdate = {
-      id: crypto.randomBytes(8).toString('hex'),
-      contactId,
-      fullName,
-      barangay,
-      purok,
-      fileName,
-      fileData: finalFileUrlOrData, // Save the full URL (if success) or full base64 (if local fallback) in local cache
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: username,
-      added_from_website: true
-    };
-
-    pcuUpdatesCache.unshift(newUpdate);
-    lastUploadedAt = newUpdate.uploadedAt;
-    lastFileUrl = uploadSuccess ? finalFileUrlOrData : `Uploaded: ${fileName} (Local Cache)`;
-
-    // Try to upload metadata to Base44 PCUUpdate entity
-    try {
-      console.log(`[Base44 SDK] Uploading PCU File metadata to table PCUUpdate for contact: ${fullName}...`);
-      const pcuEntity = (base44.entities as any).PCUUpdate || {
-        create: async (data: any) => {
-          console.log('[Base44 SDK] Simulating PCUUpdate creation dynamically');
-          return data;
+      try {
+        // Upload the file to public storage and get the URL to avoid 400 Field limit errors
+        const uploadedUrl = await uploadFileToBase44(fileData, fileName);
+        if (uploadedUrl) {
+          finalFileUrlOrData = uploadedUrl;
+          base44EntityValue = uploadedUrl;
+          uploadSuccess = true;
         }
-      };
-      
-      // Extract firstName and lastName to satisfy Base44 schema requirement
-      const nameParts = (fullName || '').trim().split(/\s+/);
-      let firstName = 'Unknown';
-      let lastName = 'Unknown';
-      if (nameParts.length > 1) {
-        firstName = nameParts.slice(0, -1).join(' ');
-        lastName = nameParts[nameParts.length - 1];
-      } else if (nameParts.length === 1 && nameParts[0] !== '') {
-        firstName = nameParts[0];
-        lastName = 'Unknown';
+      } catch (err: any) {
+        console.warn('[Base44 PCU Upload Warning] Failed to upload via SDK, saving full file locally and metadata placeholder in Base44 database:', err.message || err);
+        // Fallback: save the full base64 file data in the local JSON cache
+        finalFileUrlOrData = fileData;
+        // Use a lightweight descriptive placeholder for the Base44 DB to prevent the size-exceeded error
+        base44EntityValue = `[Local File Only - SDK upload failed: ${err.message || 'unknown error'}]`;
+        uploadSuccess = false;
       }
 
-      const { mimeType } = parseDataUrl(fileData);
-
-      await pcuEntity.create({
+      const fileUploadedAt = new Date().toISOString();
+      const newUpdate: PCUUpdate = {
+        id: crypto.randomBytes(8).toString('hex'),
         contactId,
         fullName,
-        firstName,
-        lastName,
         barangay,
-        Barangay: barangay,
         purok,
         fileName,
-        fileUrl: base44EntityValue, // Save either the CDN URL or the safe metadata placeholder
-        fileType: mimeType,
-        uploadDate: newUpdate.uploadedAt,
-        uploadedBy: uName,
-        "Submitted by": uName,
-        uploadedByEmail: userEmail,
-        contact: contactNumber,
-        contact_number: contactNumber,
-        latitude: latNum,
-        longitude: lngNum,
-        geotagged: isGeotagged,
-        geoLocation: hasGeo ? {
-          latitude: latNum,
-          longitude: lngNum
-        } : undefined,
-        "Attachment data": base44EntityValue,
-        attachmentUrl: base44EntityValue
-      });
-      console.log('[Base44 SDK] PCU File metadata saved successfully in Base44 PCUUpdate table.');
-    } catch (err: any) {
-      console.warn('[Base44 SDK Warning] Base44 direct write failed (saving locally instead):', err.message);
-    }
+        fileData: finalFileUrlOrData, // Save the full URL (if success) or full base64 (if local fallback) in local cache
+        uploadedAt: fileUploadedAt,
+        uploadedBy: username,
+        added_from_website: true
+      };
 
-    // Add to contact.uploadedFiles array
-    contact.uploadedFiles.push({
-      name: fileName,
-      url: finalFileUrlOrData,
-      uploadedAt: newUpdate.uploadedAt,
-      uploadedBy: uName
-    });
+      pcuUpdatesCache.unshift(newUpdate);
+      lastUploadedAt = fileUploadedAt;
+      lastFileUrl = uploadSuccess ? finalFileUrlOrData : `Uploaded: ${fileName} (Local Cache)`;
+
+      // Try to upload metadata to Base44 PCUUpdate entity
+      try {
+        console.log(`[Base44 SDK] Uploading PCU File metadata to table PCUUpdate for contact: ${fullName}...`);
+        const pcuEntity = (base44.entities as any).PCUUpdate || {
+          create: async (data: any) => {
+            console.log('[Base44 SDK] Simulating PCUUpdate creation dynamically');
+            return data;
+          }
+        };
+        
+        // Extract firstName and lastName to satisfy Base44 schema requirement
+        const nameParts = (fullName || '').trim().split(/\s+/);
+        let firstName = 'Unknown';
+        let lastName = 'Unknown';
+        if (nameParts.length > 1) {
+          firstName = nameParts.slice(0, -1).join(' ');
+          lastName = nameParts[nameParts.length - 1];
+        } else if (nameParts.length === 1 && nameParts[0] !== '') {
+          firstName = nameParts[0];
+          lastName = 'Unknown';
+        }
+
+        const { mimeType } = parseDataUrl(fileData);
+
+        await pcuEntity.create({
+          contactId,
+          fullName,
+          firstName,
+          lastName,
+          barangay,
+          Barangay: barangay,
+          purok,
+          fileName,
+          fileUrl: base44EntityValue, // Save either the CDN URL or the safe metadata placeholder
+          fileType: mimeType,
+          uploadDate: newUpdate.uploadedAt,
+          uploadedBy: uName,
+          "Submitted by": uName,
+          uploadedByEmail: userEmail,
+          contact: contactNumber,
+          contact_number: contactNumber,
+          latitude: latNum,
+          longitude: lngNum,
+          geotagged: isGeotagged,
+          geoLocation: hasGeo ? {
+            latitude: latNum,
+            longitude: lngNum
+          } : undefined,
+          "Attachment data": base44EntityValue,
+          attachmentUrl: base44EntityValue
+        });
+        console.log('[Base44 SDK] PCU File metadata saved successfully in Base44 PCUUpdate table.');
+      } catch (err: any) {
+        console.warn('[Base44 SDK Warning] Base44 direct write failed (saving locally instead):', err.message);
+      }
+
+      // Add to contact.uploadedFiles array (avoiding duplicate entries)
+      const alreadyExists = contact.uploadedFiles.some(f => f.name === fileName && (f.url === finalFileUrlOrData || f.uploadedBy === uName));
+      if (!alreadyExists) {
+        contact.uploadedFiles.push({
+          name: fileName,
+          url: finalFileUrlOrData,
+          uploadedAt: newUpdate.uploadedAt,
+          uploadedBy: uName
+        });
+      }
+    }));
   }
 
   // Update contact's main PCU fields
