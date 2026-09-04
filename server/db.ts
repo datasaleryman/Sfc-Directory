@@ -3847,18 +3847,13 @@ export async function deleteContact(id: number, username: string) {
   await addActivity(username, `Permanently deleted contact from Clinic Directory: "${deletedContact.full_name}"`);
 
   if (sheetsConfig.syncEnabled) {
-    (async () => {
-      try {
-        console.log(`[Google Sheets] Attempting row-level deletion for contact: "${deletedContact.full_name}"...`);
-        const deletedRow = await forwardToWebApp('delete', deletedContact);
-        // If row-level deletion succeeds or we want to ensure everything is perfectly synced, we can run rewrite occasionally,
-        // but to prevent race conditions and double writes, we only do row-level deletion when possible.
-        // If it was skipped or we want extra safety, we fallback/sync.
-      } catch (err: any) {
-        console.error('[Google Sheets] Row-level deletion failed, falling back to full sheet rewrite:', err.message || err);
-        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed to sync permanent deletions to Google Sheets:', err2));
-      }
-    })();
+    try {
+      console.log(`[Google Sheets] Permanently deleting contact from Google Sheets database: "${deletedContact.full_name}"...`);
+      await deleteContactPermanentlyFromGoogleSheets(deletedContact);
+    } catch (err: any) {
+      console.error('[Google Sheets] Direct row deletion failed, falling back to full sheet rewrite:', err.message || err);
+      await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed to sync permanent deletions to Google Sheets:', err2));
+    }
   }
 
   return true;
@@ -3917,14 +3912,20 @@ export async function deleteBarangayFolderContacts(barangay: string, username: s
 
   await addActivity(username, `Permanently deleted Barangay folder "${barangay}" (${count} households) from Clinic Directory.`);
 
-  try {
-    await syncBarangaysToGoogleSheets();
-  } catch (err: any) {
-    console.error('Failed to sync updated Barangays list to Google Sheets:', err.message || err);
+  if (sheetsConfig.syncEnabled) {
+    try {
+      await syncBarangaysToGoogleSheets();
+    } catch (err: any) {
+      console.error('Failed to sync updated Barangays list to Google Sheets:', err.message || err);
+    }
+    
+    // Overwrite Sheets to ensure all contacts in the deleted folder are fully scrubbed from Google Sheets
+    try {
+      await rewriteAllContactsToGoogleSheets();
+    } catch (err: any) {
+      console.error('Failed to sync folder deletions to Google Sheets:', err.message || err);
+    }
   }
-  
-  // Overwrite Sheets to ensure all contacts in the deleted folder are fully scrubbed from Google Sheets
-  rewriteAllContactsToGoogleSheets().catch(err => console.error('Failed to sync folder deletions to Google Sheets:', err));
 
   return { success: true, count, message: `Barangay folder "${barangay}" permanently deleted successfully.` };
 }
@@ -3979,7 +3980,12 @@ export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
       range: `${sheetName}!A:Z`
     });
 
-    const activeContacts = contactsCache.filter(c => !c.deleted_at);
+    const activeContacts = contactsCache.filter(c => 
+      !c.deleted_at && 
+      !isContactSubmitted(c) && 
+      !isContactTombstoned(c) && 
+      c.added_from_print_list !== false
+    );
     const rowsToPut = [
       headerRow.length > 0 ? headerRow : headers.map(h => capitalizeWords(h)),
       ...activeContacts.map(c => {
@@ -4029,8 +4035,172 @@ export async function rewriteAllContactsToGoogleSheets(): Promise<boolean> {
     return true;
   } catch (err: any) {
     console.error('[Google Sheets] Failed to rewrite contacts to Google Sheets:', err.message || err);
-    markSheetsDisconnected(err);
+    handleGoogleSheetsError(err, 'rewriteAllContactsToGoogleSheets');
     return false;
+  }
+}
+
+// Permanently delete a contact from the Google Sheets database (Sheet1)
+export async function deleteContactPermanentlyFromGoogleSheets(contact: {
+  id?: number | string;
+  full_name?: string;
+  barangay?: string;
+  purok?: string;
+  contact_number?: string;
+}): Promise<boolean> {
+  if (Date.now() < googleSheetsQuotaCooldownUntil) {
+    console.log('[Google Sheets] Delete skipped during quota cooldown');
+    return false;
+  }
+
+  const sheets = getSheetsClient();
+  if (!sheets) {
+    console.log('[Google Sheets] Service Account not configured; checking Web App URL fallback...');
+    if (sheetsConfig.webAppUrl) {
+      try {
+        const res = await fetch(sheetsConfig.webAppUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', ...contact })
+        });
+        return res.ok;
+      } catch (e: any) {
+        console.warn('[Google Sheets] Web App fallback error on delete:', e.message || e);
+      }
+    }
+    return false;
+  }
+
+  try {
+    let spreadsheetId = sheetsConfig.spreadsheetId;
+    if (!spreadsheetId) return false;
+    const match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) {
+      spreadsheetId = match[1];
+    }
+    const sheetName = sheetsConfig.sheetName || 'Sheet1';
+
+    await ensureSheetExists(sheets, spreadsheetId, sheetName);
+    markSheetsConnected();
+
+    // Fetch all rows
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:Z`
+    });
+
+    const rows = response.data.values;
+    if (!rows || rows.length <= 1) {
+      console.log('[Google Sheets] Sheet has no contact data rows to delete.');
+      return true;
+    }
+
+    const headers = (rows[0] || []).map((h: any) => (h || '').toString().toLowerCase().trim());
+    const idColIdx = headers.findIndex((h: string) => h.includes('id') || h === 'no');
+    const nameIdx = headers.findIndex((h: string) => h.includes('name') || h.includes('full'));
+    const firstNameIdx = headers.findIndex((h: string) => h.includes('first'));
+    const lastNameIdx = headers.findIndex((h: string) => h.includes('last'));
+    const barangayIdx = headers.findIndex((h: string) => h.includes('barangay') || h.includes('address'));
+    const purokIdx = headers.findIndex((h: string) => h.includes('purok'));
+    const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
+
+    const targetIdStr = contact.id !== undefined && contact.id !== null ? String(contact.id).trim() : '';
+    const targetName = (contact.full_name || '').trim();
+    const targetBarangay = (contact.barangay || '').trim();
+    const targetNumber = (contact.contact_number || '').trim().replace(/[^0-9]/g, '');
+
+    const matchingRowIndices: number[] = []; // 0-based row indices
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
+
+      const rIdStr = idColIdx !== -1 && row[idColIdx] !== undefined ? String(row[idColIdx]).trim() : '';
+      let rName = nameIdx !== -1 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : '';
+      if (!rName && (firstNameIdx !== -1 || lastNameIdx !== -1)) {
+        const parts = [
+          firstNameIdx !== -1 ? (row[firstNameIdx] || '') : '',
+          lastNameIdx !== -1 ? (row[lastNameIdx] || '') : ''
+        ].filter(Boolean);
+        rName = parts.join(' ').trim();
+      }
+      const rBarangay = barangayIdx !== -1 && row[barangayIdx] !== undefined ? String(row[barangayIdx]).trim() : '';
+      const rNumber = numberIdx !== -1 && row[numberIdx] !== undefined ? String(row[numberIdx]).trim().replace(/[^0-9]/g, '') : '';
+
+      let isMatch = false;
+
+      // 1. Match by exact or numeric ID
+      if (targetIdStr && rIdStr) {
+        if (targetIdStr.toLowerCase() === rIdStr.toLowerCase()) {
+          isMatch = true;
+        } else if (!isNaN(Number(targetIdStr)) && !isNaN(Number(rIdStr)) && Number(targetIdStr) === Number(rIdStr)) {
+          isMatch = true;
+        }
+      }
+
+      // 2. Match by Name and Barangay (or Name)
+      if (!isMatch && targetName && rName && normalizeCompareName(rName, targetName)) {
+        if (targetBarangay && rBarangay) {
+          if (isBarangayMatch(rBarangay, targetBarangay) || normalizeBarangayName(rBarangay).toLowerCase() === normalizeBarangayName(targetBarangay).toLowerCase()) {
+            isMatch = true;
+          }
+        } else {
+          isMatch = true;
+        }
+      }
+
+      // 3. Match by Contact Number and Name similarity
+      if (!isMatch && targetNumber && rNumber && targetNumber === rNumber && targetName && rName && normalizeCompareName(rName, targetName)) {
+        isMatch = true;
+      }
+
+      if (isMatch) {
+        matchingRowIndices.push(i);
+      }
+    }
+
+    if (matchingRowIndices.length > 0) {
+      // Obtain the numeric sheetId
+      const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
+      const targetSheetObj = spreadsheetInfo.data.sheets?.find(s => s.properties?.title === sheetName);
+      const numericSheetId = targetSheetObj?.properties?.sheetId || 0;
+
+      // Sort indices in descending order so that deleting later rows doesn't shift earlier row indices
+      matchingRowIndices.sort((a, b) => b - a);
+
+      const requests = matchingRowIndices.map(rowIdx => ({
+        deleteDimension: {
+          range: {
+            sheetId: numericSheetId,
+            dimension: 'ROWS',
+            startIndex: rowIdx,
+            endIndex: rowIdx + 1
+          }
+        }
+      }));
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests }
+      });
+
+      console.log(`[Google Sheets] Successfully permanently deleted ${matchingRowIndices.length} row(s) for "${targetName || targetIdStr}" from Google Sheets (${sheetName}).`);
+      return true;
+    } else {
+      console.log(`[Google Sheets] Contact "${targetName || targetIdStr}" not found as explicit row. Performing sheet sync to ensure removal...`);
+      await rewriteAllContactsToGoogleSheets();
+      return true;
+    }
+  } catch (err: any) {
+    console.error('[Google Sheets] Error deleting contact row from Google Sheets:', err.message || err);
+    handleGoogleSheetsError(err, 'deleteContactPermanentlyFromGoogleSheets');
+    try {
+      await rewriteAllContactsToGoogleSheets();
+      return true;
+    } catch (err2: any) {
+      console.error('[Google Sheets] Fallback rewrite failed:', err2.message || err2);
+      return false;
+    }
   }
 }
 
@@ -4704,8 +4874,11 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
           }
         });
         console.log('Successfully appended contact to Google Sheets using Service Account!');
-      } else if (action === 'edit' || action === 'delete') {
-        // Find row to edit or delete
+      } else if (action === 'delete') {
+        await deleteContactPermanentlyFromGoogleSheets(data);
+        return;
+      } else if (action === 'edit') {
+        // Find row to edit
         const response = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: `${sheetName}!A:Z`
@@ -4737,55 +4910,31 @@ export async function forwardToWebApp(action: 'add' | 'edit' | 'delete', data: a
           }
 
           if (targetRowIdx !== -1) {
-            if (action === 'delete') {
-              // Get Sheet ID
-              const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
-              const targetSheetObj = spreadsheetInfo.data.sheets?.find(s => s.properties?.title === sheetName);
-              const sheetId = targetSheetObj?.properties?.sheetId || 0;
+            // Edit row
+            const nameIdx = headers.findIndex((h: string) => h.includes('name') || h.includes('full'));
+            const barangayIdx = headers.findIndex((h: string) => h.includes('barangay') || h.includes('address'));
+            const purokIdx = headers.findIndex((h: string) => h.includes('purok'));
+            const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
+            const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
+            const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
 
-              await sheets.spreadsheets.batchUpdate({
-                spreadsheetId,
-                requestBody: {
-                  requests: [{
-                    deleteDimension: {
-                      range: {
-                        sheetId: sheetId,
-                        dimension: 'ROWS',
-                        startIndex: targetRowIdx - 1,
-                        endIndex: targetRowIdx
-                      }
-                    }
-                  }]
-                }
-              });
-              console.log('Successfully deleted contact row in Google Sheets using Service Account!');
-            } else {
-              // Edit row
-              const nameIdx = headers.findIndex((h: string) => h.includes('name') || h.includes('full'));
-              const barangayIdx = headers.findIndex((h: string) => h.includes('barangay') || h.includes('address'));
-              const purokIdx = headers.findIndex((h: string) => h.includes('purok'));
-              const numberIdx = headers.findIndex((h: string) => h.includes('number') || h.includes('contact') || h.includes('phone'));
-              const updatedIdx = headers.findIndex((h: string) => h.includes('updated') || h.includes('last'));
-              const addedIdx = headers.findIndex((h: string) => h.includes('added') || h.includes('directory') || h.includes('print_list') || h.includes('list'));
+            const rowValues = [...rows[targetRowIdx - 1]];
+            if (nameIdx !== -1) rowValues[nameIdx] = data.full_name;
+            if (barangayIdx !== -1) rowValues[barangayIdx] = data.barangay;
+            if (purokIdx !== -1) rowValues[purokIdx] = data.purok;
+            if (numberIdx !== -1) rowValues[numberIdx] = data.contact_number;
+            if (updatedIdx !== -1) rowValues[updatedIdx] = data.updated_at;
+            if (addedIdx !== -1) rowValues[addedIdx] = data.added_from_print_list !== false ? 'TRUE' : 'FALSE';
 
-              const rowValues = [...rows[targetRowIdx - 1]];
-              if (nameIdx !== -1) rowValues[nameIdx] = data.full_name;
-              if (barangayIdx !== -1) rowValues[barangayIdx] = data.barangay;
-              if (purokIdx !== -1) rowValues[purokIdx] = data.purok;
-              if (numberIdx !== -1) rowValues[numberIdx] = data.contact_number;
-              if (updatedIdx !== -1) rowValues[updatedIdx] = data.updated_at;
-              if (addedIdx !== -1) rowValues[addedIdx] = data.added_from_print_list !== false ? 'TRUE' : 'FALSE';
-
-              await sheets.spreadsheets.values.update({
-                spreadsheetId,
-                range: `${sheetName}!A${targetRowIdx}`,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: {
-                  values: sanitizeRowsForSheets([rowValues])
-                }
-              });
-              console.log('Successfully updated contact row in Google Sheets using Service Account!');
-            }
+            await sheets.spreadsheets.values.update({
+              spreadsheetId,
+              range: `${sheetName}!A${targetRowIdx}`,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: {
+                values: sanitizeRowsForSheets([rowValues])
+              }
+            });
+            console.log('Successfully updated contact row in Google Sheets using Service Account!');
           } else {
             throw new Error(`Row matching ID "${data.id}" or Name "${data.full_name}" in Barangay "${data.barangay}" was not found in the Google Sheet.`);
           }
@@ -5363,12 +5512,27 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const formattedName = capitalizeWords(rawName);
     const formattedBarangay = rawBarangay.trim() ? normalizeBarangayName(rawBarangay) : 'NO ADDRESS';
 
+    // Check if this contact has been permanently deleted (tombstoned)
+    if (isContactTombstoned({ id, full_name: formattedName, barangay: formattedBarangay })) {
+      deleteContactPermanentlyFromGoogleSheets({ id, full_name: formattedName, barangay: formattedBarangay }).catch(() => {});
+      continue;
+    }
+
     // Find if this contact already exists in local cache
     const existingLocal = contactsCache.find(lc => 
       (lc.id && id && lc.id.toString() === id.toString()) || 
       (normalizeCompareName(lc.full_name, rawName) && 
        normalizeBarangayName(lc.barangay).toLowerCase() === formattedBarangay.toLowerCase())
     );
+
+    const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === id || (existingLocal && p.contactId === existingLocal.id) || normalizeCompareName(p.fullName, rawName));
+
+    // Check if this contact has already been submitted to Base44 database
+    const isAlreadySubmitted = (existingLocal && isContactSubmitted(existingLocal)) || Boolean(matchedUpdate);
+    if (isAlreadySubmitted) {
+      deleteContactPermanentlyFromGoogleSheets({ id, full_name: formattedName, barangay: formattedBarangay }).catch(() => {});
+      continue;
+    }
 
     const rawAdded = addedIdx !== -1 ? (row[addedIdx] || '').toString().trim().toUpperCase() : '';
     let addedFromPrintList = true;
@@ -5397,7 +5561,6 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
       lngVal = existingLocal.longitude;
     }
 
-    const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === id || (existingLocal && p.contactId === existingLocal.id) || normalizeCompareName(p.fullName, rawName));
     const pcuFileUrl = (pcuIdx !== -1 && row[pcuIdx]) ? row[pcuIdx] : ((existingLocal && existingLocal.pcu_file_url) || (matchedUpdate && (matchedUpdate.fileData || `Uploaded: ${matchedUpdate.fileName}`)));
     const pcuUploadedBy = (existingLocal && existingLocal.pcu_uploaded_by) || (matchedUpdate && matchedUpdate.uploadedBy);
     const pcuUploadedAt = (existingLocal && existingLocal.pcu_uploaded_at) || (matchedUpdate && matchedUpdate.uploadedAt);
@@ -7106,7 +7269,19 @@ export async function addPCUUpdate(
     contact.updated_at = new Date().toISOString();
     await saveContacts();
     await addActivity(username, `Uploaded PCU File "${fileName}" for: "${fullName}"`);
-    forwardToWebApp('edit', contact).catch(err => console.error('Error forwarding PCU file update to Sheets Web App:', err));
+
+    // PERMANENT DELETION ON GOOGLE SHEETS:
+    // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
+    if (sheetsConfig.syncEnabled) {
+      try {
+        console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
+        await deleteContactPermanentlyFromGoogleSheets(contact);
+      } catch (err: any) {
+        console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
+        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
+      }
+    }
+
     await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
   } else {
     await addActivity(username, `Uploaded PCU File "${fileName}" for unregistered household: "${fullName}"`);
@@ -7292,7 +7467,19 @@ export async function addPCUUpdatesMultiple(
   await saveContacts();
 
   await addActivity(username, `Uploaded ${files.length} PCU File(s) for: "${fullName}"`);
-  forwardToWebApp('edit', contact).catch(err => console.error('Error forwarding PCU file update to Sheets Web App:', err));
+
+  // PERMANENT DELETION ON GOOGLE SHEETS:
+  // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
+  if (sheetsConfig.syncEnabled) {
+    try {
+      console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
+      await deleteContactPermanentlyFromGoogleSheets(contact);
+    } catch (err: any) {
+      console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
+      await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
+    }
+  }
+
   await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
 
   return contact;
@@ -7594,6 +7781,11 @@ export async function removePCUFileFromContact(contactId: number, username: stri
 
   await saveContacts();
   await addActivity(username, `Restored household record to Clinic Directory and deleted associated PCU file: "${contact.full_name}"`);
+
+  if (sheetsConfig.syncEnabled) {
+    forwardToWebApp('add', contact).catch(err => console.error('[Google Sheets] Error restoring contact to Google Sheets:', err));
+  }
+
   return contact;
 }
 
