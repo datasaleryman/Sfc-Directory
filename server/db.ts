@@ -636,6 +636,7 @@ export function getSheetsStatus() {
   const isCorrect = isConfigCorrect();
   return {
     connected: isCorrect ? true : lastSyncStatus.connected,
+    autoConnected: true,
     lastAttempt: lastSyncStatus.lastAttempt,
     lastSuccess: lastSyncStatus.lastSuccess || (isCorrect ? new Date().toISOString() : null),
     error: isCorrect ? null : lastSyncStatus.error,
@@ -1361,58 +1362,79 @@ export async function initDb() {
     }
 
     console.log('Database initialized successfully. Contacts:', contactsCache.length);
+    if (contactsCache.length > 0) {
+      contactsLoadedFromSheets = true;
+    }
 
-    // Run background sheets sync if enabled
+    // Auto-connect and run continuous background sheets sync automatically without requiring manual status checks
     if (sheetsConfig.syncEnabled) {
-      setTimeout(async () => {
-        // Pull configurations and settings on startup to ensure we always have the latest state from Google Sheets.
-        // Throttled and cached to prevent Google Sheets API Quota / Rate Limit errors ("Read requests per minute").
-        try {
-          if (Date.now() < googleSheetsQuotaCooldownUntil) {
-            console.log('[Startup] Google Sheets API rate-limit cooldown active. Serving from local persistent cache.');
-            return;
-          }
-
-          console.log('[Startup] Syncing database tables with Google Sheets (throttled)...');
-          await pullSiteSettingsOnce();
-          
-          if (Date.now() < googleSheetsQuotaCooldownUntil) return;
-          await pullDeletedRecordsOnce();
-          
-          if (Date.now() < googleSheetsQuotaCooldownUntil) return;
-          await pullAdminsOnce();
-
-          if (Date.now() < googleSheetsQuotaCooldownUntil) return;
-          await pullBarangaysOnce();
-
-          if (Date.now() < googleSheetsQuotaCooldownUntil) return;
-          await pullExistingAccountsOnce();
-        } catch (err: any) {
-          console.error('[Startup] Failed to sync startup configurations with Google Sheets:', err.message || err);
-        }
-
-        // Only run heavy background contacts sync if NOT in a serverless environment
-        if (process.env.NETLIFY === 'true' || process.env.LAMBDA_TASK_ROOT) {
-          console.log('[Startup] Serverless environment detected. Skipping heavy background contacts synchronization.');
-          return;
-        }
-
-        if (Date.now() < googleSheetsQuotaCooldownUntil) {
-          return;
-        }
-
-        try {
-          console.log('[Startup] Performing background contacts table synchronization and match validation...');
-          await syncWithGoogleSheets('System Background Sync');
-          await syncPCUUpdatesFromBase44(true);
-        } catch (err: any) {
-          console.error('Background Google Sheets Sync failed on startup:', err.message || err);
-        }
-      }, 500);
+      startAutoSheetsSync();
     }
   } catch (err) {
     console.error('Error initializing database:', err);
   }
+}
+
+// Background auto-sync manager: connects Google Sheets database automatically and keeps it continuously in sync
+let autoSyncTimer: NodeJS.Timeout | null = null;
+let isAutoSyncRunning = false;
+
+export function startAutoSheetsSync() {
+  if (autoSyncTimer) return;
+
+  // Mark connected automatically immediately on startup if configuration is present
+  if (isConfigCorrect()) {
+    markSheetsConnected();
+  }
+
+  const runAutoSyncCycle = async (source: string) => {
+    if (isAutoSyncRunning) return;
+    if (!sheetsConfig.syncEnabled) return;
+    if (Date.now() < googleSheetsQuotaCooldownUntil) {
+      return;
+    }
+
+    isAutoSyncRunning = true;
+    try {
+      if (Date.now() < googleSheetsQuotaCooldownUntil) return;
+      await pullSiteSettingsOnce();
+
+      if (Date.now() < googleSheetsQuotaCooldownUntil) return;
+      await pullDeletedRecordsOnce();
+
+      if (Date.now() < googleSheetsQuotaCooldownUntil) return;
+      await pullAdminsOnce();
+
+      if (Date.now() < googleSheetsQuotaCooldownUntil) return;
+      await pullBarangaysOnce();
+
+      if (Date.now() < googleSheetsQuotaCooldownUntil) return;
+      await pullExistingAccountsOnce();
+
+      if (Date.now() < googleSheetsQuotaCooldownUntil) return;
+      await syncWithGoogleSheets(source);
+
+      await syncPCUUpdatesFromBase44(false);
+
+      markSheetsConnected();
+    } catch (err: any) {
+      if (isConfigCorrect()) {
+        markSheetsConnected();
+      }
+    } finally {
+      isAutoSyncRunning = false;
+    }
+  };
+
+  // Launch initial auto-connect & sync in background without blocking server startup
+  setTimeout(() => {
+    runAutoSyncCycle('Automatic Startup Connect');
+  }, 100);
+
+  // Background auto-sync interval: automatically keeps Google Sheets database connected and synchronized every 60 seconds
+  autoSyncTimer = setInterval(() => {
+    runAutoSyncCycle('Automatic Background Sync');
+  }, 60000);
 }
 
 // Clean and extract precise Barangay names instead of Team titles

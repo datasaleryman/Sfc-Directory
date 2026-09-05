@@ -50,6 +50,7 @@ export interface User {
 
 export interface SheetsStatus {
   connected: boolean;
+  autoConnected?: boolean;
   lastAttempt: string | null;
   lastSuccess: string | null;
   error: string | null;

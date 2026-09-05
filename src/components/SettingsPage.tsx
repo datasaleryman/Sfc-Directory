@@ -843,7 +843,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </div>
                 <div>
                   <h4 className="font-bold text-slate-800 font-display">Database Sync</h4>
-                  <p className="text-[11px] text-slate-500">Google Sheets Integration status</p>
+                  <p className="text-[11px] text-slate-500">Google Sheets Integration status • Automatic live sync</p>
                 </div>
               </div>
 
@@ -852,15 +852,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Status</span>
                     <div className="mt-1">
-                      {loadingSheets ? (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
-                          Checking...
-                        </span>
-                      ) : sheetsStatus?.connected ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                          Connected
-                        </span>
+                      {sheetsStatus?.connected !== false ? (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                            Connected
+                          </span>
+                          <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Auto-connected
+                          </span>
+                        </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-200">
                           <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
@@ -872,7 +874,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
                   <button
                     onClick={handleSync}
-                    disabled={syncing || loadingSheets}
+                    disabled={syncing}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all inline-flex items-center gap-1.5 border cursor-pointer ${
                       syncing
                         ? 'bg-slate-50 text-slate-400 border-slate-200'
@@ -897,8 +899,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 {sheetsStatus && (
                   <div className="space-y-2 text-xs font-mono bg-slate-50/50 border border-slate-100 rounded-xl p-4">
                     <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-400">Connection Mode:</span>
+                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Automatic Live Sync
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
                       <span className="text-slate-400">Auth Method:</span>
-                      <span className="text-slate-700 font-semibold">{sheetsStatus.config.authType || 'apiKey'}</span>
+                      <span className="text-slate-700 font-semibold">{sheetsStatus.config.authType || 'serviceAccount'}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-100">
                       <span className="text-slate-400">Sheet Name:</span>

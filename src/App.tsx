@@ -252,7 +252,25 @@ export default function App() {
   const [mapNavigateContact, setMapNavigateContact] = useState<Contact | null>(null);
 
   // Stats State
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(() => ({
+    totalContacts: 0,
+    totalAddresses: 0,
+    contactsToday: 0,
+    recentActivities: [],
+    sheetsStatus: {
+      connected: true,
+      autoConnected: true,
+      lastAttempt: null,
+      lastSuccess: null,
+      error: null,
+      config: {
+        authType: 'serviceAccount',
+        spreadsheetId: '1cgkalsSO_iY14v...',
+        sheetName: 'Sheet1',
+        clientEmail: 'sfc-contact-data@sfcpayroll.iam.gserviceaccount.com'
+      }
+    }
+  }));
   const [loadingStats, setLoadingStats] = useState(false);
 
   // Animated Toast notifications

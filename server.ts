@@ -95,7 +95,10 @@ export async function getApp() {
   // Middleware to ensure contacts are loaded/synchronized from Google Sheets before accessing contact routes
   const ensureSyncedMiddleware = async (req: Request, res: Response, next: any) => {
     try {
-      await ensureContactsSynced();
+      // Trigger background sync asynchronously without blocking HTTP requests
+      ensureContactsSynced().catch((err: any) => {
+        console.error('[Sync Middleware] Non-blocking background sync notice:', err.message);
+      });
       next();
     } catch (err: any) {
       console.error('[Sync Middleware] Failed to ensure contacts are synced:', err.message);
@@ -105,7 +108,6 @@ export async function getApp() {
 
   app.use('/api/contacts', ensureSyncedMiddleware);
   app.use('/api/base44/households', ensureSyncedMiddleware);
-  app.use('/api/dashboard/stats', ensureSyncedMiddleware);
 
   // --- API Endpoints ---
 
