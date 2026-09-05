@@ -390,23 +390,41 @@ export function isBarangayTombstoned(bg: string): boolean {
   });
 }
 
-export function isContactTombstoned(c: { id?: number | string; full_name?: string; barangay?: string }): boolean {
+export function isContactTombstoned(c: { id?: number | string; full_name?: string; barangay?: string; contact_number?: string }): boolean {
   if (!c) return false;
   if (c.barangay && isBarangayTombstoned(c.barangay)) return true;
   const cName = (c.full_name || '').trim();
   const cBarangay = (c.barangay || '').trim();
-  const cId = c.id !== undefined && c.id !== null ? c.id.toString() : '';
+  const cId = c.id !== undefined && c.id !== null ? c.id.toString().trim() : '';
+  const cNumber = ((c as any).contact_number || '').trim().replace(/[^0-9]/g, '');
 
   return deletedContactsCache.some(del => {
     // 1. Match by exact ID if available
-    if (cId && del.id !== undefined && del.id !== null && del.id.toString() === cId) return true;
+    if (cId && del.id !== undefined && del.id !== null && del.id.toString().trim() === cId) return true;
     
-    // 2. Match by Name and Barangay (extremely robust / case-insensitive / word-order insensitive)
-    if (cName && del.full_name && normalizeCompareName(del.full_name, cName)) {
+    // 2. Match by Contact Number (if valid number >= 7 digits) and similar name
+    if (cNumber && cNumber.length >= 7 && (del as any).contact_number) {
+      const delNumber = ((del as any).contact_number || '').trim().replace(/[^0-9]/g, '');
+      if (delNumber === cNumber && cName && del.full_name && normalizeCompareName(del.full_name, cName)) {
+        return true;
+      }
+    }
+
+    // 3. Match by Name and Barangay (or purely Name if submitted to Base44)
+    if (cName && del.full_name && (normalizeCompareName(del.full_name, cName) || cName.toLowerCase() === del.full_name.toLowerCase().trim())) {
+      // If contact was submitted to Base44, match purely by Name! (A person submitted to Base44 must NEVER reappear in PCU Directory under ANY folder or address)
+      if ((del as any).submitted_to_base44) {
+        return true;
+      }
       if (!cBarangay || !del.barangay) return true;
       
       const b1 = normalizeBarangayName(del.barangay).toLowerCase().trim();
       const b2 = normalizeBarangayName(cBarangay).toLowerCase().trim();
+      const isPlaceholder = (b: string) => 
+        !b || b === 'no address' || b === 'no barangay' || b === 'not specified' || b === 'all addresses' || b === 'n/a';
+      if (isPlaceholder(b1) || isPlaceholder(b2)) {
+        return true;
+      }
       if (b1 === b2 || isBarangayMatch(del.barangay, cBarangay) || b1.includes(b2) || b2.includes(b1)) {
         return true;
       }
@@ -1104,9 +1122,9 @@ export async function initDb() {
         if (updated) migrated = true;
         return anyC as Contact;
       });
-      // Filter out auto-synced base44 items & tombstoned contacts and strictly deduplicate by Full Name
+      // Filter out auto-synced base44 items & tombstoned/submitted contacts and strictly deduplicate by Full Name
       contactsCache = deduplicateContactsByName(
-        contactsCache.filter(c => c && !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay))
+        contactsCache.filter(c => c && !c.deleted_at && !isContactTombstoned(c) && !isBarangayTombstoned(c.barangay) && !isContactSubmitted(c))
       );
       safeWriteFileSync(CONTACTS_FILE, JSON.stringify(contactsCache, null, 2));
     }
@@ -3008,6 +3026,16 @@ export function isContactSubmitted(c: Contact): boolean {
     );
     if (hasPcu) return true;
   }
+  // Check if contact was submitted to Base44 in deletedContactsCache
+  if (Array.isArray(deletedContactsCache) && deletedContactsCache.length > 0) {
+    const isSub = deletedContactsCache.some(d => 
+      Boolean((d as any).submitted_to_base44) && (
+        (c.id && d.id && c.id.toString() === d.id.toString()) ||
+        (d.full_name && normalizeCompareName(c.full_name, d.full_name))
+      )
+    );
+    if (isSub) return true;
+  }
   return false;
 }
 
@@ -3015,6 +3043,7 @@ export function isContactSubmitted(c: Contact): boolean {
 export function isAvailableForDirectory(c: Contact): boolean {
   if (!c || c.deleted_at) return false;
   if (c.added_from_print_list === false) return false;
+  if (isContactTombstoned(c)) return false;
   return !isContactSubmitted(c);
 }
 
@@ -3595,7 +3624,41 @@ export async function saveContactToBase44(contact: Contact, username: string): P
 
     console.log(`[Base44 SDK] Contact "${contact.full_name}" successfully saved permanently to Base44 database.`);
   } catch (err: any) {
-    console.warn(`[Base44 SDK Warning] Failed to save contact to Base44 database:`, err.message || err);
+    console.warn(`[Base44 SDK Warning] Failed to save contact to Base44 database entity:`, err.message || err);
+    // Still ensure it is safely stored in the Base44 local households database cache
+    try {
+      if (fs.existsSync(HOUSEHOLDS_CACHE_FILE)) {
+        const data = fs.readFileSync(HOUSEHOLDS_CACHE_FILE, 'utf-8');
+        const list = data ? JSON.parse(data) : [];
+        const recordToStore = {
+          id: `hh_${contact.id}`,
+          contactId: contact.id,
+          fullName: contact.full_name,
+          full_name: contact.full_name,
+          barangay: contact.barangay,
+          purok: contact.purok,
+          contact: contact.contact_number,
+          contact_number: contact.contact_number,
+          isSubmitted: true,
+          status: 'approved',
+          submittedAt: new Date().toISOString(),
+          submittedBy: username
+        };
+        const idx = list.findIndex((h: any) => 
+          h.id === recordToStore.id || 
+          h.contactId === contact.id || 
+          (h.fullName && h.fullName.trim().toUpperCase() === (contact.full_name || '').trim().toUpperCase())
+        );
+        if (idx !== -1) {
+          list[idx] = { ...list[idx], ...recordToStore };
+        } else {
+          list.unshift(recordToStore);
+        }
+        safeWriteFileSync(HOUSEHOLDS_CACHE_FILE, JSON.stringify(list, null, 2), 'utf-8');
+      }
+    } catch (e) {
+      console.error('[Base44 Emergency Cache] Failed to write local fallback:', e);
+    }
   }
 }
 
@@ -4145,22 +4208,14 @@ export async function deleteContactPermanentlyFromGoogleSheets(contact: {
       await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     } else {
-      console.log(`[Google Sheets] Contact "${targetName || targetIdStr}" not found as explicit row. Performing sheet sync to ensure removal...`);
-      await rewriteAllContactsToGoogleSheets();
+      console.log(`[Google Sheets] Contact "${targetName || targetIdStr}" not found in sheet (${sheetName}) - already absent.`);
       await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     }
   } catch (err: any) {
     console.error('[Google Sheets] Error deleting contact row from Google Sheets:', err.message || err);
     handleGoogleSheetsError(err, 'deleteContactPermanentlyFromGoogleSheets');
-    try {
-      await rewriteAllContactsToGoogleSheets();
-      await forwardToWebApp('delete', contact).catch(() => {});
-      return true;
-    } catch (err2: any) {
-      console.error('[Google Sheets] Fallback rewrite failed:', err2.message || err2);
-      return false;
-    }
+    return false;
   }
 }
 
@@ -5407,8 +5462,9 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const formattedBarangay = rawBarangay.trim() ? normalizeBarangayName(rawBarangay) : 'NO ADDRESS';
 
     // Check if this contact has been permanently deleted (tombstoned)
-    if (isContactTombstoned({ id, full_name: formattedName, barangay: formattedBarangay })) {
-      deleteContactPermanentlyFromGoogleSheets({ id, full_name: formattedName, barangay: formattedBarangay }).catch(() => {});
+    if (isContactTombstoned({ id, full_name: formattedName, barangay: formattedBarangay, contact_number: rawNumber }) ||
+        isContactTombstoned({ id, full_name: rawName, barangay: rawBarangay, contact_number: rawNumber })) {
+      deleteContactPermanentlyFromGoogleSheets({ id, full_name: formattedName, barangay: formattedBarangay, contact_number: rawNumber }).catch(() => {});
       continue;
     }
 
@@ -5416,15 +5472,20 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     const existingLocal = contactsCache.find(lc => 
       (lc.id && id && lc.id.toString() === id.toString()) || 
       (normalizeCompareName(lc.full_name, rawName) && 
-       normalizeBarangayName(lc.barangay).toLowerCase() === formattedBarangay.toLowerCase())
+       (normalizeBarangayName(lc.barangay).toLowerCase() === formattedBarangay.toLowerCase() || !lc.barangay || !formattedBarangay))
     );
 
-    const matchedUpdate = pcuUpdatesCache.find(p => p.contactId === id || (existingLocal && p.contactId === existingLocal.id) || normalizeCompareName(p.fullName, rawName));
+    const matchedUpdate = pcuUpdatesCache.find(p => 
+      (id && p.contactId && p.contactId.toString() === id.toString()) || 
+      (existingLocal && p.contactId && p.contactId.toString() === existingLocal.id.toString()) || 
+      normalizeCompareName(p.fullName, rawName) ||
+      normalizeCompareName(p.fullName, formattedName)
+    );
 
     // Check if this contact has already been submitted to Base44 database
-    const isAlreadySubmitted = (existingLocal && isContactSubmitted(existingLocal)) || Boolean(matchedUpdate);
+    const isAlreadySubmitted = (existingLocal && isContactSubmitted(existingLocal)) || Boolean(matchedUpdate) || isContactSubmitted({ id, full_name: formattedName, barangay: formattedBarangay, contact_number: rawNumber } as any);
     if (isAlreadySubmitted) {
-      deleteContactPermanentlyFromGoogleSheets({ id, full_name: formattedName, barangay: formattedBarangay }).catch(() => {});
+      deleteContactPermanentlyFromGoogleSheets({ id, full_name: formattedName, barangay: formattedBarangay, contact_number: rawNumber }).catch(() => {});
       continue;
     }
 
@@ -5485,6 +5546,9 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
   const mergedContacts: Contact[] = [...newContacts];
   
   for (const lc of contactsCache) {
+    if (!lc || lc.deleted_at || isContactTombstoned(lc) || isContactSubmitted(lc)) {
+      continue;
+    }
     const alreadyExists = mergedContacts.some(mc => 
       (mc.id && lc.id && mc.id.toString() === lc.id.toString()) || 
       (normalizeCompareName(mc.full_name, lc.full_name) && 
@@ -5525,7 +5589,9 @@ export async function syncWithGoogleSheets(username: string): Promise<{ success:
     }
   }
 
-  contactsCache = deduplicateContactsByName(mergedContacts.filter(c => !c.deleted_at));
+  contactsCache = deduplicateContactsByName(
+    mergedContacts.filter(c => c && !c.deleted_at && !isContactTombstoned(c) && !isContactSubmitted(c))
+  );
   syncPCUFieldsToCache();
   await saveContacts();
 
@@ -7164,44 +7230,76 @@ export async function addPCUUpdate(
     });
     contact.updated_at = new Date().toISOString();
 
-    // 1. Tombstone in deletedContactsCache so it is NEVER re-imported from Google Sheets or reloaded
-    deletedContactsCache.push({
+    // 1. CONFIRM BASE44 SUBMISSION:
+    console.log(`[Submission Pipeline] Step 1: Submitting contact "${fullName}" to Base44 database...`);
+    try {
+      await saveContactToBase44(contact, username);
+      console.log(`[Submission Pipeline] Step 1 Confirmed: Contact "${fullName}" saved to Base44 database.`);
+    } catch (bErr: any) {
+      console.error(`[Submission Pipeline] Step 1 Error: Base44 save failed:`, bErr);
+      throw new Error(`Failed to submit contact to Base44 database: ${bErr.message || bErr}. Deletion from Google Sheets and PCU Directory aborted.`);
+    }
+
+    // 2. PERMANENTLY DELETE CONTACT FROM GOOGLE SHEETS:
+    let sheetsSyncSuccess = true;
+    let sheetsSyncWarning: string | null = null;
+    resetGoogleSheetsCooldown();
+    if (sheetsConfig.syncEnabled) {
+      try {
+        console.log(`[Submission Pipeline] Step 2: Permanently deleting contact "${fullName}" from Google Sheets database...`);
+        const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
+        if (!deletedFromSheets) {
+          sheetsSyncSuccess = false;
+          sheetsSyncWarning = 'Google Sheets row deletion could not be verified.';
+        } else {
+          console.log(`[Submission Pipeline] Step 2 Confirmed: Contact "${fullName}" permanently deleted from Google Sheets.`);
+        }
+      } catch (err: any) {
+        sheetsSyncSuccess = false;
+        sheetsSyncWarning = err.message || 'Error deleting row from Google Sheets';
+        console.error('[Submission Pipeline] Step 2 Error permanently deleting submitted contact from Google Sheets:', sheetsSyncWarning);
+      }
+    }
+    await forwardToWebApp('delete', contact).catch(() => {});
+
+    // 3. REMOVE FROM PCU DIRECTORY & RECORD TOMBSTONE:
+    console.log(`[Submission Pipeline] Step 3: Permanently removing contact "${fullName}" from PCU Directory and recording tombstone...`);
+    const tombIdx = deletedContactsCache.findIndex(d => 
+      (contact.id && d.id === contact.id) || 
+      (contact.full_name && d.full_name && normalizeCompareName(d.full_name, contact.full_name))
+    );
+    const tombEntry = {
       id: contact.id,
       full_name: contact.full_name,
       barangay: contact.barangay,
+      contact_number: contact.contact_number,
       deletedAt: new Date().toISOString(),
       submitted_to_base44: true
-    });
+    };
+    if (tombIdx !== -1) {
+      deletedContactsCache[tombIdx] = { ...deletedContactsCache[tombIdx], ...tombEntry };
+    } else {
+      deletedContactsCache.push(tombEntry);
+    }
     await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
     syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
 
-    // 2. Permanently remove from active contactsCache directory
+    // Permanently remove from active contactsCache directory across all matching instances
     const targetContactId = contact.id;
     const targetContactName = contact.full_name;
     contactsCache = contactsCache.filter(c => 
       c && c.id !== targetContactId && !normalizeCompareName(c.full_name, targetContactName)
     );
     await saveContacts();
-    await addActivity(username, `Uploaded PCU File "${fileName}" and submitted to Base44 database for: "${fullName}"`);
+    await addActivity(username, `Uploaded PCU File "${fileName}", submitted to Base44, and permanently deleted from PCU Directory: "${fullName}"`);
 
-    // 3. PERMANENT DELETION ON GOOGLE SHEETS:
-    // Once submitted to Base44 database, contact is permanently deleted from Google Sheets database
-    resetGoogleSheetsCooldown();
-    if (sheetsConfig.syncEnabled) {
-      try {
-        console.log(`[Google Sheets] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
-        const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
-        if (!deletedFromSheets) {
-          await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
-        }
-      } catch (err: any) {
-        console.error('[Google Sheets] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
-        await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets] Fallback rewrite failed:', err2));
-      }
-    }
-
-    await forwardToWebApp('delete', contact).catch(() => {});
-    await saveContactToBase44(contact, username).catch(err => console.warn('Error saving uploaded contact to Base44:', err));
+    return {
+      ...newUpdate,
+      sheetsSyncSuccess,
+      sheetsSyncWarning: sheetsSyncWarning || undefined,
+      isSubmitted: true,
+      permanentlyRemoved: true
+    };
   } else {
     await addActivity(username, `Uploaded PCU File "${fileName}" for unregistered household: "${fullName}"`);
   }
@@ -7415,21 +7513,61 @@ export async function addPCUUpdatesMultiple(
     contact.isSubmitted = true;
     contact.submittedAt = lastUploadedAt;
 
-    // 1. Tombstone in deletedContactsCache so it is NEVER re-imported from Google Sheets or reloaded
-    const alreadyTombstoned = deletedContactsCache.some(d => d.id === contact.id);
-    if (!alreadyTombstoned) {
-      deletedContactsCache.push({
-        id: contact.id,
-        full_name: contact.full_name,
-        barangay: contact.barangay,
-        deletedAt: new Date().toISOString(),
-        submitted_to_base44: true
-      });
-      await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
-      syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
+    // 1. CONFIRM BASE44 SUBMISSION:
+    console.log(`[Submission Pipeline] Step 1: Submitting contact "${fullName}" to Base44 database...`);
+    try {
+      await saveContactToBase44(contact, username);
+      console.log(`[Submission Pipeline] Step 1 Confirmed: Contact "${fullName}" saved to Base44 database.`);
+    } catch (bErr: any) {
+      console.error(`[Submission Pipeline] Step 1 Error: Base44 save failed:`, bErr);
+      throw new Error(`Failed to submit contact to Base44 database: ${bErr.message || bErr}. Deletion from Google Sheets and PCU Directory aborted.`);
     }
 
-    // 2. Permanently remove from active contactsCache directory
+    // 2. PERMANENTLY DELETE CONTACT FROM GOOGLE SHEETS:
+    let sheetsSyncSuccess = true;
+    let sheetsSyncWarning: string | null = null;
+    resetGoogleSheetsCooldown();
+    if (sheetsConfig.syncEnabled) {
+      try {
+        console.log(`[Submission Pipeline] Step 2: Permanently deleting contact "${fullName}" from Google Sheets database...`);
+        const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
+        if (!deletedFromSheets) {
+          sheetsSyncSuccess = false;
+          sheetsSyncWarning = 'Google Sheets row deletion could not be verified.';
+        } else {
+          console.log(`[Submission Pipeline] Step 2 Confirmed: Contact "${fullName}" permanently deleted from Google Sheets.`);
+        }
+      } catch (err: any) {
+        sheetsSyncSuccess = false;
+        sheetsSyncWarning = err.message || 'Error deleting row from Google Sheets';
+        console.error('[Submission Pipeline] Step 2 Error permanently deleting submitted contact from Google Sheets:', sheetsSyncWarning);
+      }
+    }
+    await forwardToWebApp('delete', contact).catch(() => {});
+
+    // 3. REMOVE FROM PCU DIRECTORY & RECORD TOMBSTONE:
+    console.log(`[Submission Pipeline] Step 3: Permanently removing contact "${fullName}" from PCU Directory and recording tombstone...`);
+    const tombIdx = deletedContactsCache.findIndex(d => 
+      (contact.id && d.id === contact.id) || 
+      (contact.full_name && d.full_name && normalizeCompareName(d.full_name, contact.full_name))
+    );
+    const tombEntry = {
+      id: contact.id,
+      full_name: contact.full_name,
+      barangay: contact.barangay,
+      contact_number: contact.contact_number,
+      deletedAt: new Date().toISOString(),
+      submitted_to_base44: true
+    };
+    if (tombIdx !== -1) {
+      deletedContactsCache[tombIdx] = { ...deletedContactsCache[tombIdx], ...tombEntry };
+    } else {
+      deletedContactsCache.push(tombEntry);
+    }
+    await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');
+    syncDeletedRecordsToGoogleSheets().catch(err => console.error('Failed to sync deleted records to Google Sheets:', err));
+
+    // Permanently remove from active contactsCache directory across all matching instances
     const targetContactId = contact.id;
     const targetContactName = contact.full_name;
     contactsCache = contactsCache.filter(c => 
@@ -7438,28 +7576,15 @@ export async function addPCUUpdatesMultiple(
     await saveContacts();
 
     const totalUploadedCount = options?.totalFilesCount || files.length;
-    await addActivity(username, `Uploaded ${totalUploadedCount} PCU File(s) and submitted to Base44 database for: "${fullName}"`);
+    await addActivity(username, `Uploaded ${totalUploadedCount} PCU File(s), submitted to Base44, and permanently deleted from PCU Directory: "${fullName}"`);
 
-    // 3. PERMANENT DELETION ON GOOGLE SHEETS & EXTERNAL SYNCS:
-    // Execute in non-blocking background task so the user's PCU upload responds immediately without waiting on external network APIs
-    (async () => {
-      resetGoogleSheetsCooldown();
-      if (sheetsConfig.syncEnabled) {
-        try {
-          console.log(`[Google Sheets Background] Contact "${fullName}" submitted to Base44. Permanently deleting from Google Sheets database...`);
-          const deletedFromSheets = await deleteContactPermanentlyFromGoogleSheets(contact);
-          if (!deletedFromSheets) {
-            await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets Background] Fallback rewrite failed:', err2));
-          }
-        } catch (err: any) {
-          console.error('[Google Sheets Background] Error permanently deleting submitted contact from Google Sheets:', err.message || err);
-          await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('[Google Sheets Background] Fallback rewrite failed:', err2));
-        }
-      }
-
-      await forwardToWebApp('delete', contact).catch(() => {});
-      await saveContactToBase44(contact, username).catch(err => console.warn('[Base44 Background] Error saving uploaded contact to Base44:', err));
-    })().catch(err => console.error('[Background PCU sync error]:', err));
+    return {
+      ...contact,
+      sheetsSyncSuccess,
+      sheetsSyncWarning: sheetsSyncWarning || undefined,
+      isSubmitted: true,
+      permanentlyRemoved: true
+    };
   } else {
     // Intermediate batch: save updated contactsCache without removing the contact yet
     await saveContacts();

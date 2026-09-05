@@ -527,6 +527,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       // 2. Submit PCU files in safe, fast batches of 4 with on-demand parallel compression
       const BATCH_SIZE = 4;
       const totalBatches = Math.ceil(stagedPcuFiles.length / BATCH_SIZE);
+      let lastResponseData: any = null;
 
       for (let i = 0; i < stagedPcuFiles.length; i += BATCH_SIZE) {
         const batch = stagedPcuFiles.slice(i, i + BATCH_SIZE);
@@ -570,6 +571,10 @@ export const ContactTable: React.FC<ContactTableProps> = ({
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || `Failed to upload batch ${currentBatchNum} of ${totalBatches}.`);
         }
+
+        if (isLastBatch) {
+          lastResponseData = await res.json().catch(() => ({}));
+        }
       }
 
       const submittedContactId = viewContact.id;
@@ -585,7 +590,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setStagedPcuFiles([]);
       fetchContacts();
       onDeleted?.();
-      showToast(`Successfully uploaded ${filesCount} PCU file(s) for "${memberName}"! Transferred to Recent Upload.`, 'success');
+      if (lastResponseData?.sheetsSyncWarning) {
+        showToast(`Submitted "${memberName}" (${filesCount} file(s)) to Base44 database! (Note: Google Sheets deletion: ${lastResponseData.sheetsSyncWarning})`, 'warning');
+      } else {
+        showToast(`Successfully submitted "${memberName}" (${filesCount} file(s)) to Base44 database and permanently deleted from Google Sheets and PCU Directory!`, 'success');
+      }
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {

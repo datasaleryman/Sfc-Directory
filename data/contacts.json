@@ -1,18 +1,5 @@
 [
   {
-    "id": 1784789557796,
-    "full_name": "Rosini, Muereen Bunque",
-    "barangay": "Balangasan",
-    "purok": "Luyo Sa Pnb",
-    "contact_number": "",
-    "created_at": "2026-07-24T08:31:08.440Z",
-    "updated_at": "2026-07-25T07:52:20.174Z",
-    "deleted_at": null,
-    "geotagged": false,
-    "added_locally": false,
-    "added_from_print_list": true
-  },
-  {
     "id": 1784789557798,
     "full_name": "Bonocan, Marlon Subiza",
     "barangay": "Kagawasan",
@@ -527,19 +514,6 @@
     "contact_number": "",
     "created_at": "2026-07-24T08:31:08.447Z",
     "updated_at": "2026-07-25T07:54:49.221Z",
-    "deleted_at": null,
-    "geotagged": false,
-    "added_locally": false,
-    "added_from_print_list": true
-  },
-  {
-    "id": 1784789557864,
-    "full_name": "Flores, Mohammad Nawi",
-    "barangay": "San Pedro",
-    "purok": "",
-    "contact_number": "",
-    "created_at": "2026-07-24T08:31:08.447Z",
-    "updated_at": "2026-08-21T05:12:58.706Z",
     "deleted_at": null,
     "geotagged": false,
     "added_locally": false,
@@ -22601,19 +22575,6 @@
     "contact_number": "9381794376",
     "created_at": "2026-09-02T08:59:22.617Z",
     "updated_at": "2026-09-02T08:59:22.617Z",
-    "deleted_at": null,
-    "geotagged": false,
-    "added_locally": false,
-    "added_from_print_list": true
-  },
-  {
-    "id": 1784789559998,
-    "full_name": "Aguilar, Alkith Jimenez",
-    "barangay": "Kawit",
-    "purok": "Bakhaw B",
-    "contact_number": "9309946290",
-    "created_at": "2026-09-02T08:59:22.620Z",
-    "updated_at": "2026-09-02T08:59:22.620Z",
     "deleted_at": null,
     "geotagged": false,
     "added_locally": false,
