@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit2, Trash2, Eye, FileText, ArrowDownToLine, Loader2, Calendar, Phone, User, Clock, ChevronLeft, ChevronRight, Check, Folder, FolderOpen, ArrowLeft, Grid, List, Plus, Layers, Navigation, Upload, Image, UserCheck, ShieldCheck, CheckSquare, Square, BarChart3, AlertTriangle, CheckCircle2, Lock, ShieldAlert } from 'lucide-react';
 import { Contact } from '../types.js';
+
+export const isContactLocked = (c: Contact | null | undefined): boolean => {
+  if (!c) return false;
+  return Boolean(
+    c.locked ||
+    c.status === 'SUBMITTED' ||
+    c.status === 'LOCKED' ||
+    c.status === 'ALREADY SUBMITTED' ||
+    c.submittedToBase44 ||
+    c.isSubmitted
+  );
+};
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -176,6 +188,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   // Active Modals state
   const [viewContact, setViewContact] = useState<Contact | null>(null);
+  const [alreadySubmittedModalContact, setAlreadySubmittedModalContact] = useState<Contact | null>(null);
   const [isEditingContactInModal, setIsEditingContactInModal] = useState(false);
   const [modalEditFullName, setModalEditFullName] = useState('');
   const [modalEditBarangay, setModalEditBarangay] = useState('');
@@ -185,6 +198,11 @@ export const ContactTable: React.FC<ContactTableProps> = ({
 
   useEffect(() => {
     if (viewContact) {
+      if (isContactLocked(viewContact)) {
+        setAlreadySubmittedModalContact(viewContact);
+        setViewContact(null);
+        return;
+      }
       setModalEditFullName(viewContact.full_name || '');
       setModalEditBarangay(viewContact.barangay || '');
       setModalEditPurok(viewContact.purok || '');
@@ -194,6 +212,15 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       setIsEditingContactInModal(false);
     }
   }, [viewContact]);
+
+  const handleRowOrCardClick = (contact: Contact) => {
+    setHighlightedContactId(contact.id);
+    if (isContactLocked(contact)) {
+      setAlreadySubmittedModalContact(contact);
+    } else {
+      setViewContact(contact);
+    }
+  };
 
   const [highlightedContactId, setHighlightedContactId] = useState<number | string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
@@ -473,6 +500,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   const handlePCUSubmit = async () => {
     if (!viewContact || stagedPcuFiles.length === 0) return;
 
+    if (isContactLocked(viewContact)) {
+      showToast('This contact has already been submitted to Base44 and is permanently locked.', 'warning');
+      setAlreadySubmittedModalContact(viewContact);
+      setViewContact(null);
+      setStagedPcuFiles([]);
+      return;
+    }
+
     // Validate Barangay: Must be provided if missing on contact
     const currentBarangay = (modalEditBarangay || viewContact.barangay || '').trim();
     const isBarangayValid = currentBarangay !== '' && 
@@ -582,18 +617,39 @@ export const ContactTable: React.FC<ContactTableProps> = ({
       const memberName = viewContact.full_name;
       const filesCount = stagedPcuFiles.length;
 
-      // Optimistically remove from directory table immediately so it disappears without delay
-      setContacts(prev => prev.filter(c => c.id !== submittedContactId && (c.full_name || '').trim().toLowerCase() !== submittedName));
-      setTotal(prev => Math.max(0, prev - 1));
+      // Update contact in directory table to permanently locked & SUBMITTED state
+      const updatedLockedContact: Contact = {
+        ...viewContact,
+        ...(lastResponseData && typeof lastResponseData === 'object' ? lastResponseData : {}),
+        isSubmitted: true,
+        status: 'SUBMITTED',
+        locked: true,
+        submittedToBase44: true,
+        submittedAt: new Date().toISOString()
+      };
+
+      setContacts(prev => {
+        const next = prev.map(c => 
+          (c.id === submittedContactId || (c.full_name && c.full_name.trim().toLowerCase() === submittedName))
+            ? { ...c, ...updatedLockedContact }
+            : c
+        );
+        return next.sort((a, b) => {
+          const aLocked = isContactLocked(a);
+          const bLocked = isContactLocked(b);
+          if (!aLocked && bLocked) return -1;
+          if (aLocked && !bLocked) return 1;
+          return 0;
+        });
+      });
 
       setViewContact(null);
       setStagedPcuFiles([]);
       fetchContacts();
-      onDeleted?.();
       if (lastResponseData?.sheetsSyncWarning) {
-        showToast(`Submitted "${memberName}" (${filesCount} file(s)) to Base44 database! (Note: Google Sheets deletion: ${lastResponseData.sheetsSyncWarning})`, 'warning');
+        showToast(`Submitted "${memberName}" (${filesCount} file(s)) to Base44 database! Contact is now permanently locked as SUBMITTED.`, 'warning');
       } else {
-        showToast(`Successfully submitted "${memberName}" (${filesCount} file(s)) to Base44 database and permanently deleted from Google Sheets and PCU Directory!`, 'success');
+        showToast(`Successfully submitted "${memberName}" (${filesCount} file(s)) to Base44 database! Contact is now permanently locked and marked as SUBMITTED.`, 'success');
       }
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -664,7 +720,16 @@ export const ContactTable: React.FC<ContactTableProps> = ({
         throw new Error(data.error || 'Failed to fetch contacts list.');
       }
 
-      setContacts(data.contacts || []);
+      const rawContacts: Contact[] = data.contacts || [];
+      const sortedContacts = [...rawContacts].sort((a, b) => {
+        const aLocked = isContactLocked(a);
+        const bLocked = isContactLocked(b);
+        if (!aLocked && bLocked) return -1;
+        if (aLocked && !bLocked) return 1;
+        return 0;
+      });
+
+      setContacts(sortedContacts);
       setTotal(data.total || 0);
       setTotalPages(data.totalPages || 1);
       setAllPuroks(data.allPuroks || []);
@@ -1694,17 +1759,17 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                     contacts.map((contact, index) => {
                       const itemIndex = (page - 1) * limit + index + 1;
                       const isHighlighted = highlightedContactId === contact.id;
+                      const isLocked = isContactLocked(contact);
                       return (
                         <tr 
                           key={contact.id} 
-                          onClick={() => {
-                            setViewContact(contact);
-                            setHighlightedContactId(contact.id);
-                          }}
+                          onClick={() => handleRowOrCardClick(contact)}
                           className={`${
                             isHighlighted 
                               ? 'bg-amber-100/90 border-l-4 border-l-amber-500 font-bold hover:bg-amber-200/90 text-amber-950 shadow-sm ring-1 ring-amber-500/10' 
-                              : 'hover:bg-slate-50/80'
+                              : isLocked
+                                ? 'bg-slate-100/60 hover:bg-slate-100/90 text-slate-500 border-l-4 border-l-slate-300'
+                                : 'hover:bg-slate-50/80'
                           } transition-all duration-150 cursor-pointer border-b border-slate-100/75`}
                         >
                           <td className="py-3.5 px-5 text-center text-xs font-bold text-slate-400">
@@ -1712,21 +1777,37 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           </td>
                           <td className="py-3.5 px-5 font-bold text-slate-800">
                             <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0 overflow-hidden">
-                                {contact.photo_url ? (
+                              <div className={`w-8 h-8 rounded-full ${
+                                isLocked 
+                                  ? 'bg-slate-200 text-slate-600 border-slate-300' 
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              } font-extrabold text-xs flex items-center justify-center border shrink-0 overflow-hidden`}>
+                                {isLocked ? (
+                                  <Lock className="w-3.5 h-3.5 text-slate-600" />
+                                ) : contact.photo_url ? (
                                   <img src={contact.photo_url} alt={contact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                 ) : (
                                   contact.full_name.charAt(0).toUpperCase()
                                 )}
                               </div>
-                              <div className="flex flex-col">
-                                <span>{contact.full_name}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={isLocked ? 'text-slate-700 font-semibold' : 'text-slate-800'}>{contact.full_name}</span>
+                                {isLocked && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider border border-slate-300 shadow-2xs">
+                                    <Lock className="w-2.5 h-2.5 text-slate-600" />
+                                    SUBMITTED
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
                           <td className="py-3.5 px-5 font-semibold text-slate-700">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200/60 text-amber-900 text-xs font-bold">
-                              <Folder className="w-3 h-3 text-amber-600 fill-amber-300" />
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold ${
+                              isLocked
+                                ? 'bg-slate-200/70 border border-slate-300/80 text-slate-700'
+                                : 'bg-amber-50 border border-amber-200/60 text-amber-900'
+                            }`}>
+                              <Folder className={`w-3 h-3 ${isLocked ? 'text-slate-500 fill-slate-300' : 'text-amber-600 fill-amber-300'}`} />
                               {contact.barangay || 'Unassigned'}
                             </span>
                           </td>
@@ -1744,27 +1825,57 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                           </td>
                           <td className="py-3.5 px-5 text-center">
                             <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setViewContact(contact); }}
-                                className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                                title="View details"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); onEdit(contact); }}
-                                className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                                title="Edit contact"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
-                                className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                title="Delete record"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {isLocked ? (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setAlreadySubmittedModalContact(contact); setHighlightedContactId(contact.id); }}
+                                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                                    title="Contact Already Submitted (Click to view details)"
+                                  >
+                                    <Lock className="w-4 h-4 text-slate-700" />
+                                  </button>
+                                  <button
+                                    disabled={true}
+                                    onClick={(e) => { e.stopPropagation(); showToast('Locked contact cannot be edited.', 'info'); }}
+                                    className="p-1.5 text-slate-300 cursor-not-allowed rounded-lg"
+                                    title="Locked record cannot be edited"
+                                  >
+                                    <Edit2 className="w-4 h-4 opacity-40" />
+                                  </button>
+                                  <button
+                                    disabled={true}
+                                    onClick={(e) => { e.stopPropagation(); showToast('Locked contact cannot be deleted.', 'info'); }}
+                                    className="p-1.5 text-slate-300 cursor-not-allowed rounded-lg"
+                                    title="Locked record cannot be deleted"
+                                  >
+                                    <Trash2 className="w-4 h-4 opacity-40" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setViewContact(contact); }}
+                                    className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                                    title="View details & submit files"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); onEdit(contact); }}
+                                    className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Edit contact"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
+                                    className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Delete record"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1799,36 +1910,48 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                 contacts.map((contact, index) => {
                   const itemIndex = (page - 1) * limit + index + 1;
                   const isHighlighted = highlightedContactId === contact.id;
+                  const isLocked = isContactLocked(contact);
                   return (
                     <div 
                       key={contact.id} 
-                      onClick={() => {
-                        setViewContact(contact);
-                        setHighlightedContactId(contact.id);
-                      }}
+                      onClick={() => handleRowOrCardClick(contact)}
                       className={`${
                         isHighlighted 
                           ? 'bg-amber-100/90 border-l-4 border-l-amber-500 font-bold hover:bg-amber-200/90 text-amber-950 shadow-sm ring-1 ring-amber-500/10' 
-                          : 'hover:bg-slate-50/50'
+                          : isLocked
+                            ? 'bg-slate-100/60 hover:bg-slate-100/90 text-slate-500 border-l-4 border-l-slate-300'
+                            : 'hover:bg-slate-50/50'
                       } p-4 space-y-3 transition-colors cursor-pointer border-b border-slate-100/75`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-100 shrink-0 overflow-hidden">
-                            {contact.photo_url ? (
+                          <div className={`w-9 h-9 rounded-full ${
+                            isLocked 
+                              ? 'bg-slate-200 text-slate-600 border-slate-300' 
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                          } font-extrabold text-xs flex items-center justify-center border shrink-0 overflow-hidden`}>
+                            {isLocked ? (
+                              <Lock className="w-3.5 h-3.5 text-slate-600" />
+                            ) : contact.photo_url ? (
                               <img src={contact.photo_url} alt={contact.full_name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                               contact.full_name.charAt(0).toUpperCase()
                             )}
                           </div>
                           <div className="min-w-0">
-                            <span className="font-bold text-slate-800 text-sm block truncate flex items-center gap-1.5">
+                            <span className={`text-sm block truncate flex items-center gap-1.5 flex-wrap ${
+                              isLocked ? 'font-semibold text-slate-700' : 'font-bold text-slate-800'
+                            }`}>
                               {contact.full_name}
-                              {contact.pcu_file_url && (
+                              {isLocked ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider border border-slate-300 shrink-0">
+                                  <Lock className="w-2.5 h-2.5" /> SUBMITTED
+                                </span>
+                              ) : contact.pcu_file_url ? (
                                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-50 text-blue-600 text-[9px] font-bold shrink-0">
                                   <Check className="w-2.5 h-2.5" /> PCU
                                 </span>
-                              )}
+                              ) : null}
                             </span>
                             <span className="text-[11px] text-slate-400 font-semibold block">{formatDate(contact.created_at)}</span>
                           </div>
@@ -1839,8 +1962,12 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       </div>
 
                       <div className="flex flex-wrap gap-2 text-xs">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200/40 text-amber-900 font-bold">
-                          <Folder className="w-3 h-3 text-amber-600 fill-amber-300" />
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg font-bold ${
+                          isLocked 
+                            ? 'bg-slate-200/70 border border-slate-300/80 text-slate-700' 
+                            : 'bg-amber-50 border border-amber-200/40 text-amber-900'
+                        }`}>
+                          <Folder className={`w-3 h-3 ${isLocked ? 'text-slate-500 fill-slate-300' : 'text-amber-600 fill-amber-300'}`} />
                           {contact.barangay || 'Unassigned'}
                         </span>
                         {contact.purok && (
@@ -1857,27 +1984,57 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                         </span>
 
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setViewContact(contact); }}
-                            className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                            title="View details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onEdit(contact); }}
-                            className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                            title="Edit contact"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                            title="Delete record"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isLocked ? (
+                            <>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setAlreadySubmittedModalContact(contact); setHighlightedContactId(contact.id); }}
+                                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                                title="Contact Already Submitted (Click to view details)"
+                              >
+                                <Lock className="w-4 h-4 text-slate-700" />
+                              </button>
+                              <button
+                                disabled={true}
+                                onClick={(e) => { e.stopPropagation(); showToast('Locked contact cannot be edited.', 'info'); }}
+                                className="p-1.5 text-slate-300 cursor-not-allowed rounded-lg"
+                                title="Locked record cannot be edited"
+                              >
+                                <Edit2 className="w-4 h-4 opacity-40" />
+                              </button>
+                              <button
+                                disabled={true}
+                                onClick={(e) => { e.stopPropagation(); showToast('Locked contact cannot be deleted.', 'info'); }}
+                                className="p-1.5 text-slate-300 cursor-not-allowed rounded-lg"
+                                title="Locked record cannot be deleted"
+                              >
+                                <Trash2 className="w-4 h-4 opacity-40" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setViewContact(contact); }}
+                                className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                                title="View details & submit files"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onEdit(contact); }}
+                                className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                title="Edit contact"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(contact); }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete record"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2290,6 +2447,82 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                   );
                 })()
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Contact Already Submitted & Locked */}
+      <AnimatePresence>
+        {alreadySubmittedModalContact && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-md w-full p-6 text-left shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto my-auto space-y-4"
+            >
+              <div className="flex items-center gap-3.5 pb-2 border-b border-slate-100">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center shrink-0">
+                  <Lock className="w-6 h-6 text-slate-700" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 font-display">Contact Already Submitted</h3>
+                  <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider border border-slate-300">
+                    <Lock className="w-3 h-3 text-slate-600" />
+                    PERMANENTLY LOCKED
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-xs text-amber-900 flex items-start gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-950">
+                    This contact has already been submitted to the Base44 database and is permanently locked.
+                  </p>
+                  <p className="text-amber-800 text-[11px] leading-relaxed">
+                    Re-submission is prevented to preserve database consistency. Staged uploads, file modifications, and editing for this record are strictly disabled.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200/70 rounded-2xl p-4 space-y-2.5 text-xs text-slate-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 font-semibold uppercase text-[10px]">Full Name</span>
+                  <span className="font-bold text-slate-900">{alreadySubmittedModalContact.full_name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 font-semibold uppercase text-[10px]">Barangay</span>
+                  <span className="font-semibold text-slate-800">{alreadySubmittedModalContact.barangay || 'Unassigned'}</span>
+                </div>
+                {alreadySubmittedModalContact.purok && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-semibold uppercase text-[10px]">Purok</span>
+                    <span className="font-semibold text-slate-800">{alreadySubmittedModalContact.purok}</span>
+                  </div>
+                )}
+                {alreadySubmittedModalContact.contact_number && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-semibold uppercase text-[10px]">Contact Number</span>
+                    <span className="font-mono text-slate-800">{alreadySubmittedModalContact.contact_number}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                  <span className="text-slate-400 font-semibold uppercase text-[10px]">Status</span>
+                  <span className="font-extrabold text-slate-800">SUBMITTED (LOCKED)</span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAlreadySubmittedModalContact(null)}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer min-h-[42px]"
+                >
+                  Close
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

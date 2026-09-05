@@ -15,6 +15,9 @@ export interface Contact {
   pcu_uploaded_by?: string;
   pcu_uploaded_at?: string;
   isSubmitted?: boolean;
+  status?: string;
+  locked?: boolean;
+  submittedToBase44?: boolean;
   submittedAt?: string;
   added_from_print_list?: boolean;
   isExistingAccount?: boolean;

@@ -361,6 +361,8 @@ export async function getApp() {
           results.barangayFolders = [{
             barangay: userBarangay,
             count: 0,
+            availableCount: 0,
+            submittedCount: 0,
             purokCount: 0,
             geotaggedCount: 0
           }];
