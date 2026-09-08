@@ -1,0 +1,11 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/api/health",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    { "name": "SESSION_SECRET", "description": "Secret used to sign auth tokens (any long random string). Falls back to a built-in dev default if unset.", "requiredAtBoot": false },
+    { "name": "GOOGLE_SERVICE_ACCOUNT_EMAIL", "description": "Google Cloud service account email for Google Sheets sync (optional; can also be configured in the app's Settings page).", "requiredAtBoot": false },
+    { "name": "GOOGLE_PRIVATE_KEY", "description": "Private key of the Google service account for Sheets sync (optional).", "requiredAtBoot": false },
+    { "name": "SPREADSHEET_ID", "description": "ID of the Google Sheet used as the remote backup/sync store (optional).", "requiredAtBoot": false }
+  ]
+}

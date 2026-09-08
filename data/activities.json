@@ -1,5 +1,143 @@
 [
   {
+    "id": "d868f3f3-31c0-4e80-898d-53f1c33f2705",
+    "timestamp": "2026-09-08T07:11:01.316Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "22b4efdd-b033-4216-a025-e2419370a5d0",
+    "timestamp": "2026-09-08T07:10:00.079Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "8b80e4a7-7c3e-4642-830c-0d428c03132f",
+    "timestamp": "2026-09-08T07:09:01.311Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "95fb6dd9-6ead-4830-99cd-3fbc65b79a5b",
+    "timestamp": "2026-09-08T07:07:46.573Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "7f73be00-dc1b-42db-aeaf-f72d815c61d9",
+    "timestamp": "2026-09-08T07:06:44.836Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "9748183f-14a8-44a3-9f3f-9cc49f628c2f",
+    "timestamp": "2026-09-08T07:05:48.536Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "4df7f3c7-7b98-4a77-81fc-b65b48fc4f9c",
+    "timestamp": "2026-09-08T07:04:57.217Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "e74dcd70-5ec0-4bb6-97df-04368f451a69",
+    "timestamp": "2026-09-08T07:04:45.021Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "b32e45a1-f99b-4b99-827d-acd5edb2156d",
+    "timestamp": "2026-09-08T07:03:44.974Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "9575e3a5-55d4-404d-9fe3-7e88584f5fec",
+    "timestamp": "2026-09-08T07:02:44.483Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "b92e6f6f-9e07-4a34-8beb-6459e74fc26b",
+    "timestamp": "2026-09-08T07:01:45.170Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "41ebd7ae-58fa-4c20-928e-fb971b8e11db",
+    "timestamp": "2026-09-08T07:00:45.805Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "d1fe02d4-62fd-467b-9c9e-ebc9c1a56912",
+    "timestamp": "2026-09-08T07:00:04.886Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "497c7758-8268-455e-bb6d-057cf15f2fe3",
+    "timestamp": "2026-09-08T06:59:06.213Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "a6f5963a-7d2a-49ba-9c20-8540a2ad945e",
+    "timestamp": "2026-09-08T06:58:06.979Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "c5542dc1-c4fe-43d9-8296-22e8de57aa3d",
+    "timestamp": "2026-09-08T06:57:06.949Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "f58f1a86-8b3b-43e2-b488-eb576bebe876",
+    "timestamp": "2026-09-08T06:56:06.222Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "e1223f14-350d-4ccc-a15a-67a4d9bbd615",
+    "timestamp": "2026-09-08T06:55:05.348Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "2fc91728-d8f5-4ca3-ab77-188efb74e7b5",
+    "timestamp": "2026-09-08T06:54:06.462Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "ee5030d8-8ce0-4640-aecb-ff30ce0936d9",
+    "timestamp": "2026-09-08T06:53:06.828Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "9052ba6b-77be-4cdb-ac48-d233c99c002a",
+    "timestamp": "2026-09-08T06:52:07.308Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "17d9e34e-e52c-453e-b639-1806f843d7d1",
+    "timestamp": "2026-09-08T06:51:08.399Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "132fc5b3-5261-4071-9c63-c98ee35228be",
+    "timestamp": "2026-09-08T06:50:09.352Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
     "id": "87388a4e-15a6-4d01-98dc-552d28185688",
     "timestamp": "2026-09-06T03:33:49.935Z",
     "username": "testUser",
