@@ -1,5 +1,23 @@
 [
   {
+    "id": "d868f3f3-31c0-4e80-898d-53f1c33f2705",
+    "timestamp": "2026-09-08T07:11:01.316Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "22b4efdd-b033-4216-a025-e2419370a5d0",
+    "timestamp": "2026-09-08T07:10:00.079Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "8b80e4a7-7c3e-4642-830c-0d428c03132f",
+    "timestamp": "2026-09-08T07:09:01.311Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
     "id": "95fb6dd9-6ead-4830-99cd-3fbc65b79a5b",
     "timestamp": "2026-09-08T07:07:46.573Z",
     "username": "Automatic Background Sync",
