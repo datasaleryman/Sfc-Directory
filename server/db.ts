@@ -3797,6 +3797,10 @@ export async function saveContactToBase44(contact: Contact, username: string): P
     } catch (e) {
       console.error('[Base44 Emergency Cache] Failed to write local fallback:', e);
     }
+    // Re-throw so the submission pipeline does NOT permanently delete the contact from
+    // Google Sheets / PCU Directory when it was never actually saved to the Base44 database.
+    // The local fallback cache above preserves the data for a later retry.
+    throw err;
   }
 }
 

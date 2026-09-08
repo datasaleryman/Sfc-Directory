@@ -1,5 +1,59 @@
 [
   {
+    "id": "95fb6dd9-6ead-4830-99cd-3fbc65b79a5b",
+    "timestamp": "2026-09-08T07:07:46.573Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "7f73be00-dc1b-42db-aeaf-f72d815c61d9",
+    "timestamp": "2026-09-08T07:06:44.836Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "9748183f-14a8-44a3-9f3f-9cc49f628c2f",
+    "timestamp": "2026-09-08T07:05:48.536Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "4df7f3c7-7b98-4a77-81fc-b65b48fc4f9c",
+    "timestamp": "2026-09-08T07:04:57.217Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "e74dcd70-5ec0-4bb6-97df-04368f451a69",
+    "timestamp": "2026-09-08T07:04:45.021Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "b32e45a1-f99b-4b99-827d-acd5edb2156d",
+    "timestamp": "2026-09-08T07:03:44.974Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "9575e3a5-55d4-404d-9fe3-7e88584f5fec",
+    "timestamp": "2026-09-08T07:02:44.483Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "b92e6f6f-9e07-4a34-8beb-6459e74fc26b",
+    "timestamp": "2026-09-08T07:01:45.170Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
+    "id": "41ebd7ae-58fa-4c20-928e-fb971b8e11db",
+    "timestamp": "2026-09-08T07:00:45.805Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1819 contacts from Google Sheet."
+  },
+  {
     "id": "d1fe02d4-62fd-467b-9c9e-ebc9c1a56912",
     "timestamp": "2026-09-08T07:00:04.886Z",
     "username": "Automatic Background Sync",
