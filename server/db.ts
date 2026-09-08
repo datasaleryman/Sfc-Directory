@@ -3180,6 +3180,16 @@ export async function getContacts(params: {
     }
   }
 
+  // On a fresh boot, make sure tombstones (incl. contacts submitted to Base44) are pulled from Google Sheets
+  // before serving the directory, so submitted contacts never briefly reappear.
+  if (sheetsConfig.syncEnabled && !deletedRecordsLoadedFromSheets) {
+    try {
+      await pullDeletedRecordsOnce();
+    } catch (err: any) {
+      console.warn('[Sync] Could not pull tombstones before serving directory:', err.message || err);
+    }
+  }
+
   // Ensure all PCU statuses are fully restored on any contacts before querying/filtering
   syncPCUFieldsToCache();
 
@@ -5979,6 +5989,14 @@ export async function syncDeletedRecordsToGoogleSheets(force = false) {
       spreadsheetId = match[1];
     }
 
+    // Merge tombstones already in the sheet into local memory BEFORE rewriting, so multiple server
+    // instances (e.g. live deployment + another environment) never wipe each other's tombstones.
+    try {
+      await pullDeletedRecordsFromGoogleSheets();
+    } catch (mergeErr: any) {
+      console.warn('[Google Sheets] Could not merge remote tombstones before sync:', mergeErr.message || mergeErr);
+    }
+
     const existingSheets = await getExistingSheets(sheets, spreadsheetId);
     markSheetsConnected();
 
@@ -6015,8 +6033,8 @@ export async function syncDeletedRecordsToGoogleSheets(force = false) {
     }
     await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${contactSheetName}!A:Z` });
     const contactRows = [
-      ['ID', 'Full Name', 'Barangay', 'Deleted At'],
-      ...deletedContactsCache.map(c => [c.id || '', c.full_name || '', c.barangay || '', c.deletedAt || ''])
+      ['ID', 'Full Name', 'Barangay', 'Deleted At', 'Submitted To Base44'],
+      ...deletedContactsCache.map(c => [c.id || '', c.full_name || '', c.barangay || '', c.deletedAt || '', c.submitted_to_base44 ? 'TRUE' : 'FALSE'])
     ];
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -6108,7 +6126,7 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
 
     const rangesToFetch: { name: string; range: string }[] = [];
     if (existingSheets.has(bgSheetName)) rangesToFetch.push({ name: bgSheetName, range: `${bgSheetName}!A:A` });
-    if (existingSheets.has(contactSheetName)) rangesToFetch.push({ name: contactSheetName, range: `${contactSheetName}!A:D` });
+    if (existingSheets.has(contactSheetName)) rangesToFetch.push({ name: contactSheetName, range: `${contactSheetName}!A:E` });
     if (existingSheets.has(existSheetName)) rangesToFetch.push({ name: existSheetName, range: `${existSheetName}!A:D` });
     if (existingSheets.has(userSheetName)) rangesToFetch.push({ name: userSheetName, range: `${userSheetName}!A:C` });
 
@@ -6143,13 +6161,16 @@ export async function pullDeletedRecordsFromGoogleSheets(): Promise<boolean> {
           })).filter(c => c.full_name);
 
           pulledContacts.forEach(pc => {
-            const alreadyLocal = deletedContactsCache.some(lc => 
+            const localMatch = deletedContactsCache.find(lc => 
               (pc.id && lc.id && pc.id.toString() === lc.id.toString()) ||
               (normalizeCompareName(pc.full_name, lc.full_name) && 
                (pc.submitted_to_base44 || (lc as any).submitted_to_base44 || normalizeBarangayName(pc.barangay).toLowerCase() === normalizeBarangayName(lc.barangay).toLowerCase()))
             );
-            if (!alreadyLocal) {
+            if (!localMatch) {
               deletedContactsCache.push(pc);
+            } else if (pc.submitted_to_base44 && !localMatch.submitted_to_base44) {
+              // Preserve the "submitted to Base44" flag so the contact is blocked by name under any barangay
+              localMatch.submitted_to_base44 = true;
             }
           });
           await safeWriteFile(DELETED_CONTACTS_FILE, JSON.stringify(deletedContactsCache, null, 2), 'utf-8');

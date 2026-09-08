@@ -351,7 +351,7 @@
   },
   {
     "username": "rabanosjoebert",
-    "passwordHash": "2e3a3067c73f4ef5214905cbcfba8bebe5b6917473093d9147a7f25b47d281be",
+    "passwordHash": "e4215805a036cd9a0ea64a2248a7e6d479bcf9e2477394166fb57cdc3f5f5ebb",
     "role": "ADMIN",
     "displayName": "rabanosjoebert",
     "avatarDataUrl": "",
@@ -360,8 +360,8 @@
     "barangay": "Balangasan",
     "status": "Active",
     "createdAt": "2026-07-25T06:29:50.637Z",
-    "passwordPlain": "2e3a3067c73f4ef5214905cbcfba8bebe5b6917473093d9147a7f25b47d281be",
-    "updatedAt": "2026-08-26T02:33:35.167Z"
+    "passwordPlain": "joebert",
+    "updatedAt": "2026-09-08T08:39:11.926Z"
   },
   {
     "username": "elgenquinimongenot",
@@ -697,7 +697,7 @@
     "status": "Active",
     "createdAt": "2026-08-01T08:04:41.748Z",
     "passwordPlain": "f50b0e8a7638f5b0bdc1b3505b93f54a6916ec2d683a52e3d8a34b01a557e635",
-    "updatedAt": "2026-08-26T02:33:35.168Z"
+    "updatedAt": "2026-09-08T07:21:08.334Z"
   },
   {
     "username": "fleahmyrtleaplicador",
@@ -1468,5 +1468,19 @@
     "createdAt": "2026-09-05T02:42:59.265Z",
     "passwordPlain": "rose",
     "updatedAt": "2026-09-05T02:42:59.265Z"
+  },
+  {
+    "username": "joebert",
+    "passwordHash": "e4215805a036cd9a0ea64a2248a7e6d479bcf9e2477394166fb57cdc3f5f5ebb",
+    "role": "IT",
+    "displayName": "joebert aranez",
+    "avatarDataUrl": "",
+    "fullName": "joebert aranez",
+    "email": "joebert@gmail.com",
+    "barangay": "Balangasan",
+    "status": "Active",
+    "createdAt": "2026-09-08T08:42:41.157Z",
+    "passwordPlain": "joebert",
+    "updatedAt": "2026-09-08T08:42:41.157Z"
   }
 ]
