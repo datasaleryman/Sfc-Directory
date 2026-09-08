@@ -1,5 +1,89 @@
 [
   {
+    "id": "6a73dea2-e844-4ea2-afab-4384b2f579ed",
+    "timestamp": "2026-09-08T08:53:22.240Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1820 contacts from Google Sheet."
+  },
+  {
+    "id": "7b8a5355-13ab-459c-90f8-34977ae76213",
+    "timestamp": "2026-09-08T08:52:23.028Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1820 contacts from Google Sheet."
+  },
+  {
+    "id": "e89b83de-d4d1-4647-8f3d-d9bdfed6f0d0",
+    "timestamp": "2026-09-08T08:51:56.324Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1820 contacts from Google Sheet."
+  },
+  {
+    "id": "154ae71d-1961-4b5a-9c91-182eeb3e33a7",
+    "timestamp": "2026-09-08T08:50:57.522Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1822 contacts from Google Sheet."
+  },
+  {
+    "id": "92d87a75-fa99-45b3-948c-13a5da9d0c90",
+    "timestamp": "2026-09-08T08:49:57.239Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1822 contacts from Google Sheet."
+  },
+  {
+    "id": "42de9f8b-6127-47a0-8776-0d193fe6e8c8",
+    "timestamp": "2026-09-08T08:49:25.888Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1822 contacts from Google Sheet."
+  },
+  {
+    "id": "a68e09a6-debc-42eb-99fe-4c9836d32687",
+    "timestamp": "2026-09-08T08:48:27.927Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1822 contacts from Google Sheet."
+  },
+  {
+    "id": "4a65eb87-feb4-4b4b-b1bd-788aeb1d2475",
+    "timestamp": "2026-09-08T08:47:48.391Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1823 contacts from Google Sheet."
+  },
+  {
+    "id": "0df6cc88-4d10-42c0-9bf6-c81438f1ec8f",
+    "timestamp": "2026-09-08T08:46:46.000Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1823 contacts from Google Sheet."
+  },
+  {
+    "id": "12efbc78-ab46-4c73-8450-2bf8231c2e53",
+    "timestamp": "2026-09-08T08:45:46.200Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1825 contacts from Google Sheet."
+  },
+  {
+    "id": "846be7cd-f7af-4ca9-952d-721bcd66256e",
+    "timestamp": "2026-09-08T08:44:47.693Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1825 contacts from Google Sheet."
+  },
+  {
+    "id": "a427ff53-888a-4953-ae54-98e8888b1488",
+    "timestamp": "2026-09-08T08:44:00.044Z",
+    "username": "admin",
+    "action": "Uploaded 1 PCU File(s), submitted to Base44, and permanently deleted from PCU Directory and Google Sheets database: \"Zz Base44 Testcontact\""
+  },
+  {
+    "id": "36dba52b-6240-4e7e-8032-3b2b22531904",
+    "timestamp": "2026-09-08T08:43:49.305Z",
+    "username": "admin",
+    "action": "Added contact: \"Zz Base44 Testcontact\" (09170000001)"
+  },
+  {
+    "id": "516a86c7-05e5-42da-bba3-a6cd01ac168f",
+    "timestamp": "2026-09-08T08:43:49.243Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
     "id": "d868f3f3-31c0-4e80-898d-53f1c33f2705",
     "timestamp": "2026-09-08T07:11:01.316Z",
     "username": "Automatic Background Sync",

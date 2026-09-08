@@ -18,12 +18,6 @@
     "deletedAt": "2026-09-04T14:30:21.476Z"
   },
   {
-    "id": 1784789560141,
-    "full_name": "Testsyncuser, Automation Deletion",
-    "barangay": "Balangasan",
-    "deletedAt": "2026-09-04T23:32:28.068Z"
-  },
-  {
     "id": 1784789557864,
     "full_name": "Flores, Mohammad Nawi",
     "barangay": "San Pedro",
@@ -62,6 +56,97 @@
     "full_name": "Yator, Delce Nepomuceno",
     "barangay": "Dumagoc",
     "deletedAt": "2026-09-08T06:28:07.253Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789560141,
+    "full_name": "Testsyncuser, Automation Deletion",
+    "barangay": "Balangasan",
+    "deletedAt": "2026-09-04T23:32:28.068Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 100016,
+    "full_name": "Baldado, Athena Lousie Gaje",
+    "barangay": "Balangasan",
+    "deletedAt": "2026-09-08T07:27:40.139Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789559169,
+    "full_name": "Bartiquil, Daniel May Fiel",
+    "barangay": "Dao",
+    "deletedAt": "2026-09-08T07:40:59.418Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 100017,
+    "full_name": "Baldado, Emma Gaje",
+    "barangay": "Balangasan",
+    "deletedAt": "2026-09-08T07:45:49.858Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789558029,
+    "full_name": "Cabanes, Rubelyn Casag",
+    "barangay": "Lumbia",
+    "deletedAt": "2026-09-08T08:45:58.372Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789560048,
+    "full_name": "Vasadre, Bea Sabaricos",
+    "barangay": "Napolan",
+    "deletedAt": "2026-09-08T08:34:36.526Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789560049,
+    "full_name": "Vasadre, Aaron Jay Sabaricos",
+    "barangay": "Napolan",
+    "deletedAt": "2026-09-08T08:40:38.161Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789558979,
+    "full_name": "Hindoy, Mika Ellah",
+    "barangay": "Balangasan",
+    "deletedAt": "2026-09-08T08:42:05.768Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789558118,
+    "full_name": "Bucog, Maria Theresa Perocillo",
+    "barangay": "Napolan",
+    "deletedAt": "2026-09-08T08:47:49.244Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789559168,
+    "full_name": "Bartiquil, Aisa Fiel",
+    "barangay": "Dao",
+    "deletedAt": "2026-09-08T08:33:06.083Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789558080,
+    "full_name": "Palmero, Juanita Villame",
+    "barangay": "Balangasan",
+    "deletedAt": "2026-09-08T08:37:37.164Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789558608,
+    "full_name": "Clemen, Daesy Jimeno",
+    "barangay": "Kawit",
+    "deletedAt": "2026-09-08T08:46:01.363Z",
+    "submitted_to_base44": false
+  },
+  {
+    "id": 1784789558119,
+    "full_name": "Bucog, Marry Grace Perocillo",
+    "barangay": "Napolan",
+    "deletedAt": "2026-09-08T08:51:01.048Z",
     "submitted_to_base44": false
   }
 ]

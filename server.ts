@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import http from 'http';
 import {
   initDb,
   getContacts,
@@ -80,7 +81,7 @@ import {
   AuthenticatedRequest
 } from './server/auth.js';
 
-export async function getApp() {
+export async function getApp(httpServer?: http.Server) {
   // Initialize the fast file-backed database cache
   await initDb();
 
@@ -1241,7 +1242,11 @@ export async function getApp() {
     // Integrate Vite development server middleware dynamically
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        // Share the Express HTTP server for the HMR WebSocket so live reload works behind a single-port proxy
+        hmr: httpServer ? { server: httpServer } : undefined
+      },
       appType: 'spa'
     });
     app.use(vite.middlewares);
@@ -1258,9 +1263,11 @@ export async function getApp() {
 }
 
 if (process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
-  getApp().then((app) => {
+  const httpServer = http.createServer();
+  getApp(httpServer).then((app) => {
     const PORT = 3000;
-    app.listen(PORT, '0.0.0.0', () => {
+    httpServer.on('request', app);
+    httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`[FULLSTACK SERVER] Running on http://0.0.0.0:${PORT} under environment: ${process.env.NODE_ENV || 'development'}`);
     });
   }).catch((err) => {
