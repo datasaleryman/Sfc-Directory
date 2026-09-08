@@ -4362,11 +4362,9 @@ export async function deleteContactPermanentlyFromGoogleSheets(contact: {
       });
 
       console.log(`[Google Sheets] Successfully permanently deleted ${matchingRowIndices.length} row(s) for "${targetName || targetIdStr}" from Google Sheets (${sheetName}).`);
-      await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     } else {
       console.log(`[Google Sheets] Contact "${targetName || targetIdStr}" not found in sheet (${sheetName}) - already absent.`);
-      await forwardToWebApp('delete', contact).catch(() => {});
       return true;
     }
   } catch (err: any) {
@@ -7503,7 +7501,6 @@ export async function addPCUUpdate(
         await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed fallback rewrite to Google Sheets:', err2));
       }
     }
-    await forwardToWebApp('delete', contact).catch(() => {});
 
     // 3. PERMANENTLY DELETE CONTACT FROM PCU DIRECTORY AND RECORD TOMBSTONE:
     console.log(`[Submission Pipeline] Step 3: Permanently deleting contact "${fullName}" from PCU Directory and recording tombstone...`);
@@ -7793,7 +7790,6 @@ export async function addPCUUpdatesMultiple(
         await rewriteAllContactsToGoogleSheets().catch(err2 => console.error('Failed fallback rewrite to Google Sheets:', err2));
       }
     }
-    await forwardToWebApp('delete', contact).catch(() => {});
 
     // 3. PERMANENTLY DELETE CONTACT FROM PCU DIRECTORY AND RECORD TOMBSTONE:
     console.log(`[Submission Pipeline] Step 3: Permanently deleting contact "${fullName}" from PCU Directory and recording tombstone...`);

@@ -1,5 +1,101 @@
 [
   {
+    "id": "8b440e32-572a-428c-956a-5a2c18538d81",
+    "timestamp": "2026-09-08T12:40:43.286Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1784 contacts from Google Sheet."
+  },
+  {
+    "id": "4136635d-4a26-4bbd-ab80-b00c299a59a9",
+    "timestamp": "2026-09-08T12:39:41.696Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1784 contacts from Google Sheet."
+  },
+  {
+    "id": "837fe4d0-aae1-487c-b812-29e88330cb5a",
+    "timestamp": "2026-09-08T12:38:44.330Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1784 contacts from Google Sheet."
+  },
+  {
+    "id": "e060ef9d-32fd-4fbc-b3ee-b81baee9be33",
+    "timestamp": "2026-09-08T12:37:44.145Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1785 contacts from Google Sheet."
+  },
+  {
+    "id": "1436e545-067a-4643-a1cc-fdfbc9567816",
+    "timestamp": "2026-09-08T12:36:49.268Z",
+    "username": "admin",
+    "action": "Uploaded 1 PCU File(s), submitted to Base44, and permanently deleted from PCU Directory and Google Sheets database: \"Test Deletion Yara\""
+  },
+  {
+    "id": "8b0e2e67-62c1-45f9-b796-79e8c8f8133c",
+    "timestamp": "2026-09-08T12:36:46.896Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1785 contacts from Google Sheet."
+  },
+  {
+    "id": "61e2762c-8282-4667-84a8-27727f2c0c79",
+    "timestamp": "2026-09-08T12:36:46.750Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "aed4b466-0cb4-4a86-ab0b-76314921847e",
+    "timestamp": "2026-09-08T12:36:22.494Z",
+    "username": "admin",
+    "action": "Added contact: \"Test Deletion Yara\" (09170000001)"
+  },
+  {
+    "id": "0f14cc27-21d6-4158-8290-5c929c593300",
+    "timestamp": "2026-09-08T12:36:22.463Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "d7899695-4e0a-4d6e-a8d3-376321b6b1b0",
+    "timestamp": "2026-09-08T12:35:24.498Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1785 contacts from Google Sheet."
+  },
+  {
+    "id": "75bf997c-0f9e-483d-a639-03c9c949419a",
+    "timestamp": "2026-09-08T12:33:52.092Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "37eb01b4-aca0-48e6-8828-d19dd543e547",
+    "timestamp": "2026-09-08T12:33:39.965Z",
+    "username": "admin",
+    "action": "Uploaded 1 PCU File(s), submitted to Base44, and permanently deleted from PCU Directory and Google Sheets database: \"Test Deletion Zed\""
+  },
+  {
+    "id": "9dd7b184-3e6e-437f-b5f3-de9b55878b4d",
+    "timestamp": "2026-09-08T12:33:23.175Z",
+    "username": "Automatic Background Sync",
+    "action": "Synchronized 1785 contacts from Google Sheet."
+  },
+  {
+    "id": "1025b87f-9e3f-44cb-8792-69bf60ea1db7",
+    "timestamp": "2026-09-08T12:32:43.529Z",
+    "username": "admin",
+    "action": "Added contact: \"Test Deletion Zed\" (09170000000)"
+  },
+  {
+    "id": "e061b076-ce7f-4aa2-97f2-96be35bce4b1",
+    "timestamp": "2026-09-08T12:32:43.502Z",
+    "username": "admin",
+    "action": "Logged in to dashboard successfully."
+  },
+  {
+    "id": "daefe147-aed9-460b-8fa7-6525e0a48e76",
+    "timestamp": "2026-09-08T12:32:26.034Z",
+    "username": "Automatic Startup Connect",
+    "action": "Synchronized 1785 contacts from Google Sheet."
+  },
+  {
     "id": "ed7422aa-c423-4a84-b179-7d082c7f61b9",
     "timestamp": "2026-09-08T08:56:24.924Z",
     "username": "Automatic Background Sync",
