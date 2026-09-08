@@ -1,5 +1,33 @@
 [
   {
+    "username": "zainab",
+    "passwordHash": "277f4cda70ff0f33efe08a3421560058130c9442f59a62c9cfecd200c5e25c53",
+    "role": "IT",
+    "displayName": "zainab tugung",
+    "avatarDataUrl": "",
+    "fullName": "zainab tugung",
+    "email": "zainab@gmail.com",
+    "barangay": "Napolan",
+    "status": "Active",
+    "createdAt": "2026-09-08T01:02:39.216Z",
+    "passwordPlain": "zainab",
+    "updatedAt": "2026-09-08T01:02:39.216Z"
+  },
+  {
+    "username": "rosemarie",
+    "passwordHash": "618d663af0f1ec88a5a19defa65a2f80d06582a832510b12f475d80870bdb3ab",
+    "role": "IT",
+    "displayName": "rosemarie lacostales",
+    "avatarDataUrl": "",
+    "fullName": "rosemarie lacostales",
+    "email": "rosemarie@gmail.com",
+    "barangay": "Banale",
+    "status": "Active",
+    "createdAt": "2026-09-08T00:53:18.845Z",
+    "passwordPlain": "rose",
+    "updatedAt": "2026-09-08T00:53:18.845Z"
+  },
+  {
     "username": "cabayaranlalaine",
     "passwordHash": "767328cadad3f46764bb7e4d61003d9dac998cd73b54146a14ce345638a23efe",
     "role": "IT",
@@ -506,7 +534,7 @@
   {
     "username": "banzaidunyah1214",
     "passwordHash": "49998fb1ebc99005c7b5b00a60548418552d30b12e22f755ed1feb9c864fd2f1",
-    "role": "LEADER",
+    "role": "IT",
     "displayName": "Zainab",
     "avatarDataUrl": "",
     "fullName": "Zainab",
@@ -515,7 +543,7 @@
     "status": "Active",
     "createdAt": "2026-07-29T07:35:42.008Z",
     "passwordPlain": "49998fb1ebc99005c7b5b00a60548418552d30b12e22f755ed1feb9c864fd2f1",
-    "updatedAt": "2026-08-26T02:33:35.167Z"
+    "updatedAt": "2026-09-07T01:33:45.447Z"
   },
   {
     "username": "alvaradoashlee08",
