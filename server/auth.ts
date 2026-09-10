@@ -72,12 +72,18 @@ export interface AuthenticatedRequest extends Request {
  * Middleware to protect routes, enforcing authentication.
  */
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  let token = '';
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && typeof req.query.token === 'string' && req.query.token.trim()) {
+    token = req.query.token.trim();
+  }
+
+  if (!token) {
     return res.status(401).json({ error: 'Authentication required. Please log in.' });
   }
 
-  const token = authHeader.split(' ')[1];
   const payload = verifyToken(token);
 
   if (!payload) {
@@ -91,6 +97,21 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 
   req.user = payload;
   next();
+}
+
+/**
+ * Middleware to enforce admin role privileges.
+ */
+export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  requireAuth(req, res, () => {
+    const role = (req.user?.role || '').toUpperCase();
+    const username = (req.user?.username || '').toLowerCase();
+    const isAdmin = username === 'admin' || role.includes('ADMIN') || role === 'IT' || role === 'MASTER ADMIN';
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Admin privileges required to perform this action.' });
+    }
+    next();
+  });
 }
 
 /**

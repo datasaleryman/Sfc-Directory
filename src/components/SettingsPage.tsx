@@ -25,10 +25,12 @@ import {
   Shield,
   Sparkles,
   Check,
-  Copy
+  Copy,
+  Database
 } from 'lucide-react';
 import { SheetsStatus } from '../types.js';
 import { DEFAULT_SITE_LOGO } from '../App.js';
+import { BackupDataSettings } from './BackupDataSettings.js';
 
 interface SettingsPageProps {
   authToken: string | null;
@@ -133,7 +135,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   onSettingsSaved,
   adminUser
 }) => {
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'branding' | 'nav' | 'roles' | 'addAccount'>('branding');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'branding' | 'nav' | 'roles' | 'addAccount' | 'backup'>('branding');
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -676,6 +678,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         >
           <UserPlus className="w-4 h-4" />
           Add Account
+        </button>
+        <button
+          type="button"
+          id="backup-data-tab-button"
+          onClick={() => setActiveSettingsTab('backup')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-2 ${
+            activeSettingsTab === 'backup'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          Backup Data
         </button>
       </div>
 
@@ -1723,6 +1738,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {activeSettingsTab === 'backup' && (
+        <BackupDataSettings
+          authToken={authToken}
+          showToast={showToast}
+        />
       )}
     </div>
   );

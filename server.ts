@@ -77,9 +77,15 @@ import {
 import {
   createToken,
   requireAuth,
+  requireAdmin,
   sanitizeInput,
   AuthenticatedRequest
 } from './server/auth.js';
+import {
+  getFullGoogleSheetsBackupData,
+  formatBackupAsJson,
+  formatBackupAsSql
+} from './server/backup.js';
 
 export async function getApp(httpServer?: http.Server) {
   // Initialize the fast file-backed database cache
@@ -999,6 +1005,86 @@ export async function getApp(httpServer?: http.Server) {
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Database Backup Endpoints (Admin Only) ---
+
+  // Get backup summary / statistics for Google Sheets database
+  app.get('/api/backup/summary', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'admin';
+      const forceRefresh = req.query.refresh === 'true' || req.query.force === 'true';
+      const backupData = await getFullGoogleSheetsBackupData(username, forceRefresh);
+      res.json({
+        success: true,
+        metadata: backupData.metadata
+      });
+    } catch (err: any) {
+      console.error('[Backup] Error getting backup summary:', err);
+      res.status(500).json({ error: err.message || 'Failed to retrieve backup summary.' });
+    }
+  });
+
+  // Download complete Google Sheets backup (as JSON or SQL file)
+  app.get('/api/backup/download', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'admin';
+      const format = (String(req.query.format || 'json')).toLowerCase();
+      const backupData = await getFullGoogleSheetsBackupData(username);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+      if (format === 'sql') {
+        const sqlContent = formatBackupAsSql(backupData);
+        const filename = `google_sheets_backup_${timestamp}.sql`;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(sqlContent);
+      } else {
+        const jsonContent = formatBackupAsJson(backupData);
+        const filename = `google_sheets_backup_${timestamp}.json`;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(jsonContent);
+      }
+    } catch (err: any) {
+      console.error('[Backup] Error downloading backup:', err);
+      res.status(500).json({ error: err.message || 'Failed to generate backup download.' });
+    }
+  });
+
+  // Generate backup content for in-browser client preview/download
+  app.post('/api/backup/export', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const username = req.user?.username || 'admin';
+      const format = (String(req.body?.format || 'json')).toLowerCase();
+      const backupData = await getFullGoogleSheetsBackupData(username);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+      if (format === 'sql') {
+        const content = formatBackupAsSql(backupData);
+        const filename = `google_sheets_backup_${timestamp}.sql`;
+        return res.json({
+          success: true,
+          format: 'sql',
+          filename,
+          content,
+          metadata: backupData.metadata
+        });
+      } else {
+        const content = formatBackupAsJson(backupData);
+        const filename = `google_sheets_backup_${timestamp}.json`;
+        return res.json({
+          success: true,
+          format: 'json',
+          filename,
+          content,
+          metadata: backupData.metadata
+        });
+      }
+    } catch (err: any) {
+      console.error('[Backup] Error generating backup export:', err);
+      res.status(500).json({ error: err.message || 'Failed to export backup data.' });
     }
   });
 

@@ -558,11 +558,24 @@ export function normalizeSheetsConfig(config: Partial<SheetsConfig>): SheetsConf
 }
 
 // In-memory caches for fast sorting, searching, and filtering
-let contactsCache: Contact[] = [];
-let activitiesCache: Activity[] = [];
-let usersCache: User[] = [];
-let pcuUpdatesCache: PCUUpdate[] = [];
+export let contactsCache: Contact[] = [];
+export let activitiesCache: Activity[] = [];
+export let usersCache: User[] = [];
+export let pcuUpdatesCache: PCUUpdate[] = [];
 export let existingAccountsCache: ExistingAccountItem[] = [];
+
+export function getAllContactsRaw(): Contact[] {
+  return contactsCache;
+}
+export function getAllExistingAccountsRaw(): ExistingAccountItem[] {
+  return existingAccountsCache;
+}
+export function getAllActivitiesRaw(): Activity[] {
+  return activitiesCache;
+}
+export function getAllBarangaysRaw(): string[] {
+  return (Array.isArray(barangaysCache) && barangaysCache.length > 0) ? barangaysCache : DEFAULT_BARANGAYS;
+}
 let sheetsConfig: SheetsConfig = {
   authType: 'serviceAccount',
   apiKey: '',
